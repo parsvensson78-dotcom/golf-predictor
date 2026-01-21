@@ -3,7 +3,7 @@ const cheerio = require('cheerio');
 
 /**
  * Fetches player statistics from DataGolf
- * Key stats: SG: Total, SG: OTT, SG: APP, SG: ARG, SG: PUTT
+ * Note: DataGolf may require authentication for full access
  */
 exports.handler = async (event, context) => {
   try {
@@ -16,44 +16,89 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // Fetch DataGolf rankings page (has SG stats)
-    const response = await axios.get('https://datagolf.com/rankings', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      timeout: 15000
-    });
+    console.log(`Fetching stats for ${players.length} players`);
 
-    const $ = cheerio.load(response.data);
-    const playerStats = {};
+    let playerStats = {};
 
-    // Parse the rankings table
-    $('table tbody tr').each((i, row) => {
-      const cells = $(row).find('td');
+    // Try DataGolf public rankings page
+    try {
+      const response = await axios.get('https://datagolf.com/rankings', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+        },
+        timeout: 20000
+      });
+
+      const $ = cheerio.load(response.data);
       
-      if (cells.length >= 7) {
-        const playerName = $(cells[1]).text().trim();
-        const rank = $(cells[0]).text().trim();
-        const sgTotal = $(cells[2]).text().trim();
-        const sgOTT = $(cells[3]).text().trim();
-        const sgAPP = $(cells[4]).text().trim();
-        const sgARG = $(cells[5]).text().trim();
-        const sgPutt = $(cells[6]).text().trim();
+      console.log('Successfully loaded DataGolf rankings page');
 
-        // Normalize name for matching
-        const normalizedName = playerName.toLowerCase().replace(/[^a-z\s]/g, '');
+      // Try to parse rankings table
+      $('table tbody tr, .rankings-table tr').each((i, row) => {
+        const $row = $(row);
+        const cells = $row.find('td');
+        
+        if (cells.length >= 6) {
+          const playerName = $(cells.eq(1)).text().trim() || $(cells.eq(0)).text().trim();
+          const rank = $(cells.eq(0)).text().trim();
+          
+          // Try to get SG stats
+          const sgTotal = parseFloat($(cells.eq(2)).text().trim()) || 0;
+          const sgOTT = parseFloat($(cells.eq(3)).text().trim()) || 0;
+          const sgAPP = parseFloat($(cells.eq(4)).text().trim()) || 0;
+          const sgARG = parseFloat($(cells.eq(5)).text().trim()) || 0;
+          const sgPutt = parseFloat($(cells.eq(6)).text().trim()) || 0;
+
+          if (playerName && playerName.length > 2) {
+            const normalizedName = playerName.toLowerCase().replace(/[^a-z\s]/g, '');
+            
+            playerStats[normalizedName] = {
+              name: playerName,
+              rank: parseInt(rank) || null,
+              sgTotal,
+              sgOTT,
+              sgAPP,
+              sgARG,
+              sgPutt
+            };
+          }
+        }
+      });
+
+      console.log(`Parsed ${Object.keys(playerStats).length} players from DataGolf`);
+      
+    } catch (scrapeError) {
+      console.error('DataGolf scraping failed:', scrapeError.message);
+      // Continue with fallback
+    }
+
+    // If scraping failed or got no data, use estimated stats
+    if (Object.keys(playerStats).length === 0) {
+      console.log('Using fallback estimated stats');
+      
+      // Generate reasonable estimated stats for all players
+      players.forEach((player, index) => {
+        const normalizedName = player.toLowerCase().replace(/[^a-z\s]/g, '');
+        const baseRank = index + 1;
+        
+        // Estimate stats based on position in field
+        // Better players earlier in the field
+        const skillLevel = Math.max(0, 1 - (index / players.length));
         
         playerStats[normalizedName] = {
-          name: playerName,
-          rank: parseInt(rank) || null,
-          sgTotal: parseFloat(sgTotal) || 0,
-          sgOTT: parseFloat(sgOTT) || 0,
-          sgAPP: parseFloat(sgAPP) || 0,
-          sgARG: parseFloat(sgARG) || 0,
-          sgPutt: parseFloat(sgPutt) || 0
+          name: player,
+          rank: baseRank,
+          sgTotal: (skillLevel * 2 - 0.5).toFixed(2),
+          sgOTT: (skillLevel * 0.5 - 0.2).toFixed(2),
+          sgAPP: (skillLevel * 0.6 - 0.2).toFixed(2),
+          sgARG: (skillLevel * 0.4 - 0.1).toFixed(2),
+          sgPutt: (skillLevel * 0.5 - 0.2).toFixed(2),
+          estimated: true
         };
-      }
-    });
+      });
+    }
 
     // Match requested players with stats
     const results = players.map(player => {
@@ -62,7 +107,7 @@ exports.handler = async (event, context) => {
       // Try exact match first
       let stats = playerStats[normalizedName];
       
-      // If not found, try partial matching
+      // If not found, try partial matching on last name
       if (!stats) {
         const nameParts = normalizedName.split(' ');
         const lastName = nameParts[nameParts.length - 1];
@@ -88,20 +133,27 @@ exports.handler = async (event, context) => {
       };
     });
 
+    const foundCount = results.filter(r => !r.stats.notFound && !r.stats.estimated).length;
+    const estimatedCount = results.filter(r => r.stats.estimated).length;
+    
+    console.log(`Stats summary: ${foundCount} found, ${estimatedCount} estimated, ${results.length - foundCount - estimatedCount} missing`);
+
     return {
       statusCode: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=86400' // 24 hours (stats don't change often)
+        'Cache-Control': 'public, max-age=86400' // 24 hours
       },
       body: JSON.stringify({
         players: results,
-        scrapedAt: new Date().toISOString()
+        scrapedAt: new Date().toISOString(),
+        usingEstimates: estimatedCount > 0
       })
     };
 
   } catch (error) {
-    console.error('DataGolf fetch error:', error);
+    console.error('Stats fetch error:', error.message);
+    console.error('Stack:', error.stack);
     
     return {
       statusCode: 500,
