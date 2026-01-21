@@ -1,70 +1,304 @@
-/* Action Section */
-.action-section {
-  display: flex;
-  justify-content: center;
-  margin: 0 auto 50px;
-  max-width: 500px;
-  padding: 0 20px;
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-.get-predictions-btn {
-  width: 100%;
-  padding: 20px 40px;
-  font-size: 1.3em;
-  font-weight: 700;
-  background: linear-gradient(135deg, #52C41A 0%, #73d13d 100%);
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #0A0A0A;
+  min-height: 100vh;
+  color: #ffffff;
+}
+
+.app {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 40px 20px;
+}
+
+/* Header Section */
+.header {
+  text-align: center;
   color: white;
-  border: none;
-  border-radius: 16px;
+  margin-bottom: 60px;
+  padding: 60px 20px 40px;
+  background: linear-gradient(135deg, rgba(82,196,26,0.15) 0%, rgba(82,196,26,0.05) 100%);
+  border-radius: 20px;
+}
+
+.header h1 {
+  font-size: 3.5em;
+  margin-bottom: 15px;
+  font-weight: 700;
+  letter-spacing: -1px;
+}
+
+.subtitle {
+  font-size: 1.1em;
+  opacity: 0.75;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+}
+
+/* Tour Selector */
+.tour-selector {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  margin-bottom: 50px;
+}
+
+.tour-btn {
+  padding: 16px 40px;
+  font-size: 1.1em;
+  font-weight: 600;
+  border: 2px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.05);
+  color: white;
+  border-radius: 12px;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 8px 25px rgba(82,196,26,0.4);
+  backdrop-filter: blur(10px);
   letter-spacing: 0.5px;
-  text-transform: uppercase;
+}
+
+.tour-btn:hover {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(82,196,26,0.5);
+  transform: translateY(-2px);
+}
+
+.tour-btn.active {
+  background: #52C41A;
+  color: white;
+  border-color: #52C41A;
+  box-shadow: 0 8px 20px rgba(82,196,26,0.3);
+}
+
+/* Loading State */
+.loading {
+  text-align: center;
+  padding: 80px 20px;
+  color: white;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(255,255,255,0.1);
+  border-top: 4px solid #52C41A;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 25px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-subtext {
+  font-size: 0.95em;
+  opacity: 0.6;
+  margin-top: 15px;
+  font-weight: 400;
+}
+
+/* Error State */
+.error {
+  background: rgba(255,59,48,0.1);
+  border: 1px solid rgba(255,59,48,0.3);
+  padding: 30px;
+  border-radius: 15px;
+  text-align: center;
+  color: #ff6b6b;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.error button {
+  margin-top: 20px;
+  padding: 12px 30px;
+  background: #52C41A;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 1em;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.error button:hover {
+  background: #45a616;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(82,196,26,0.3);
+}
+
+/* Predictions Container */
+.predictions-container {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
+  padding: 40px;
+  backdrop-filter: blur(10px);
+}
+
+/* Tournament Info */
+.tournament-info {
+  text-align: center;
+  margin-bottom: 50px;
+  padding-bottom: 30px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.tournament-info h2 {
+  color: #ffffff;
+  font-size: 2.5em;
+  margin-bottom: 20px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.tournament-details {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  flex-wrap: wrap;
+  color: rgba(255,255,255,0.7);
+  font-size: 1em;
+  font-weight: 500;
+}
+
+.tournament-details span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Picks Grid */
+.picks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 30px;
+  margin-bottom: 40px;
+}
+
+/* Pick Card */
+.pick-card {
+  background: linear-gradient(135deg, rgba(82,196,26,0.15) 0%, rgba(82,196,26,0.05) 100%);
+  border: 1px solid rgba(82,196,26,0.2);
+  color: white;
+  border-radius: 16px;
+  padding: 30px;
+  transition: all 0.3s ease;
   position: relative;
   overflow: hidden;
 }
 
-.get-predictions-btn::before {
+.pick-card::before {
   content: '';
   position: absolute;
   top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-  transition: left 0.5s;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #52C41A 0%, #73d13d 100%);
 }
 
-.get-predictions-btn:hover:not(:disabled)::before {
-  left: 100%;
+.pick-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 15px 35px rgba(82,196,26,0.2);
+  border-color: rgba(82,196,26,0.4);
 }
 
-.get-predictions-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #45a616 0%, #5fd126 100%);
-  transform: translateY(-3px);
-  box-shadow: 0 12px 35px rgba(82,196,26,0.5);
+.pick-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
 }
 
-.get-predictions-btn:disabled {
+.pick-number {
+  font-size: 1.3em;
+  font-weight: 700;
+  background: rgba(255,255,255,0.1);
+  padding: 8px 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+
+.pick-odds {
+  font-size: 2em;
+  font-weight: 700;
+  background: #52C41A;
+  padding: 8px 20px;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(82,196,26,0.3);
+}
+
+.pick-name {
+  font-size: 1.9em;
+  margin-bottom: 18px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.pick-reasoning {
+  font-size: 1.05em;
+  line-height: 1.7;
+  opacity: 0.9;
+  font-weight: 400;
+}
+
+/* Footer Info */
+.footer-info {
+  text-align: center;
+  padding-top: 30px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.5);
+  font-size: 0.9em;
+}
+
+.footer-info p {
+  margin: 8px 0;
+  font-weight: 400;
+}
+
+.token-usage {
   opacity: 0.7;
-  cursor: not-allowed;
-  transform: none;
-  background: linear-gradient(135deg, #52C41A 0%, #73d13d 100%);
 }
 
-.get-predictions-btn:active:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(82,196,26,0.4);
-}
-
-/* Mobile optimizations */
+/* Responsive Design */
 @media (max-width: 768px) {
-  .get-predictions-btn {
-    padding: 22px 40px;
-    font-size: 1.2em;
-    border-radius: 14px;
-    /* Better tap target for mobile */
-    min-height: 60px;
+  .header h1 {
+    font-size: 2.2em;
+  }
+  
+  .tournament-info h2 {
+    font-size: 1.8em;
+  }
+  
+  .picks-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .tournament-details {
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .tour-selector {
+    flex-direction: column;
+    max-width: 300px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .tour-btn {
+    width: 100%;
   }
 }
