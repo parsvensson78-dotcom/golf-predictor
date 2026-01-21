@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import './App.css';
 
 function App() {
@@ -28,9 +28,14 @@ function App() {
     }
   };
 
-  useEffect(() => {
+  const handleTourChange = (newTour) => {
+    setTour(newTour);
+    setPredictions(null); // Clear previous predictions
+  };
+
+  const handleGetPredictions = () => {
     fetchPredictions(tour);
-  }, [tour]);
+  };
 
   return (
     <div className="app">
@@ -42,15 +47,25 @@ function App() {
       <div className="tour-selector">
         <button 
           className={`tour-btn ${tour === 'pga' ? 'active' : ''}`}
-          onClick={() => setTour('pga')}
+          onClick={() => handleTourChange('pga')}
         >
           PGA Tour
         </button>
         <button 
           className={`tour-btn ${tour === 'dp' ? 'active' : ''}`}
-          onClick={() => setTour('dp')}
+          onClick={() => handleTourChange('dp')}
         >
           DP World Tour
+        </button>
+      </div>
+
+      <div className="action-section">
+        <button 
+          className="get-predictions-btn"
+          onClick={handleGetPredictions}
+          disabled={loading}
+        >
+          {loading ? 'Analyzing...' : 'Get Predictions'}
         </button>
       </div>
 
@@ -65,7 +80,7 @@ function App() {
       {error && (
         <div className="error">
           <p>❌ {error}</p>
-          <button onClick={() => fetchPredictions(tour)}>Retry</button>
+          <button onClick={handleGetPredictions}>Retry</button>
         </div>
       )}
 
