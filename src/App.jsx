@@ -10,6 +10,7 @@ function App() {
   const fetchPredictions = async (selectedTour) => {
     setLoading(true);
     setError(null);
+    setPredictions(null); // Clear old predictions immediately
     
     try {
       const response = await fetch(`/.netlify/functions/get-predictions?tour=${selectedTour}`);
@@ -30,7 +31,8 @@ function App() {
 
   const handleTourChange = (newTour) => {
     setTour(newTour);
-    setPredictions(null); // Clear previous predictions
+    setPredictions(null); // Clear predictions when switching tours
+    setError(null); // Clear any errors
   };
 
   const handleGetPredictions = () => {
@@ -48,12 +50,14 @@ function App() {
         <button 
           className={`tour-btn ${tour === 'pga' ? 'active' : ''}`}
           onClick={() => handleTourChange('pga')}
+          disabled={loading}
         >
           PGA Tour
         </button>
         <button 
           className={`tour-btn ${tour === 'dp' ? 'active' : ''}`}
           onClick={() => handleTourChange('dp')}
+          disabled={loading}
         >
           DP World Tour
         </button>
@@ -93,6 +97,18 @@ function App() {
               <span>📅 {predictions.tournament.dates}</span>
               <span>🌤️ {predictions.weather}</span>
             </div>
+            
+            {/* Course Analysis Section */}
+            {predictions.courseAnalysis && (
+              <div className="course-analysis">
+                <div className="analysis-item">
+                  <strong>Course Type:</strong> {predictions.courseAnalysis.type}
+                </div>
+                <div className="analysis-item">
+                  <strong>Weather Impact:</strong> {predictions.courseAnalysis.weatherImpact}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="picks-grid">
