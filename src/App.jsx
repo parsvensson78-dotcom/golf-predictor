@@ -116,7 +116,7 @@ function App() {
               <div key={index} className="pick-card">
                 <div className="pick-header">
                   <span className="pick-number">#{index + 1}</span>
-                  <span className="pick-odds">+{Math.round((pick.odds - 1) * 100)}</span>
+                  <span className="pick-odds">{Math.round(pick.odds)}/1</span>
                 </div>
                 <h3 className="pick-name">{pick.player}</h3>
                 <p className="pick-reasoning">{pick.reasoning}</p>
