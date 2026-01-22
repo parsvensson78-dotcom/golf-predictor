@@ -140,7 +140,7 @@ exports.handler = async (event, context) => {
 
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 2500,
+      max_tokens: 3500,
       temperature: 0.3,
       messages: [{
         role: 'user',
@@ -182,7 +182,8 @@ exports.handler = async (event, context) => {
         courseAnalysis: {
           type: predictions.courseType || 'Analysis not available',
           weatherImpact: predictions.weatherImpact || 'No significant impact expected',
-          keyFactors: predictions.keyFactors || []
+          keyFactors: predictions.keyFactors || [],
+          notes: predictions.courseNotes || ''
         },
         predictions: predictions.picks || predictions,
         generatedAt: new Date().toISOString(),
@@ -363,17 +364,19 @@ CRITICAL ANALYSIS FRAMEWORK:
    - Do NOT pick based on world ranking alone
 
 YOUR TASK:
-Select exactly 3 VALUE picks where:
-- At least 2 players should have odds ABOVE 30
+Select exactly 5 VALUE picks where:
+- At least 3 players should have odds ABOVE 30
 - Players must have statistical evidence they excel at THIS COURSE TYPE
 - Match their SG strengths to the specific course characteristics listed above
 - Consider weather conditions in your analysis
+- Provide a range of odds - include some mid-tier (30-60) and some longshots (60-150)
 
 Return ONLY valid JSON (no markdown):
 {
   "courseType": "Detailed description: length, what skills it rewards, why (e.g., '7765-yard test of power requiring elite distance off tee, with heavy kikuyu rough demanding strong scrambling')",
   "weatherImpact": "How today's weather (${weather}) affects strategy and which skills become more important",
   "keyFactors": ["List 3-4 specific course factors", "that determine success", "based on the characteristics above"],
+  "courseNotes": "2-3 detailed sentences explaining the course setup. Include specific details about par, length, what makes this course unique, and how these factors create betting value. Example: 'At 7,075 yards and par 72, Pebble Beach plays shorter than most tour stops but the coastal winds and small poa annua greens create extreme difficulty. The dramatic 200+ yard scoring variance between calm and windy days makes scrambling ability far more valuable than distance. Players who excel in kikuyu rough recovery (high SG:ARG) have a massive edge that the betting market consistently undervalues.'",
   "picks": [
     {
       "player": "Player Name",
