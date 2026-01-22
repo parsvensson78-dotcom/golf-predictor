@@ -31,7 +31,7 @@ exports.handler = async (event, context) => {
     const statsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-stats`, {
       players: playerNames
     }, {
-      timeout: 30000 // Increased timeout for larger field
+      timeout: 30000
     });
     const statsData = statsResponse.data;
 
@@ -51,10 +51,8 @@ exports.handler = async (event, context) => {
     try {
       const weatherApiKey = process.env.WEATHER_API_KEY;
       if (weatherApiKey && tournament.location) {
-        // Parse location - WeatherAPI is good with city names
         let location = tournament.location.split(',')[0].trim();
         
-        // WeatherAPI.com uses a different endpoint structure
         console.log(`Fetching weather for: ${location} using WeatherAPI.com`);
         
         const weatherResponse = await axios.get(`https://api.weatherapi.com/v1/current.json`, {
@@ -92,13 +90,11 @@ exports.handler = async (event, context) => {
     } catch (weatherError) {
       console.error('Weather fetch failed:', weatherError.message);
       
-      // Log more details for debugging
       if (weatherError.response) {
         console.error('Weather API response status:', weatherError.response.status);
         console.error('Weather API response data:', weatherError.response.data);
       }
       
-      // More informative fallback messages
       if (weatherError.response?.status === 401) {
         weatherInfo = `Weather API key invalid - check your WeatherAPI.com key`;
       } else if (weatherError.response?.status === 400) {
@@ -126,8 +122,8 @@ exports.handler = async (event, context) => {
           sgPutt: stat.stats.sgPutt
         };
       })
-      .filter(p => p.odds !== null && !p.notFound) // Only include players with odds and valid stats
-      .sort((a, b) => (a.odds || 999) - (b.odds || 999)); // Sort by odds for better prompt organization
+      .filter(p => p.odds !== null && !p.notFound)
+      .sort((a, b) => (a.odds || 999) - (b.odds || 999));
 
     console.log(`Analyzing complete field: ${playersWithData.length} players with valid data`);
 
@@ -140,7 +136,7 @@ exports.handler = async (event, context) => {
 
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000, // Increased for analyzing full field
+      max_tokens: 2000,
       temperature: 0.3,
       messages: [{
         role: 'user',
@@ -153,7 +149,6 @@ exports.handler = async (event, context) => {
     // Parse JSON response from Claude
     let predictions;
     try {
-      // Extract JSON from response (Claude might wrap it in markdown)
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       predictions = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
     } catch (parseError) {
@@ -161,7 +156,7 @@ exports.handler = async (event, context) => {
       throw new Error('Invalid response format from AI');
     }
 
-    // Step 7: Return predictions with context - NO CACHING
+    // Step 7: Return predictions with NO CACHING
     return {
       statusCode: 200,
       headers: {
@@ -206,7 +201,6 @@ exports.handler = async (event, context) => {
  * Builds optimized prompt for Claude - focuses on VALUE and COURSE FIT
  */
 function buildClaudePrompt(tournament, players, weather) {
-  // Split players into tiers
   const favorites = players.slice(0, 15);
   const midTier = players.slice(15, 50);
   const longshots = players.slice(50);
