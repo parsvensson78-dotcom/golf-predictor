@@ -190,6 +190,16 @@ function App() {
                 </div>
               </div>
 
+              {/* COURSE NOTES SECTION */}
+              {predictions.courseAnalysis && predictions.courseAnalysis.notes && (
+                <div className="course-notes-section">
+                  <h4>📝 Course Setup & Betting Insights</h4>
+                  <div className="course-notes-content">
+                    <p>{predictions.courseAnalysis.notes}</p>
+                  </div>
+                </div>
+              )}
+
               {predictions.courseInfo.keyFeatures && predictions.courseInfo.keyFeatures.length > 0 && (
                 <div className="key-features-detailed">
                   <h4>⭐ Signature Course Features</h4>
