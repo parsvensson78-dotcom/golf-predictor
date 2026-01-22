@@ -6,12 +6,20 @@ function App() {
   const [predictions, setPredictions] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [requestId, setRequestId] = useState(0); // Force unique renders
 
   const fetchPredictions = async (selectedTour) => {
-    // Clear everything first
+    // Increment request ID to force re-render
+    const newRequestId = requestId + 1;
+    setRequestId(newRequestId);
+    
+    // Clear everything immediately and aggressively
     setPredictions(null);
     setError(null);
     setLoading(true);
+    
+    // Small delay to ensure state clears
+    await new Promise(resolve => setTimeout(resolve, 50));
     
     try {
       const response = await fetch(`/.netlify/functions/get-predictions?tour=${selectedTour}`);
@@ -22,7 +30,11 @@ function App() {
       }
       
       const data = await response.json();
-      setPredictions(data);
+      
+      // Only set predictions if this is still the latest request
+      if (newRequestId === requestId + 1) {
+        setPredictions(data);
+      }
     } catch (err) {
       setError(err.message);
       console.error('Fetch error:', err);
@@ -35,6 +47,7 @@ function App() {
     setTour(newTour);
     setPredictions(null);
     setError(null);
+    setRequestId(requestId + 1);
   };
 
   const handleGetPredictions = () => {
@@ -76,7 +89,7 @@ function App() {
       </div>
 
       {loading && (
-        <div className="loading">
+        <div className="loading" key={`loading-${requestId}`}>
           <div className="spinner"></div>
           <p>Analyzing complete tournament field...</p>
           <p className="loading-subtext">Evaluating 120+ players for value picks</p>
@@ -84,14 +97,14 @@ function App() {
       )}
 
       {error && !loading && (
-        <div className="error">
+        <div className="error" key={`error-${requestId}`}>
           <p>❌ {error}</p>
           <button onClick={handleGetPredictions}>Retry</button>
         </div>
       )}
 
       {predictions && !loading && !error && (
-        <div className="predictions-container" key={predictions.generatedAt}>
+        <div className="predictions-container" key={`predictions-${requestId}-${predictions.generatedAt}`}>
           <div className="tournament-info">
             <h2>{predictions.tournament.name}</h2>
             <div className="tournament-details">
@@ -114,7 +127,7 @@ function App() {
 
           <div className="picks-grid">
             {predictions.predictions && predictions.predictions.map((pick, index) => (
-              <div key={`${predictions.generatedAt}-${index}`} className="pick-card">
+              <div key={`pick-${requestId}-${index}`} className="pick-card">
                 <div className="pick-header">
                   <span className="pick-number">#{index + 1}</span>
                   <span className="pick-odds">{Math.round(pick.odds)}/1</span>
