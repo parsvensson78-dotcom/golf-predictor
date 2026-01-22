@@ -59,7 +59,7 @@ exports.handler = async (event, context) => {
         
         const weatherResponse = await axios.get(`https://api.weatherapi.com/v1/current.json`, {
           params: {
-            key: weatherApiKey,  // Note: 'key' not 'appid'
+            key: weatherApiKey,
             q: location,
             aqi: 'no'
           },
@@ -161,12 +161,14 @@ exports.handler = async (event, context) => {
       throw new Error('Invalid response format from AI');
     }
 
-    // Step 7: Return predictions with context
+    // Step 7: Return predictions with context - NO CACHING
     return {
       statusCode: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=14400' // 4 hours
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       },
       body: JSON.stringify({
         tournament: {
