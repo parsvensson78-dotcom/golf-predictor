@@ -179,12 +179,112 @@ body {
   gap: 20px;
   font-size: 1rem;
   color: #666;
+  margin-bottom: 20px;
 }
 
 .tournament-details span {
   display: flex;
   align-items: center;
   gap: 5px;
+}
+
+/* Daily Weather Forecast */
+.weather-forecast-section {
+  margin-top: 25px;
+  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+  padding: 20px;
+  border-radius: 12px;
+  border: 2px solid #2196F3;
+}
+
+.weather-forecast-section h3 {
+  color: #1e3c72;
+  margin-bottom: 15px;
+  font-size: 1.3rem;
+}
+
+.daily-forecast-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.forecast-day-card {
+  background: white;
+  padding: 15px;
+  border-radius: 10px;
+  text-align: center;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+  transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.forecast-day-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+}
+
+.forecast-day-name {
+  font-weight: bold;
+  color: #1e3c72;
+  font-size: 1.1rem;
+  margin-bottom: 8px;
+}
+
+.forecast-temp {
+  font-size: 1.5rem;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.temp-high {
+  color: #ff6b6b;
+  font-weight: bold;
+}
+
+.temp-divider {
+  color: #999;
+}
+
+.temp-low {
+  color: #4a90e2;
+  font-weight: 500;
+}
+
+.forecast-condition {
+  color: #666;
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.forecast-details {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+.forecast-wind {
+  background: #e3f2fd;
+  padding: 4px 10px;
+  border-radius: 12px;
+  color: #1976d2;
+  font-weight: 500;
+}
+
+.forecast-rain {
+  background: #ffebee;
+  padding: 4px 10px;
+  border-radius: 12px;
+  color: #c62828;
+  font-weight: 500;
 }
 
 /* ENHANCED: Course Details Card */
@@ -642,6 +742,10 @@ body {
     padding: 15px;
   }
   
+  .daily-forecast-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
   .course-header-section {
     flex-direction: column;
     align-items: flex-start;
@@ -689,6 +793,14 @@ body {
   
   .header h1 {
     font-size: 1.6rem;
+  }
+  
+  .daily-forecast-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .forecast-day-card {
+    padding: 12px;
   }
   
   .course-header-section h3 {
