@@ -116,30 +116,111 @@ function App() {
               <span>📅 {predictions.tournament.dates}</span>
               <span>🌤️ {predictions.weather}</span>
             </div>
-            
-            {predictions.courseAnalysis && (
-              <div className="course-analysis">
-                <div className="analysis-item">
-                  <strong>Course Type:</strong> {predictions.courseAnalysis.type}
-                </div>
-                <div className="analysis-item">
-                  <strong>Weather Impact:</strong> {predictions.courseAnalysis.weatherImpact}
-                </div>
-              </div>
-            )}
           </div>
 
-          <div className="picks-grid">
-            {predictions.predictions && predictions.predictions.map((pick, index) => (
-              <div key={`pick-${requestId}-${index}`} className="pick-card">
-                <div className="pick-header">
-                  <span className="pick-number">#{index + 1}</span>
-                  <span className="pick-odds">{Math.round(pick.odds)}/1</span>
+          {/* ENHANCED COURSE INFORMATION SECTION */}
+          {predictions.courseInfo && (
+            <div className="course-details-card">
+              <h3>⛳ Course Details</h3>
+              <div className="course-stats-grid">
+                {predictions.courseInfo.yardage && (
+                  <div className="course-stat">
+                    <span className="stat-label">Length:</span>
+                    <span className="stat-value">{predictions.courseInfo.yardage} yards</span>
+                  </div>
+                )}
+                <div className="course-stat">
+                  <span className="stat-label">Par:</span>
+                  <span className="stat-value">{predictions.courseInfo.par}</span>
                 </div>
-                <h3 className="pick-name">{pick.player}</h3>
-                <p className="pick-reasoning">{pick.reasoning}</p>
+                {predictions.courseInfo.avgScore && (
+                  <div className="course-stat">
+                    <span className="stat-label">Tour Avg:</span>
+                    <span className="stat-value">{predictions.courseInfo.avgScore}</span>
+                  </div>
+                )}
+                {predictions.courseInfo.difficulty && (
+                  <div className="course-stat">
+                    <span className="stat-label">Difficulty:</span>
+                    <span className="stat-value">{predictions.courseInfo.difficulty}</span>
+                  </div>
+                )}
               </div>
-            ))}
+
+              <div className="course-characteristics">
+                <div className="characteristic">
+                  <strong>Fairways:</strong> {predictions.courseInfo.width}
+                </div>
+                <div className="characteristic">
+                  <strong>Greens:</strong> {predictions.courseInfo.greens}
+                </div>
+                <div className="characteristic">
+                  <strong>Rough:</strong> {predictions.courseInfo.rough}
+                </div>
+              </div>
+
+              {predictions.courseInfo.keyFeatures && predictions.courseInfo.keyFeatures.length > 0 && (
+                <div className="key-features">
+                  <strong>Key Features:</strong>
+                  <ul>
+                    {predictions.courseInfo.keyFeatures.map((feature, idx) => (
+                      <li key={idx}>{feature}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {predictions.courseInfo.rewards && predictions.courseInfo.rewards.length > 0 && (
+                <div className="rewards-skills">
+                  <strong>Skills Rewarded:</strong>
+                  <div className="skills-tags">
+                    {predictions.courseInfo.rewards.map((skill, idx) => (
+                      <span key={idx} className="skill-tag">{skill}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* COURSE ANALYSIS SECTION */}
+          {predictions.courseAnalysis && (
+            <div className="course-analysis">
+              <h3>📊 Course Analysis</h3>
+              <div className="analysis-item">
+                <strong>Course Type:</strong> {predictions.courseAnalysis.type}
+              </div>
+              <div className="analysis-item">
+                <strong>Weather Impact:</strong> {predictions.courseAnalysis.weatherImpact}
+              </div>
+              {predictions.courseAnalysis.keyFactors && predictions.courseAnalysis.keyFactors.length > 0 && (
+                <div className="analysis-item">
+                  <strong>Key Success Factors:</strong>
+                  <ul className="factors-list">
+                    {predictions.courseAnalysis.keyFactors.map((factor, idx) => (
+                      <li key={idx}>{factor}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* VALUE PICKS SECTION */}
+          <div className="picks-section">
+            <h3>💎 Value Picks</h3>
+            <div className="picks-grid">
+              {predictions.predictions && predictions.predictions.map((pick, index) => (
+                <div key={`pick-${requestId}-${index}`} className="pick-card">
+                  <div className="pick-header">
+                    <span className="pick-number">#{index + 1}</span>
+                    <span className="pick-odds">{Math.round(pick.odds)}/1</span>
+                  </div>
+                  <h3 className="pick-name">{pick.player}</h3>
+                  <p className="pick-reasoning">{pick.reasoning}</p>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="footer-info">
