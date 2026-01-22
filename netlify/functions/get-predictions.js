@@ -3,7 +3,7 @@ const axios = require('axios');
 
 /**
  * Main prediction endpoint
- * Orchestrates data fetching and Claude AI analysis
+ * Orchestrates data fetching and Claude AI analysis with course characteristics
  */
 exports.handler = async (event, context) => {
   try {
@@ -104,7 +104,11 @@ exports.handler = async (event, context) => {
       }
     }
 
-    // Step 5: Prepare COMPLETE field data for Claude
+    // Step 5: Get detailed course characteristics
+    const courseInfo = await getCourseCharacteristics(tournament.course, tournament.name);
+    console.log('Course characteristics fetched:', courseInfo.name);
+
+    // Step 6: Prepare COMPLETE field data for Claude
     const playersWithData = statsData.players
       .map(stat => {
         const odds = oddsData.odds.find(o => 
@@ -127,16 +131,16 @@ exports.handler = async (event, context) => {
 
     console.log(`Analyzing complete field: ${playersWithData.length} players with valid data`);
 
-    // Step 6: Call Claude API
+    // Step 7: Call Claude API with enhanced course info
     const anthropic = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY
     });
 
-    const prompt = buildClaudePrompt(tournament, playersWithData, weatherInfo);
+    const prompt = buildClaudePrompt(tournament, playersWithData, weatherInfo, courseInfo);
 
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
+      max_tokens: 2500,
       temperature: 0.3,
       messages: [{
         role: 'user',
@@ -156,7 +160,7 @@ exports.handler = async (event, context) => {
       throw new Error('Invalid response format from AI');
     }
 
-    // Step 7: Return predictions with NO CACHING
+    // Step 8: Return predictions with course info
     return {
       statusCode: 200,
       headers: {
@@ -174,9 +178,11 @@ exports.handler = async (event, context) => {
           tour: tournament.tour
         },
         weather: weatherInfo,
+        courseInfo: courseInfo,
         courseAnalysis: {
           type: predictions.courseType || 'Analysis not available',
-          weatherImpact: predictions.weatherImpact || 'No significant impact expected'
+          weatherImpact: predictions.weatherImpact || 'No significant impact expected',
+          keyFactors: predictions.keyFactors || []
         },
         predictions: predictions.picks || predictions,
         generatedAt: new Date().toISOString(),
@@ -198,9 +204,88 @@ exports.handler = async (event, context) => {
 };
 
 /**
- * Builds optimized prompt for Claude - focuses on VALUE and COURSE FIT
+ * Get detailed course characteristics based on course name
+ * This uses known course data and Claude's knowledge
  */
-function buildClaudePrompt(tournament, players, weather) {
+async function getCourseCharacteristics(courseName, tournamentName) {
+  // Known course database - add more as needed
+  const knownCourses = {
+    'Pebble Beach': {
+      name: 'Pebble Beach Golf Links',
+      yardage: 7075,
+      par: 72,
+      width: 'Narrow fairways with coastal cliffs',
+      greens: 'Small, Poa annua greens',
+      rough: 'Heavy kikuyu rough',
+      keyFeatures: ['Iconic coastal holes', 'Wind is critical factor', 'Short game demands high', 'Poa annua putting'],
+      difficulty: 'Very difficult',
+      rewards: ['Accuracy off tee', 'Scrambling ability', 'Wind management', 'Short game excellence'],
+      avgScore: 72.5
+    },
+    'TPC Sawgrass': {
+      name: 'TPC Sawgrass (Stadium Course)',
+      yardage: 7256,
+      par: 72,
+      width: 'Narrow, target-style fairways',
+      greens: 'Firm, fast Bermuda greens',
+      rough: 'Bermuda rough with waste areas',
+      keyFeatures: ['Island 17th green', 'Water hazards on 10+ holes', 'Strategic bunkering', 'Stadium atmosphere'],
+      difficulty: 'Extremely difficult',
+      rewards: ['Iron precision', 'Course management', 'Mental toughness', 'Ball striking'],
+      avgScore: 72.2
+    },
+    'Augusta National': {
+      name: 'Augusta National Golf Club',
+      yardage: 7510,
+      par: 72,
+      width: 'Moderate width with strategic positioning',
+      greens: 'Exceptionally fast, undulating bentgrass',
+      rough: 'Light rough, pine straw',
+      keyFeatures: ['Extreme green slopes', 'Amen Corner', 'Second-shot golf course', 'Fast, firm conditions'],
+      difficulty: 'Very difficult',
+      rewards: ['Distance and trajectory control', 'Iron play', 'Green reading', 'Mental game'],
+      avgScore: 71.8
+    },
+    'Torrey Pines': {
+      name: 'Torrey Pines Golf Course (South)',
+      yardage: 7765,
+      par: 72,
+      width: 'Moderate width, coastal terrain',
+      greens: 'Poa annua, can be bumpy',
+      rough: 'Heavy kikuyu rough',
+      keyFeatures: ['Longest course on tour', 'Coastal winds', 'Kikuyu rough is penal', 'Public course'],
+      difficulty: 'Very difficult',
+      rewards: ['Distance critical', 'Power off tee', 'Scrambling from kikuyu', 'Wind play'],
+      avgScore: 73.1
+    }
+  };
+
+  // Check if we have detailed info for this course
+  for (const [key, data] of Object.entries(knownCourses)) {
+    if (courseName.toLowerCase().includes(key.toLowerCase())) {
+      return data;
+    }
+  }
+
+  // For unknown courses, return a template that Claude will fill in with analysis
+  return {
+    name: courseName,
+    yardage: null,
+    par: 72,
+    width: 'Unknown - will be analyzed',
+    greens: 'Unknown - will be analyzed',
+    rough: 'Unknown - will be analyzed',
+    keyFeatures: [],
+    difficulty: 'Unknown',
+    rewards: ['Will be determined by analysis'],
+    avgScore: null
+  };
+}
+
+/**
+ * Builds optimized prompt for Claude with COURSE CHARACTERISTICS
+ */
+function buildClaudePrompt(tournament, players, weather, courseInfo) {
   const favorites = players.slice(0, 15);
   const midTier = players.slice(15, 50);
   const longshots = players.slice(50);
@@ -212,6 +297,19 @@ Name: ${tournament.name}
 Course: ${tournament.course}
 Location: ${tournament.location}
 Weather: ${weather}
+
+DETAILED COURSE CHARACTERISTICS:
+${courseInfo.yardage ? `Length: ${courseInfo.yardage} yards, Par ${courseInfo.par}` : 'Length: Research needed'}
+Width: ${courseInfo.width}
+Greens: ${courseInfo.greens}
+Rough: ${courseInfo.rough}
+${courseInfo.avgScore ? `Tour Average Score: ${courseInfo.avgScore}` : ''}
+
+Key Course Features:
+${courseInfo.keyFeatures.length > 0 ? courseInfo.keyFeatures.map(f => `- ${f}`).join('\n') : '- Analyze from tournament name and location'}
+
+Skills This Course Rewards:
+${courseInfo.rewards.length > 0 ? courseInfo.rewards.map(r => `- ${r}`).join('\n') : '- Determine from course type'}
 
 COMPLETE FIELD (${players.length} players):
 
@@ -227,48 +325,63 @@ ${longshots.map(p => `${p.name} [${p.odds}] - Rank:${p.rank||'?'} | SG:${p.sgTot
 CRITICAL ANALYSIS FRAMEWORK:
 
 1. COURSE TYPE IDENTIFICATION:
-   - What type of course is this? (Links, parkland, desert, target golf, etc.)
-   - What skills does THIS course reward most?
-   - Examples:
-     * Pebble Beach (links) = SG: OTT + ARG + Wind play
-     * Augusta (target golf) = SG: APP + ARG + Distance
-     * TPC Sawgrass (precision) = SG: APP + Putt + Strategy
-     * Desert courses (Emirates, La Quinta) = SG: OTT + Ball striking
+   - Based on the course characteristics above, what skills are MOST important?
+   - If course length is ${courseInfo.yardage || 'unknown'} yards:
+     * <7200 yards = Accuracy and iron play over distance
+     * 7200-7500 yards = Balanced, but distance helps
+     * >7500 yards = Distance critical, SG:OTT becomes vital
+   - Fairway width: ${courseInfo.width}
+     * Narrow = SG:OTT accuracy crucial
+     * Wide = Aggressive play, distance advantage
+   - Green characteristics: ${courseInfo.greens}
+     * Small greens = SG:APP precision critical
+     * Fast/undulating = SG:Putt becomes more important
+     * Poa annua = Experience on Poa helps
+   - Rough: ${courseInfo.rough}
+     * Heavy rough (kikuyu, etc.) = SG:ARG critical for recovery
+     * Light rough = Less penalty for misses
 
 2. WEATHER IMPACT:
    - Current weather: ${weather}
-   - How does this affect play? (wind = ball striking, rain = short game, etc.)
-   - Which stats become MORE important in these conditions?
+   - How does this affect play based on course characteristics?
+   - Wind + narrow fairways = Accuracy premium
+   - Wind + coastal = Ball flight control essential
+   - Rain + long course = Even more distance advantage
 
-3. VALUE IDENTIFICATION - DO NOT PICK OBVIOUS FAVORITES:
-   - Find players with ELITE course-fit stats but OVERLOOKED odds
-   - Look for: Mid-tier players (odds 30-80) with top-10 stats in key areas
-   - Example: Player ranked 40th with odds of 60-1 but #5 in SG: APP at a precision course = HUGE VALUE
+3. VALUE IDENTIFICATION - MATCH STATS TO COURSE NEEDS:
+   - Find players whose STRENGTHS align with what THIS COURSE rewards
+   - Example: If course is 7800 yards with heavy rough:
+     * Look for elite SG:OTT (distance + accuracy)
+     * Look for strong SG:ARG (recovery ability)
+     * De-emphasize SG:Putt if greens are straightforward
+   - Find players with odds 30-80 who have top-tier stats in the 2-3 most important categories
 
 4. AVOID:
-   - Do NOT pick anyone with odds under 20 unless they have historically DOMINATED this course
+   - Do NOT pick anyone with odds under 20 unless historically dominant here
+   - Do NOT ignore course length - distance matters on long tracks
+   - Do NOT pick players whose strengths don't match course demands
    - Do NOT pick based on world ranking alone
-   - Do NOT pick big names without course fit evidence
 
 YOUR TASK:
 Select exactly 3 VALUE picks where:
 - At least 2 players should have odds ABOVE 30
-- Players must have statistical evidence of course fit
-- Focus on SPECIALISTS who excel in this course's required skills
+- Players must have statistical evidence they excel at THIS COURSE TYPE
+- Match their SG strengths to the specific course characteristics listed above
 - Consider weather conditions in your analysis
 
 Return ONLY valid JSON (no markdown):
 {
-  "courseType": "Brief description of what this course rewards (e.g., 'Desert target golf requiring precise approach play and strong iron game')",
-  "weatherImpact": "How weather affects play today (e.g., 'Light wind favors aggressive play, warm temps help ball flight')",
+  "courseType": "Detailed description: length, what skills it rewards, why (e.g., '7765-yard test of power requiring elite distance off tee, with heavy kikuyu rough demanding strong scrambling')",
+  "weatherImpact": "How today's weather (${weather}) affects strategy and which skills become more important",
+  "keyFactors": ["List 3-4 specific course factors", "that determine success", "based on the characteristics above"],
   "picks": [
     {
       "player": "Player Name",
       "odds": 45.0,
-      "reasoning": "Specific course-fit analysis: which SG stats match this course, why they're undervalued, how weather helps them. 2-3 sentences max."
+      "reasoning": "SPECIFIC course-fit analysis: Match their SG stats to the exact course demands (length, greens, rough, etc.). Explain why they're undervalued given these characteristics. Include numbers. 2-3 sentences max."
     }
   ]
 }
 
-Be specific with numbers. Example: "Ranks #3 in SG: APP (1.2) which is critical for this target-golf layout. At 55-1 odds despite elite approach play, he's severely underpriced for desert conditions."`;
+Be specific with course-stat matchups. Example: "At 7765 yards, this course demands distance. Ranks #2 in SG:OTT (1.4) and #8 in SG:ARG (0.8) - perfect for the heavy kikuyu rough. At 60-1 odds despite being built for this track, massive value."`;
 }
