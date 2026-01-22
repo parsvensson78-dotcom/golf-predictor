@@ -44,29 +44,34 @@ exports.handler = async (event, context) => {
     });
     const oddsData = oddsResponse.data;
 
-    // Step 4: Get BETTER weather info
+    // Step 4: Get weather info using WeatherAPI.com
     let weatherInfo = 'Weather data not available';
     let detailedWeather = null;
     
     try {
       const weatherApiKey = process.env.WEATHER_API_KEY;
       if (weatherApiKey && tournament.location) {
-        const location = tournament.location.split(',')[0].trim();
+        // Parse location - WeatherAPI is good with city names
+        let location = tournament.location.split(',')[0].trim();
         
-        const weatherResponse = await axios.get(`https://api.openweathermap.org/data/2.5/weather`, {
+        // WeatherAPI.com uses a different endpoint structure
+        console.log(`Fetching weather for: ${location} using WeatherAPI.com`);
+        
+        const weatherResponse = await axios.get(`https://api.weatherapi.com/v1/current.json`, {
           params: {
+            key: weatherApiKey,  // Note: 'key' not 'appid'
             q: location,
-            appid: weatherApiKey,
-            units: 'imperial'
+            aqi: 'no'
           },
-          timeout: 5000
+          timeout: 8000
         });
         
-        if (weatherResponse.data) {
-          const temp = Math.round(weatherResponse.data.main.temp);
-          const condition = weatherResponse.data.weather[0].description;
-          const windSpeed = Math.round(weatherResponse.data.wind.speed);
-          const humidity = weatherResponse.data.main.humidity;
+        if (weatherResponse.data && weatherResponse.data.current) {
+          const current = weatherResponse.data.current;
+          const temp = Math.round(current.temp_f);
+          const condition = current.condition.text;
+          const windSpeed = Math.round(current.wind_mph);
+          const humidity = current.humidity;
           
           weatherInfo = `${temp}°F, ${condition}, Wind: ${windSpeed}mph, Humidity: ${humidity}%`;
           
@@ -78,15 +83,29 @@ exports.handler = async (event, context) => {
             impactLevel: windSpeed > 15 ? 'HIGH' : windSpeed > 10 ? 'MODERATE' : 'LOW'
           };
           
-          console.log(`Weather fetched: ${weatherInfo}`);
+          console.log(`Weather fetched successfully: ${weatherInfo}`);
         }
       } else {
-        console.log('Weather API key not configured - using placeholder');
-        weatherInfo = 'Mild conditions, light wind (weather API not configured)';
+        console.log('Weather API key not configured');
+        weatherInfo = 'Weather API key not configured';
       }
     } catch (weatherError) {
-      console.log('Weather fetch failed:', weatherError.message);
-      weatherInfo = 'Mild conditions expected (weather data unavailable)';
+      console.error('Weather fetch failed:', weatherError.message);
+      
+      // Log more details for debugging
+      if (weatherError.response) {
+        console.error('Weather API response status:', weatherError.response.status);
+        console.error('Weather API response data:', weatherError.response.data);
+      }
+      
+      // More informative fallback messages
+      if (weatherError.response?.status === 401) {
+        weatherInfo = `Weather API key invalid - check your WeatherAPI.com key`;
+      } else if (weatherError.response?.status === 400) {
+        weatherInfo = `Location "${tournament.location}" not found by weather service`;
+      } else {
+        weatherInfo = `Weather unavailable (${weatherError.message})`;
+      }
     }
 
     // Step 5: Prepare COMPLETE field data for Claude
@@ -218,6 +237,7 @@ CRITICAL ANALYSIS FRAMEWORK:
      * Pebble Beach (links) = SG: OTT + ARG + Wind play
      * Augusta (target golf) = SG: APP + ARG + Distance
      * TPC Sawgrass (precision) = SG: APP + Putt + Strategy
+     * Desert courses (Emirates, La Quinta) = SG: OTT + Ball striking
 
 2. WEATHER IMPACT:
    - Current weather: ${weather}
@@ -243,8 +263,8 @@ Select exactly 3 VALUE picks where:
 
 Return ONLY valid JSON (no markdown):
 {
-  "courseType": "Brief description of what this course rewards (e.g., 'Target golf requiring precise approach play')",
-  "weatherImpact": "How weather affects play today (e.g., 'Light wind favors aggressive play')",
+  "courseType": "Brief description of what this course rewards (e.g., 'Desert target golf requiring precise approach play and strong iron game')",
+  "weatherImpact": "How weather affects play today (e.g., 'Light wind favors aggressive play, warm temps help ball flight')",
   "picks": [
     {
       "player": "Player Name",
@@ -254,5 +274,5 @@ Return ONLY valid JSON (no markdown):
   ]
 }
 
-Be specific with numbers. Example: "Ranks #3 in SG: APP (1.2) which is critical for this target-golf layout. At 55-1 odds despite elite approach play, he's severely underpriced."`;
+Be specific with numbers. Example: "Ranks #3 in SG: APP (1.2) which is critical for this target-golf layout. At 55-1 odds despite elite approach play, he's severely underpriced for desert conditions."`;
 }
