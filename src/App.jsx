@@ -6,23 +6,30 @@ function App() {
   const [predictions, setPredictions] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [requestId, setRequestId] = useState(0); // Force unique renders
+  const [requestId, setRequestId] = useState(0);
 
   const fetchPredictions = async (selectedTour) => {
     // Increment request ID to force re-render
     const newRequestId = requestId + 1;
     setRequestId(newRequestId);
     
-    // Clear everything immediately and aggressively
+    // Clear everything immediately
     setPredictions(null);
     setError(null);
     setLoading(true);
     
-    // Small delay to ensure state clears
-    await new Promise(resolve => setTimeout(resolve, 50));
-    
     try {
-      const response = await fetch(`/.netlify/functions/get-predictions?tour=${selectedTour}`);
+      // Add cache-busting timestamp to URL
+      const timestamp = new Date().getTime();
+      const response = await fetch(
+        `/.netlify/functions/get-predictions?tour=${selectedTour}&_=${timestamp}`,
+        {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache'
+          }
+        }
+      );
       
       if (!response.ok) {
         const errorData = await response.json();
@@ -30,11 +37,8 @@ function App() {
       }
       
       const data = await response.json();
+      setPredictions(data);
       
-      // Only set predictions if this is still the latest request
-      if (newRequestId === requestId + 1) {
-        setPredictions(data);
-      }
     } catch (err) {
       setError(err.message);
       console.error('Fetch error:', err);
