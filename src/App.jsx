@@ -8,15 +8,17 @@ function App() {
   const [error, setError] = useState(null);
 
   const fetchPredictions = async (selectedTour) => {
-    setLoading(true);
+    // Clear everything first
+    setPredictions(null);
     setError(null);
-    setPredictions(null); // Clear old predictions immediately
+    setLoading(true);
     
     try {
       const response = await fetch(`/.netlify/functions/get-predictions?tour=${selectedTour}`);
       
       if (!response.ok) {
-        throw new Error('Failed to fetch predictions');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to fetch predictions');
       }
       
       const data = await response.json();
@@ -31,8 +33,8 @@ function App() {
 
   const handleTourChange = (newTour) => {
     setTour(newTour);
-    setPredictions(null); // Clear predictions when switching tours
-    setError(null); // Clear any errors
+    setPredictions(null);
+    setError(null);
   };
 
   const handleGetPredictions = () => {
@@ -81,15 +83,15 @@ function App() {
         </div>
       )}
 
-      {error && (
+      {error && !loading && (
         <div className="error">
           <p>❌ {error}</p>
           <button onClick={handleGetPredictions}>Retry</button>
         </div>
       )}
 
-      {predictions && !loading && (
-        <div className="predictions-container">
+      {predictions && !loading && !error && (
+        <div className="predictions-container" key={predictions.generatedAt}>
           <div className="tournament-info">
             <h2>{predictions.tournament.name}</h2>
             <div className="tournament-details">
@@ -98,7 +100,6 @@ function App() {
               <span>🌤️ {predictions.weather}</span>
             </div>
             
-            {/* Course Analysis Section */}
             {predictions.courseAnalysis && (
               <div className="course-analysis">
                 <div className="analysis-item">
@@ -112,8 +113,8 @@ function App() {
           </div>
 
           <div className="picks-grid">
-            {predictions.predictions.map((pick, index) => (
-              <div key={index} className="pick-card">
+            {predictions.predictions && predictions.predictions.map((pick, index) => (
+              <div key={`${predictions.generatedAt}-${index}`} className="pick-card">
                 <div className="pick-header">
                   <span className="pick-number">#{index + 1}</span>
                   <span className="pick-odds">{Math.round(pick.odds)}/1</span>
