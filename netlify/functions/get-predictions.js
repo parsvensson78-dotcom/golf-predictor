@@ -44,44 +44,61 @@ exports.handler = async (event, context) => {
     });
     const oddsData = oddsResponse.data;
 
-    // Step 4: Get weather info using WeatherAPI.com
+    // Step 4: Get weather forecast using WeatherAPI.com
     let weatherInfo = 'Weather data not available';
-    let detailedWeather = null;
+    let dailyForecast = [];
     
     try {
       const weatherApiKey = process.env.WEATHER_API_KEY;
       if (weatherApiKey && tournament.location) {
         let location = tournament.location.split(',')[0].trim();
         
-        console.log(`Fetching weather for: ${location} using WeatherAPI.com`);
+        console.log(`Fetching 4-day weather forecast for: ${location} using WeatherAPI.com`);
         
-        const weatherResponse = await axios.get(`https://api.weatherapi.com/v1/current.json`, {
+        // Fetch 4-day forecast for tournament days (Thursday-Sunday)
+        const weatherResponse = await axios.get(`https://api.weatherapi.com/v1/forecast.json`, {
           params: {
             key: weatherApiKey,
             q: location,
+            days: 4,
             aqi: 'no'
           },
           timeout: 8000
         });
         
-        if (weatherResponse.data && weatherResponse.data.current) {
-          const current = weatherResponse.data.current;
-          const temp = Math.round(current.temp_f);
-          const condition = current.condition.text;
-          const windSpeed = Math.round(current.wind_mph);
-          const humidity = current.humidity;
+        if (weatherResponse.data && weatherResponse.data.forecast) {
+          const forecast = weatherResponse.data.forecast.forecastday;
           
-          weatherInfo = `${temp}°F, ${condition}, Wind: ${windSpeed}mph, Humidity: ${humidity}%`;
+          // Process daily forecasts
+          dailyForecast = forecast.map((day, index) => {
+            const dayNames = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
+            const date = new Date(day.date);
+            const dayName = index < 4 ? dayNames[index] : date.toLocaleDateString('en-US', { weekday: 'long' });
+            
+            return {
+              day: dayName,
+              date: day.date,
+              tempHigh: Math.round(day.day.maxtemp_f),
+              tempLow: Math.round(day.day.mintemp_f),
+              condition: day.day.condition.text,
+              windSpeed: Math.round(day.day.maxwind_mph),
+              chanceOfRain: day.day.daily_chance_of_rain,
+              humidity: day.day.avghumidity
+            };
+          });
           
-          detailedWeather = {
-            temp,
-            condition,
-            windSpeed,
-            humidity,
-            impactLevel: windSpeed > 15 ? 'HIGH' : windSpeed > 10 ? 'MODERATE' : 'LOW'
-          };
+          // Create summary for Claude's analysis
+          const summaries = dailyForecast.map(d => 
+            `${d.day}: ${d.tempHigh}°F, ${d.condition}, Wind: ${d.windSpeed}mph, Rain chance: ${d.chanceOfRain}%`
+          );
+          weatherInfo = summaries.join(' | ');
           
-          console.log(`Weather fetched successfully: ${weatherInfo}`);
+          // Calculate overall conditions
+          const avgWind = Math.round(dailyForecast.reduce((sum, d) => sum + d.windSpeed, 0) / dailyForecast.length);
+          const maxWind = Math.max(...dailyForecast.map(d => d.windSpeed));
+          const highRainDays = dailyForecast.filter(d => d.chanceOfRain > 50).length;
+          
+          console.log(`Forecast fetched: Avg wind ${avgWind}mph, Max wind ${maxWind}mph, ${highRainDays} days with rain risk`);
         }
       } else {
         console.log('Weather API key not configured');
@@ -178,6 +195,7 @@ exports.handler = async (event, context) => {
           tour: tournament.tour
         },
         weather: weatherInfo,
+        dailyForecast: dailyForecast,
         courseInfo: courseInfo,
         courseAnalysis: {
           type: predictions.courseType || 'Analysis not available',
