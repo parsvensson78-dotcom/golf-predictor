@@ -121,61 +121,99 @@ function App() {
           {/* ENHANCED COURSE INFORMATION SECTION */}
           {predictions.courseInfo && (
             <div className="course-details-card">
-              <h3>⛳ Course Details</h3>
-              <div className="course-stats-grid">
-                {predictions.courseInfo.yardage && (
-                  <div className="course-stat">
-                    <span className="stat-label">Length:</span>
-                    <span className="stat-value">{predictions.courseInfo.yardage} yards</span>
-                  </div>
-                )}
-                <div className="course-stat">
-                  <span className="stat-label">Par:</span>
-                  <span className="stat-value">{predictions.courseInfo.par}</span>
-                </div>
-                {predictions.courseInfo.avgScore && (
-                  <div className="course-stat">
-                    <span className="stat-label">Tour Avg:</span>
-                    <span className="stat-value">{predictions.courseInfo.avgScore}</span>
-                  </div>
-                )}
+              <div className="course-header-section">
+                <h3>⛳ Course Profile: {predictions.courseInfo.name}</h3>
                 {predictions.courseInfo.difficulty && (
-                  <div className="course-stat">
-                    <span className="stat-label">Difficulty:</span>
-                    <span className="stat-value">{predictions.courseInfo.difficulty}</span>
-                  </div>
+                  <span className="difficulty-badge">{predictions.courseInfo.difficulty}</span>
                 )}
               </div>
 
-              <div className="course-characteristics">
-                <div className="characteristic">
-                  <strong>Fairways:</strong> {predictions.courseInfo.width}
+              <div className="course-overview">
+                <h4>📏 Course Specifications</h4>
+                <div className="course-stats-grid">
+                  {predictions.courseInfo.yardage && (
+                    <div className="course-stat highlight">
+                      <span className="stat-label">Total Length</span>
+                      <span className="stat-value">{predictions.courseInfo.yardage.toLocaleString()}</span>
+                      <span className="stat-unit">yards</span>
+                    </div>
+                  )}
+                  <div className="course-stat">
+                    <span className="stat-label">Par</span>
+                    <span className="stat-value">{predictions.courseInfo.par}</span>
+                    <span className="stat-unit">strokes</span>
+                  </div>
+                  {predictions.courseInfo.avgScore && (
+                    <div className="course-stat">
+                      <span className="stat-label">Tour Average</span>
+                      <span className="stat-value">{predictions.courseInfo.avgScore}</span>
+                      <span className="stat-unit">strokes</span>
+                    </div>
+                  )}
+                  {predictions.courseInfo.avgScore && predictions.courseInfo.par && (
+                    <div className="course-stat">
+                      <span className="stat-label">Scoring Margin</span>
+                      <span className="stat-value">
+                        {(predictions.courseInfo.avgScore - predictions.courseInfo.par) > 0 ? '+' : ''}
+                        {(predictions.courseInfo.avgScore - predictions.courseInfo.par).toFixed(1)}
+                      </span>
+                      <span className="stat-unit">vs par</span>
+                    </div>
+                  )}
                 </div>
-                <div className="characteristic">
-                  <strong>Greens:</strong> {predictions.courseInfo.greens}
-                </div>
-                <div className="characteristic">
-                  <strong>Rough:</strong> {predictions.courseInfo.rough}
+              </div>
+
+              <div className="course-characteristics-detailed">
+                <h4>🏌️ Course Characteristics</h4>
+                <div className="characteristics-grid">
+                  <div className="characteristic-card">
+                    <div className="char-icon">🎯</div>
+                    <div className="char-content">
+                      <strong>Fairways</strong>
+                      <p>{predictions.courseInfo.width}</p>
+                    </div>
+                  </div>
+                  <div className="characteristic-card">
+                    <div className="char-icon">🟢</div>
+                    <div className="char-content">
+                      <strong>Greens</strong>
+                      <p>{predictions.courseInfo.greens}</p>
+                    </div>
+                  </div>
+                  <div className="characteristic-card">
+                    <div className="char-icon">🌿</div>
+                    <div className="char-content">
+                      <strong>Rough</strong>
+                      <p>{predictions.courseInfo.rough}</p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
               {predictions.courseInfo.keyFeatures && predictions.courseInfo.keyFeatures.length > 0 && (
-                <div className="key-features">
-                  <strong>Key Features:</strong>
-                  <ul>
+                <div className="key-features-detailed">
+                  <h4>⭐ Signature Course Features</h4>
+                  <div className="features-grid">
                     {predictions.courseInfo.keyFeatures.map((feature, idx) => (
-                      <li key={idx}>{feature}</li>
+                      <div key={idx} className="feature-item">
+                        <span className="feature-bullet">⛳</span>
+                        <span className="feature-text">{feature}</span>
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 </div>
               )}
 
               {predictions.courseInfo.rewards && predictions.courseInfo.rewards.length > 0 && (
-                <div className="rewards-skills">
-                  <strong>Skills Rewarded:</strong>
+                <div className="rewards-skills-detailed">
+                  <h4>💪 Critical Skills for Success</h4>
+                  <p className="skills-intro">This course rewards players who excel in:</p>
                   <div className="skills-tags">
                     {predictions.courseInfo.rewards.map((skill, idx) => (
-                      <span key={idx} className="skill-tag">{skill}</span>
+                      <span key={idx} className="skill-tag-enhanced">
+                        <span className="skill-number">{idx + 1}</span>
+                        {skill}
+                      </span>
                     ))}
                   </div>
                 </div>
