@@ -114,8 +114,37 @@ function App() {
             <div className="tournament-details">
               <span>📍 {predictions.tournament.course}</span>
               <span>📅 {predictions.tournament.dates}</span>
-              <span>🌤️ {predictions.weather}</span>
             </div>
+
+            {/* DAILY WEATHER FORECAST */}
+            {predictions.dailyForecast && predictions.dailyForecast.length > 0 && (
+              <div className="weather-forecast-section">
+                <h3>🌤️ Tournament Week Forecast</h3>
+                <div className="daily-forecast-grid">
+                  {predictions.dailyForecast.map((day, index) => (
+                    <div key={index} className="forecast-day-card">
+                      <div className="forecast-day-name">{day.day}</div>
+                      <div className="forecast-temp">
+                        <span className="temp-high">{day.tempHigh}°</span>
+                        <span className="temp-divider">/</span>
+                        <span className="temp-low">{day.tempLow}°</span>
+                      </div>
+                      <div className="forecast-condition">{day.condition}</div>
+                      <div className="forecast-details">
+                        <span className="forecast-wind">
+                          💨 {day.windSpeed}mph
+                        </span>
+                        {day.chanceOfRain > 30 && (
+                          <span className="forecast-rain">
+                            🌧️ {day.chanceOfRain}%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ENHANCED COURSE INFORMATION SECTION */}
