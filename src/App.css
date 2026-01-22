@@ -1,3 +1,5 @@
+/* Enhanced App.css with Course Details Styling */
+
 * {
   margin: 0;
   padding: 0;
@@ -5,70 +7,63 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background: #0A0A0A;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
   min-height: 100vh;
-  color: #ffffff;
+  padding: 20px;
 }
 
 .app {
-  max-width: 1400px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 40px 20px;
 }
 
-/* Header Section */
+/* Header */
 .header {
   text-align: center;
   color: white;
-  margin-bottom: 60px;
-  padding: 60px 20px 40px;
-  background: linear-gradient(135deg, rgba(82,196,26,0.15) 0%, rgba(82,196,26,0.05) 100%);
-  border-radius: 20px;
+  margin-bottom: 30px;
 }
 
 .header h1 {
-  font-size: 3.5em;
-  margin-bottom: 15px;
-  font-weight: 700;
-  letter-spacing: -1px;
+  font-size: 2.5rem;
+  margin-bottom: 10px;
 }
 
 .subtitle {
-  font-size: 1.1em;
-  opacity: 0.75;
-  font-weight: 400;
-  letter-spacing: 0.5px;
+  font-size: 1.1rem;
+  opacity: 0.9;
 }
 
 /* Tour Selector */
 .tour-selector {
   display: flex;
+  gap: 15px;
   justify-content: center;
-  gap: 20px;
-  margin-bottom: 40px;
+  margin-bottom: 20px;
 }
 
 .tour-btn {
-  padding: 16px 40px;
-  font-size: 1.1em;
-  font-weight: 600;
-  border: 2px solid rgba(255,255,255,0.2);
-  background: rgba(255,255,255,0.05);
+  padding: 12px 30px;
+  font-size: 1rem;
+  border: 2px solid white;
+  background: transparent;
   color: white;
-  border-radius: 12px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  backdrop-filter: blur(10px);
-  letter-spacing: 0.5px;
+  transition: all 0.3s;
+  font-weight: 600;
 }
 
 .tour-btn:hover:not(:disabled) {
-  background: rgba(255,255,255,0.1);
-  border-color: rgba(82,196,26,0.5);
+  background: white;
+  color: #1e3c72;
   transform: translateY(-2px);
+}
+
+.tour-btn.active {
+  background: white;
+  color: #1e3c72;
 }
 
 .tour-btn:disabled {
@@ -76,88 +71,53 @@ body {
   cursor: not-allowed;
 }
 
-.tour-btn.active {
-  background: #52C41A;
-  color: white;
-  border-color: #52C41A;
-  box-shadow: 0 8px 20px rgba(82,196,26,0.3);
-}
-
-/* Action Section - GET PREDICTIONS BUTTON */
+/* Action Button */
 .action-section {
-  display: flex;
-  justify-content: center;
-  margin: 0 auto 50px;
-  max-width: 600px;
-  padding: 0 20px;
+  text-align: center;
+  margin-bottom: 30px;
 }
 
 .get-predictions-btn {
-  width: 100%;
-  padding: 22px 50px;
-  font-size: 1.3em;
-  font-weight: 700;
-  background: linear-gradient(135deg, #52C41A 0%, #73d13d 100%);
+  padding: 15px 50px;
+  font-size: 1.2rem;
+  background: #4CAF50;
   color: white;
   border: none;
-  border-radius: 16px;
+  border-radius: 10px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 10px 30px rgba(82,196,26,0.4);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  position: relative;
-  overflow: hidden;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.get-predictions-btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-  transition: left 0.5s;
-}
-
-.get-predictions-btn:hover:not(:disabled)::before {
-  left: 100%;
+  font-weight: bold;
+  transition: all 0.3s;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
 }
 
 .get-predictions-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #45a616 0%, #5fd126 100%);
-  transform: translateY(-3px);
-  box-shadow: 0 15px 40px rgba(82,196,26,0.5);
+  background: #45a049;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
 }
 
 .get-predictions-btn:disabled {
-  opacity: 0.7;
+  background: #cccccc;
   cursor: not-allowed;
-  transform: none;
 }
 
-.get-predictions-btn:active:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 25px rgba(82,196,26,0.4);
-}
-
-/* Loading State */
+/* Loading */
 .loading {
   text-align: center;
-  padding: 80px 20px;
-  color: white;
+  padding: 40px;
+  background: white;
+  border-radius: 15px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.2);
 }
 
 .spinner {
   width: 50px;
   height: 50px;
-  border: 4px solid rgba(255,255,255,0.1);
-  border-top: 4px solid #52C41A;
+  border: 5px solid #f3f3f3;
+  border-top: 5px solid #2a5298;
   border-radius: 50%;
   animation: spin 1s linear infinite;
-  margin: 0 auto 25px;
+  margin: 0 auto 20px;
 }
 
 @keyframes spin {
@@ -166,235 +126,378 @@ body {
 }
 
 .loading-subtext {
-  font-size: 0.95em;
-  opacity: 0.6;
-  margin-top: 15px;
-  font-weight: 400;
+  color: #666;
+  font-size: 0.9rem;
+  margin-top: 10px;
 }
 
-/* Error State */
+/* Error */
 .error {
-  background: rgba(255,59,48,0.1);
-  border: 1px solid rgba(255,59,48,0.3);
-  padding: 30px;
-  border-radius: 15px;
+  background: #ffebee;
+  color: #c62828;
+  padding: 20px;
+  border-radius: 10px;
   text-align: center;
-  color: #ff6b6b;
-  max-width: 500px;
-  margin: 0 auto;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
 }
 
 .error button {
-  margin-top: 20px;
-  padding: 12px 30px;
-  background: #52C41A;
+  margin-top: 15px;
+  padding: 10px 25px;
+  background: #c62828;
   color: white;
   border: none;
-  border-radius: 10px;
+  border-radius: 5px;
   cursor: pointer;
-  font-size: 1em;
   font-weight: 600;
-  transition: all 0.3s ease;
-}
-
-.error button:hover {
-  background: #45a616;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 15px rgba(82,196,26,0.3);
 }
 
 /* Predictions Container */
 .predictions-container {
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 20px;
-  padding: 40px;
-  backdrop-filter: blur(10px);
+  background: white;
+  border-radius: 15px;
+  padding: 30px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.2);
 }
 
 /* Tournament Info */
 .tournament-info {
-  text-align: center;
-  margin-bottom: 50px;
-  padding-bottom: 30px;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  margin-bottom: 25px;
+  padding-bottom: 20px;
+  border-bottom: 2px solid #e0e0e0;
 }
 
 .tournament-info h2 {
-  color: #ffffff;
-  font-size: 2.5em;
-  margin-bottom: 20px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
+  color: #1e3c72;
+  margin-bottom: 15px;
+  font-size: 1.8rem;
 }
 
 .tournament-details {
   display: flex;
-  justify-content: center;
-  gap: 40px;
   flex-wrap: wrap;
-  color: rgba(255,255,255,0.7);
-  font-size: 1em;
-  font-weight: 500;
+  gap: 20px;
+  font-size: 1rem;
+  color: #666;
 }
 
 .tournament-details span {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
 }
 
-/* Course Analysis Section */
-.course-analysis {
-  margin-top: 25px;
-  padding: 20px;
-  background: rgba(82,196,26,0.1);
-  border: 1px solid rgba(82,196,26,0.2);
+/* ENHANCED: Course Details Card */
+.course-details-card {
+  background: linear-gradient(135deg, #f5f7fa 0%, #e8f0f7 100%);
   border-radius: 12px;
-  text-align: left;
+  padding: 25px;
+  margin-bottom: 25px;
+  border: 2px solid #2a5298;
 }
 
-.analysis-item {
-  margin: 10px 0;
-  font-size: 0.95em;
-  line-height: 1.6;
+.course-details-card h3 {
+  color: #1e3c72;
+  margin-bottom: 20px;
+  font-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.analysis-item strong {
-  color: #52C41A;
+.course-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.course-stat {
+  background: white;
+  padding: 12px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.stat-label {
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 5px;
+  font-weight: 500;
+}
+
+.stat-value {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #1e3c72;
+}
+
+.course-characteristics {
+  background: white;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+}
+
+.characteristic {
+  padding: 8px 0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.characteristic:last-child {
+  border-bottom: none;
+}
+
+.characteristic strong {
+  color: #1e3c72;
   margin-right: 8px;
 }
 
-/* Picks Grid */
+.key-features {
+  background: white;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+}
+
+.key-features strong {
+  color: #1e3c72;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.key-features ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.key-features li {
+  padding: 6px 0;
+  padding-left: 20px;
+  position: relative;
+}
+
+.key-features li:before {
+  content: "⛳";
+  position: absolute;
+  left: 0;
+}
+
+.rewards-skills {
+  background: white;
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.rewards-skills strong {
+  color: #1e3c72;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.skills-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.skill-tag {
+  background: #4CAF50;
+  color: white;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* Course Analysis */
+.course-analysis {
+  background: #fff8e1;
+  border-left: 4px solid #ffa000;
+  padding: 20px;
+  margin-bottom: 25px;
+  border-radius: 8px;
+}
+
+.course-analysis h3 {
+  color: #1e3c72;
+  margin-bottom: 15px;
+  font-size: 1.3rem;
+}
+
+.analysis-item {
+  margin-bottom: 15px;
+  line-height: 1.6;
+}
+
+.analysis-item:last-child {
+  margin-bottom: 0;
+}
+
+.analysis-item strong {
+  color: #1e3c72;
+  display: block;
+  margin-bottom: 5px;
+}
+
+.factors-list {
+  margin-top: 10px;
+  padding-left: 20px;
+}
+
+.factors-list li {
+  margin: 6px 0;
+  color: #333;
+}
+
+/* Picks Section */
+.picks-section h3 {
+  color: #1e3c72;
+  margin-bottom: 20px;
+  font-size: 1.5rem;
+}
+
 .picks-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 30px;
-  margin-bottom: 40px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  margin-bottom: 25px;
 }
 
-/* Pick Card */
 .pick-card {
-  background: linear-gradient(135deg, rgba(82,196,26,0.15) 0%, rgba(82,196,26,0.05) 100%);
-  border: 1px solid rgba(82,196,26,0.2);
-  color: white;
-  border-radius: 16px;
-  padding: 30px;
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-.pick-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: linear-gradient(90deg, #52C41A 0%, #73d13d 100%);
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  transition: transform 0.3s, box-shadow 0.3s;
+  border: 2px solid #e0e0e0;
 }
 
 .pick-card:hover {
   transform: translateY(-5px);
-  box-shadow: 0 15px 35px rgba(82,196,26,0.2);
-  border-color: rgba(82,196,26,0.4);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+  border-color: #4CAF50;
 }
 
 .pick-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 15px;
 }
 
 .pick-number {
-  font-size: 1.3em;
-  font-weight: 700;
-  background: rgba(255,255,255,0.1);
-  padding: 8px 18px;
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.2);
+  background: #4CAF50;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-weight: bold;
+  font-size: 0.9rem;
 }
 
 .pick-odds {
-  font-size: 2em;
-  font-weight: 700;
-  background: #52C41A;
-  padding: 8px 20px;
-  border-radius: 10px;
-  box-shadow: 0 4px 12px rgba(82,196,26,0.3);
+  background: #1e3c72;
+  color: white;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-weight: bold;
+  font-size: 1rem;
 }
 
 .pick-name {
-  font-size: 1.9em;
-  margin-bottom: 18px;
+  color: #1e3c72;
+  font-size: 1.4rem;
+  margin-bottom: 12px;
   font-weight: 700;
-  letter-spacing: -0.5px;
 }
 
 .pick-reasoning {
-  font-size: 1.05em;
-  line-height: 1.7;
-  opacity: 0.9;
-  font-weight: 400;
+  color: #333;
+  line-height: 1.6;
+  font-size: 0.95rem;
 }
 
-/* Footer Info */
+/* Footer */
 .footer-info {
   text-align: center;
-  padding-top: 30px;
-  border-top: 1px solid rgba(255,255,255,0.1);
-  color: rgba(255,255,255,0.5);
-  font-size: 0.9em;
+  padding-top: 20px;
+  border-top: 2px solid #e0e0e0;
+  color: #666;
+  font-size: 0.9rem;
 }
 
-.footer-info p {
-  margin: 8px 0;
-  font-weight: 400;
+.generated-time {
+  margin-bottom: 5px;
 }
 
 .token-usage {
-  opacity: 0.7;
+  font-size: 0.85rem;
+  color: #999;
 }
 
 /* Responsive Design */
 @media (max-width: 768px) {
   .header h1 {
-    font-size: 2.2em;
+    font-size: 2rem;
   }
   
-  .tournament-info h2 {
-    font-size: 1.8em;
+  .subtitle {
+    font-size: 1rem;
+  }
+  
+  .tour-selector {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .tour-btn {
+    width: 100%;
+  }
+  
+  .get-predictions-btn {
+    width: 100%;
+    padding: 15px;
+  }
+  
+  .course-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
   
   .picks-grid {
     grid-template-columns: 1fr;
   }
   
+  .predictions-container {
+    padding: 20px;
+  }
+  
   .tournament-details {
     flex-direction: column;
-    gap: 15px;
+    gap: 10px;
   }
+}
 
-  .tour-selector {
+@media (max-width: 480px) {
+  body {
+    padding: 10px;
+  }
+  
+  .header h1 {
+    font-size: 1.6rem;
+  }
+  
+  .course-stats-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .skills-tags {
     flex-direction: column;
-    max-width: 300px;
-    margin-left: auto;
-    margin-right: auto;
   }
-
-  .tour-btn {
-    width: 100%;
-  }
-
-  .get-predictions-btn {
-    padding: 20px 40px;
-    font-size: 1.2em;
-    min-height: 65px;
-  }
-
-  .action-section {
-    max-width: 100%;
+  
+  .skill-tag {
+    text-align: center;
   }
 }
