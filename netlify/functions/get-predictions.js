@@ -157,7 +157,7 @@ exports.handler = async (event, context) => {
 
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 3500,
+      max_tokens: 4000,
       temperature: 0.3,
       messages: [{
         role: 'user',
@@ -863,13 +863,13 @@ IMPORTANT: If course details say "Analyze" or are generic, YOU MUST research and
 
 COMPLETE FIELD (${players.length} players):
 
-TOP FAVORITES (odds 5-25) - GENERALLY AVOID UNLESS EXCEPTIONAL VALUE:
+TOP FAVORITES (odds 5-20) - SKIP THESE - TOO SHORT FOR VALUE:
 ${favorites.map(p => `${p.name} [${p.odds}] - Rank:${p.rank||'?'} | SG:${p.sgTotal} (OTT:${p.sgOTT} APP:${p.sgAPP} ARG:${p.sgARG} Putt:${p.sgPutt})`).join('\n')}
 
-MID-TIER VALUE ZONE (odds 25-100) - FOCUS HERE:
+VALUE ZONE (odds 20-100) - FOCUS HERE FOR MOST PICKS:
 ${midTier.map(p => `${p.name} [${p.odds}] - Rank:${p.rank||'?'} | SG:${p.sgTotal} (OTT:${p.sgOTT} APP:${p.sgAPP} ARG:${p.sgARG} Putt:${p.sgPutt})`).join('\n')}
 
-LONGSHOTS (odds 100+) - CONSIDER IF COURSE FIT IS EXCELLENT:
+LONGSHOTS (odds 100+) - CONSIDER 1-2 IF COURSE FIT IS EXCEPTIONAL:
 ${longshots.map(p => `${p.name} [${p.odds}] - Rank:${p.rank||'?'} | SG:${p.sgTotal} (OTT:${p.sgOTT} APP:${p.sgAPP} ARG:${p.sgARG} Putt:${p.sgPutt})`).join('\n')}
 
 CRITICAL ANALYSIS FRAMEWORK:
@@ -907,18 +907,20 @@ CRITICAL ANALYSIS FRAMEWORK:
    - Find players with odds 30-80 who have top-tier stats in the 2-3 most important categories
 
 4. AVOID:
-   - Do NOT pick anyone with odds under 20 unless historically dominant here
+   - Do NOT pick anyone with odds under 20/1 - we're looking for VALUE, not favorites
    - Do NOT ignore course length - distance matters on long tracks
    - Do NOT pick players whose strengths don't match course demands
    - Do NOT pick based on world ranking alone
+   - Do NOT pick big-name players just because they're popular - focus on course fit
 
 YOUR TASK:
-Select exactly 5 VALUE picks where:
-- At least 3 players should have odds ABOVE 30
+Select exactly 6 VALUE picks where:
+- ALL players should have odds of 20/1 or higher
+- At least 4 players should have odds ABOVE 40/1
 - Players must have statistical evidence they excel at THIS COURSE TYPE
 - Match their SG strengths to the specific course characteristics listed above
 - Consider weather conditions in your analysis
-- Provide a range of odds - include some mid-tier (30-60) and some longshots (60-150)
+- Provide a range of odds: some at 20-40/1 (shorter value), some at 40-80/1 (mid-range value), and some at 80-150/1 (longshots)
 
 Return ONLY valid JSON (no markdown):
 {
