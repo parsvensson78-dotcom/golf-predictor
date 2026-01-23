@@ -13,7 +13,35 @@ exports.handler = async (event, context) => {
     console.log(`[ODDS] Starting fetch for: ${tournamentName}`);
     console.log(`[ODDS] Looking for ${players.length} players`);
 
-    // Determine Oddschecker URL
+    // STEP 1: Load pre-tournament cached odds (from Wednesday)
+    let preTournamentOdds = [];
+    let preTournamentDate = null;
+    
+    try {
+      const fs = require('fs').promises;
+      const cacheFile = '/tmp/odds-cache/pre-tournament-odds.json';
+      const cacheData = await fs.readFile(cacheFile, 'utf8');
+      const cached = JSON.parse(cacheData);
+      
+      console.log(`[ODDS] Found cached pre-tournament odds for: ${cached.tournament}`);
+      console.log(`[ODDS] Cached on: ${cached.fetchedAt}`);
+      
+      // Check if cached tournament matches current tournament
+      const tournamentMatch = cached.tournament.toLowerCase().includes(tournamentName.toLowerCase().split(' ')[0]) ||
+                             tournamentName.toLowerCase().includes(cached.tournament.toLowerCase().split(' ')[0]);
+      
+      if (tournamentMatch) {
+        preTournamentOdds = cached.odds || [];
+        preTournamentDate = cached.fetchedAt;
+        console.log(`[ODDS] Loaded ${preTournamentOdds.length} pre-tournament odds`);
+      } else {
+        console.log(`[ODDS] Cached tournament doesn't match current tournament`);
+      }
+    } catch (cacheError) {
+      console.log(`[ODDS] No pre-tournament cache available: ${cacheError.message}`);
+    }
+
+    // STEP 2: Fetch current/live odds from Oddschecker
     const oddsCheckerUrl = getOddsCheckerUrl(tournamentName);
     console.log(`[ODDS] Oddschecker URL: ${oddsCheckerUrl}`);
 
@@ -116,43 +144,77 @@ exports.handler = async (event, context) => {
       console.log('[ODDS] Returning empty odds data due to scraping failure');
     }
 
-    // Match players from request with scraped odds
+    // Match players from request with both live and pre-tournament odds
     const matchedOdds = players.map(requestedPlayer => {
-      // Try exact match
-      let match = oddsData.find(o => 
+      // Find live odds match
+      let liveMatch = oddsData.find(o => 
         normalizePlayerName(o.player) === normalizePlayerName(requestedPlayer)
       );
 
-      // Try partial match
-      if (!match) {
-        match = oddsData.find(o => {
+      if (!liveMatch) {
+        liveMatch = oddsData.find(o => {
           const normalized = normalizePlayerName(o.player);
           const requested = normalizePlayerName(requestedPlayer);
           return normalized.includes(requested) || requested.includes(normalized);
         });
       }
 
-      if (match) {
-        return {
-          player: requestedPlayer,
-          odds: match.odds,
-          minOdds: match.minOdds,
-          maxOdds: match.maxOdds,
-          bookmakerCount: match.bookmakerCount,
-          source: 'Oddschecker'
-        };
-      } else {
-        // Return null odds if not found, but don't fail
-        return {
-          player: requestedPlayer,
-          odds: null,
-          source: 'Not found on Oddschecker'
-        };
+      // Find pre-tournament odds match
+      let preMatch = preTournamentOdds.find(o =>
+        normalizePlayerName(o.player) === normalizePlayerName(requestedPlayer)
+      );
+
+      if (!preMatch) {
+        preMatch = preTournamentOdds.find(o => {
+          const normalized = normalizePlayerName(o.player);
+          const requested = normalizePlayerName(requestedPlayer);
+          return normalized.includes(requested) || requested.includes(normalized);
+        });
       }
+
+      // Build response object
+      const result = {
+        player: requestedPlayer,
+        odds: liveMatch?.odds || null,
+        minOdds: liveMatch?.minOdds || null,
+        maxOdds: liveMatch?.maxOdds || null,
+        bookmakerCount: liveMatch?.bookmakerCount || 0,
+        source: liveMatch ? 'Oddschecker (Live)' : 'Not found'
+      };
+
+      // Add pre-tournament data if available
+      if (preMatch) {
+        result.preTournamentOdds = preMatch.odds;
+        result.preTournamentDate = preTournamentDate;
+        
+        // Calculate movement if both odds available
+        if (liveMatch && preMatch) {
+          const diff = liveMatch.odds - preMatch.odds;
+          result.oddsMovement = Math.round(diff * 10) / 10;
+          
+          if (diff < -0.5) {
+            result.movementDirection = 'shortened'; // More popular
+            result.movementEmoji = '📉';
+          } else if (diff > 0.5) {
+            result.movementDirection = 'lengthened'; // Less popular
+            result.movementEmoji = '📈';
+          } else {
+            result.movementDirection = 'stable';
+            result.movementEmoji = '➡️';
+          }
+          
+          result.movementPercentage = Math.round((diff / preMatch.odds) * 100);
+        }
+      }
+
+      return result;
     });
 
     const foundCount = matchedOdds.filter(o => o.odds !== null).length;
-    console.log(`[ODDS] Final result: Matched ${foundCount}/${players.length} players`);
+    const withPreOdds = matchedOdds.filter(o => o.preTournamentOdds).length;
+    
+    console.log(`[ODDS] Final result: Matched ${foundCount}/${players.length} live odds`);
+    console.log(`[ODDS] Pre-tournament odds available for ${withPreOdds} players`);
 
     return {
       statusCode: 200,
