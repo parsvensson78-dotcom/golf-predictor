@@ -71,6 +71,43 @@ body {
   cursor: not-allowed;
 }
 
+/* Tab Selector */
+.tab-selector {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.tab-btn {
+  padding: 12px 30px;
+  font-size: 1rem;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s;
+  font-weight: 600;
+}
+
+.tab-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: white;
+  transform: translateY(-2px);
+}
+
+.tab-btn.active {
+  background: white;
+  color: #1e3c72;
+  border-color: white;
+}
+
+.tab-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Action Button */
 .action-section {
   text-align: center;
@@ -722,12 +759,323 @@ body {
 }
 
 .generated-time {
-  margin-bottom: 5px;
+  margin-bottom: 10px;
+  font-weight: 500;
 }
 
-.token-usage {
+.api-usage-info {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.token-info,
+.cost-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f8f9fa;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.token-label,
+.cost-label {
+  color: #666;
   font-size: 0.85rem;
+}
+
+.token-value,
+.cost-value {
+  font-weight: bold;
+  color: #1e3c72;
+  font-size: 0.95rem;
+}
+
+.token-breakdown {
   color: #999;
+  font-size: 0.8rem;
+  margin-left: 4px;
+}
+
+.cost-value {
+  color: #4CAF50;
+  font-size: 1rem;
+}
+
+/* ========== NEWS & PREVIEW STYLES ========== */
+
+.news-preview-container {
+  background: white;
+  border-radius: 15px;
+  padding: 30px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+}
+
+/* AI Preview Section */
+.ai-preview-section {
+  margin-bottom: 30px;
+}
+
+.ai-preview-section h3 {
+  color: #1e3c72;
+  font-size: 1.8rem;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.preview-overview {
+  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 25px;
+  border-left: 5px solid #2196F3;
+}
+
+.preview-overview p {
+  font-size: 1.1rem;
+  line-height: 1.8;
+  color: #333;
+  margin: 0;
+}
+
+/* Storylines */
+.storylines-section {
+  margin-bottom: 30px;
+}
+
+.storylines-section h4 {
+  color: #1e3c72;
+  font-size: 1.4rem;
+  margin-bottom: 15px;
+}
+
+.storylines-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 15px;
+}
+
+.storyline-card {
+  background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
+  padding: 15px;
+  border-radius: 10px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  border-left: 4px solid #ffa000;
+  transition: transform 0.3s;
+}
+
+.storyline-card:hover {
+  transform: translateX(5px);
+}
+
+.storyline-number {
+  background: #ffa000;
+  color: white;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.storyline-text {
+  margin: 0;
+  color: #333;
+  line-height: 1.5;
+  font-size: 0.95rem;
+}
+
+/* Players to Watch */
+.players-watch-section {
+  margin-bottom: 30px;
+}
+
+.players-watch-section h4 {
+  color: #1e3c72;
+  font-size: 1.4rem;
+  margin-bottom: 15px;
+}
+
+.players-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.player-watch-card {
+  background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
+  padding: 20px;
+  border-radius: 12px;
+  border: 2px solid #9c27b0;
+  transition: all 0.3s;
+}
+
+.player-watch-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 20px rgba(156, 39, 176, 0.3);
+}
+
+.player-watch-card h5 {
+  color: #6a1b9a;
+  font-size: 1.2rem;
+  margin-bottom: 10px;
+  margin-top: 0;
+}
+
+.player-watch-card p {
+  margin: 0;
+  color: #333;
+  line-height: 1.6;
+  font-size: 0.95rem;
+}
+
+/* Betting Angles */
+.betting-angles-section {
+  margin-bottom: 30px;
+}
+
+.betting-angles-section h4 {
+  color: #1e3c72;
+  font-size: 1.4rem;
+  margin-bottom: 15px;
+}
+
+.betting-angles-list {
+  display: grid;
+  gap: 12px;
+}
+
+.betting-angle-item {
+  background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+  padding: 15px;
+  border-radius: 10px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  border-left: 4px solid #4CAF50;
+}
+
+.angle-bullet {
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+
+.betting-angle-item p {
+  margin: 0;
+  color: #333;
+  line-height: 1.6;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+/* Weather Impact */
+.weather-impact-section {
+  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+  padding: 20px;
+  border-radius: 12px;
+  border-left: 5px solid #ff9800;
+  margin-bottom: 30px;
+}
+
+.weather-impact-section h4 {
+  color: #e65100;
+  font-size: 1.2rem;
+  margin-bottom: 10px;
+  margin-top: 0;
+}
+
+.weather-impact-section p {
+  margin: 0;
+  color: #333;
+  line-height: 1.6;
+  font-size: 1rem;
+}
+
+/* News Articles */
+.news-articles-section {
+  margin-bottom: 30px;
+}
+
+.news-articles-section h3 {
+  color: #1e3c72;
+  font-size: 1.8rem;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.news-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.news-article-card {
+  background: white;
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 20px;
+  transition: all 0.3s;
+}
+
+.news-article-card:hover {
+  border-color: #2196F3;
+  box-shadow: 0 6px 20px rgba(33, 150, 243, 0.2);
+  transform: translateY(-3px);
+}
+
+.article-source {
+  background: #2196F3;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: bold;
+  padding: 4px 10px;
+  border-radius: 4px;
+  display: inline-block;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+.article-title {
+  margin: 0 0 12px 0;
+  font-size: 1.1rem;
+  line-height: 1.4;
+}
+
+.article-title a {
+  color: #1e3c72;
+  text-decoration: none;
+  transition: color 0.3s;
+}
+
+.article-title a:hover {
+  color: #2196F3;
+  text-decoration: underline;
+}
+
+.article-description {
+  color: #666;
+  line-height: 1.6;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.article-date {
+  color: #999;
+  font-size: 0.85rem;
+  font-style: italic;
 }
 
 /* Responsive Design */
@@ -748,6 +1096,15 @@ body {
   .tour-btn {
     width: 100%;
   }
+
+  .tab-selector {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .tab-btn {
+    width: 100%;
+  }
   
   .get-predictions-btn {
     width: 100%;
@@ -756,6 +1113,18 @@ body {
   
   .daily-forecast-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .storylines-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .players-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .news-grid {
+    grid-template-columns: 1fr;
   }
   
   .course-header-section {
@@ -781,6 +1150,10 @@ body {
   }
   
   .predictions-container {
+    padding: 20px;
+  }
+
+  .news-preview-container {
     padding: 20px;
   }
   
@@ -809,6 +1182,16 @@ body {
   
   .forecast-day-card {
     padding: 12px;
+  }
+  
+  .api-usage-info {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .token-info,
+  .cost-info {
+    justify-content: center;
   }
   
   .course-header-section h3 {
