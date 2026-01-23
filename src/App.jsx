@@ -3,7 +3,9 @@ import './App.css';
 
 function App() {
   const [tour, setTour] = useState('pga');
+  const [activeTab, setActiveTab] = useState('predictions'); // 'predictions' or 'news'
   const [predictions, setPredictions] = useState(null);
+  const [newsPreview, setNewsPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [requestId, setRequestId] = useState(0);
@@ -47,15 +49,56 @@ function App() {
     }
   };
 
+  const fetchNewsPreview = async (selectedTour) => {
+    const newRequestId = requestId + 1;
+    setRequestId(newRequestId);
+    
+    setNewsPreview(null);
+    setError(null);
+    setLoading(true);
+    
+    try {
+      const timestamp = new Date().getTime();
+      const response = await fetch(
+        `/.netlify/functions/get-tournament-news?tour=${selectedTour}&_=${timestamp}`,
+        {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache'
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to fetch news');
+      }
+      
+      const data = await response.json();
+      setNewsPreview(data);
+      
+    } catch (err) {
+      setError(err.message);
+      console.error('Fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleTourChange = (newTour) => {
     setTour(newTour);
     setPredictions(null);
+    setNewsPreview(null);
     setError(null);
     setRequestId(requestId + 1);
   };
 
   const handleGetPredictions = () => {
     fetchPredictions(tour);
+  };
+
+  const handleGetNews = () => {
+    fetchNewsPreview(tour);
   };
 
   return (
@@ -82,14 +125,41 @@ function App() {
         </button>
       </div>
 
-      <div className="action-section">
+      <div className="tab-selector">
         <button 
-          className="get-predictions-btn"
-          onClick={handleGetPredictions}
+          className={`tab-btn ${activeTab === 'predictions' ? 'active' : ''}`}
+          onClick={() => setActiveTab('predictions')}
           disabled={loading}
         >
-          {loading ? 'Analyzing...' : 'Get Predictions'}
+          📊 Value Predictions
         </button>
+        <button 
+          className={`tab-btn ${activeTab === 'news' ? 'active' : ''}`}
+          onClick={() => setActiveTab('news')}
+          disabled={loading}
+        >
+          📰 News & Preview
+        </button>
+      </div>
+
+      <div className="action-section">
+        {activeTab === 'predictions' ? (
+          <button 
+            className="get-predictions-btn"
+            onClick={handleGetPredictions}
+            disabled={loading}
+          >
+            {loading ? 'Analyzing...' : 'Get Predictions'}
+          </button>
+        ) : (
+          <button 
+            className="get-predictions-btn"
+            onClick={handleGetNews}
+            disabled={loading}
+          >
+            {loading ? 'Loading...' : 'Get News & Preview'}
+          </button>
+        )}
       </div>
 
       {loading && (
@@ -305,9 +375,150 @@ function App() {
               Generated: {new Date(predictions.generatedAt).toLocaleString()}
             </p>
             {predictions.tokensUsed && (
-              <p className="token-usage">
-                API tokens: {predictions.tokensUsed.toLocaleString()}
-              </p>
+              <div className="api-usage-info">
+                <div className="token-info">
+                  <span className="token-label">API tokens:</span>
+                  <span className="token-value">{predictions.tokensUsed.toLocaleString()}</span>
+                  {predictions.tokenBreakdown && (
+                    <span className="token-breakdown">
+                      (↓{predictions.tokenBreakdown.input.toLocaleString()} 
+                      ↑{predictions.tokenBreakdown.output.toLocaleString()})
+                    </span>
+                  )}
+                </div>
+                {predictions.estimatedCost && (
+                  <div className="cost-info">
+                    <span className="cost-label">Estimated cost:</span>
+                    <span className="cost-value">{predictions.estimatedCost.formatted}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* NEWS & PREVIEW TAB */}
+      {newsPreview && !loading && !error && activeTab === 'news' && (
+        <div className="news-preview-container" key={`news-${requestId}-${newsPreview.generatedAt}`}>
+          <div className="tournament-info">
+            <h2>{newsPreview.tournament.name}</h2>
+            <div className="tournament-details">
+              <span>📍 {newsPreview.tournament.course}</span>
+              <span>📅 {newsPreview.tournament.dates}</span>
+            </div>
+          </div>
+
+          {/* AI PREVIEW SECTION */}
+          {newsPreview.preview && (
+            <div className="ai-preview-section">
+              <h3>🤖 AI Tournament Preview</h3>
+              
+              {newsPreview.preview.overview && (
+                <div className="preview-overview">
+                  <p>{newsPreview.preview.overview}</p>
+                </div>
+              )}
+
+              {newsPreview.preview.storylines && newsPreview.preview.storylines.length > 0 && (
+                <div className="storylines-section">
+                  <h4>📖 Key Storylines</h4>
+                  <div className="storylines-grid">
+                    {newsPreview.preview.storylines.map((storyline, index) => (
+                      <div key={index} className="storyline-card">
+                        <span className="storyline-number">{index + 1}</span>
+                        <p className="storyline-text">{storyline}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {newsPreview.preview.playersToWatch && newsPreview.preview.playersToWatch.length > 0 && (
+                <div className="players-watch-section">
+                  <h4>👀 Players to Watch</h4>
+                  <div className="players-grid">
+                    {newsPreview.preview.playersToWatch.map((player, index) => (
+                      <div key={index} className="player-watch-card">
+                        <h5>{player.name}</h5>
+                        <p>{player.reason}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {newsPreview.preview.bettingAngles && newsPreview.preview.bettingAngles.length > 0 && (
+                <div className="betting-angles-section">
+                  <h4>💰 Betting Angles</h4>
+                  <div className="betting-angles-list">
+                    {newsPreview.preview.bettingAngles.map((angle, index) => (
+                      <div key={index} className="betting-angle-item">
+                        <span className="angle-bullet">💡</span>
+                        <p>{angle}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {newsPreview.preview.weatherImpact && (
+                <div className="weather-impact-section">
+                  <h4>🌤️ Weather Impact</h4>
+                  <p>{newsPreview.preview.weatherImpact}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* NEWS ARTICLES SECTION */}
+          {newsPreview.news && newsPreview.news.length > 0 && (
+            <div className="news-articles-section">
+              <h3>📰 Latest Golf News</h3>
+              <div className="news-grid">
+                {newsPreview.news.map((article, index) => (
+                  <div key={index} className="news-article-card">
+                    <div className="article-source">{article.source}</div>
+                    <h4 className="article-title">
+                      <a href={article.link} target="_blank" rel="noopener noreferrer">
+                        {article.title}
+                      </a>
+                    </h4>
+                    {article.description && (
+                      <p className="article-description">{article.description}</p>
+                    )}
+                    <div className="article-date">
+                      {new Date(article.pubDate).toLocaleDateString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="footer-info">
+            <p className="generated-time">
+              Generated: {new Date(newsPreview.generatedAt).toLocaleString()}
+            </p>
+            {newsPreview.tokensUsed && (
+              <div className="api-usage-info">
+                <div className="token-info">
+                  <span className="token-label">API tokens:</span>
+                  <span className="token-value">{newsPreview.tokensUsed.toLocaleString()}</span>
+                  {newsPreview.tokenBreakdown && (
+                    <span className="token-breakdown">
+                      (↓{newsPreview.tokenBreakdown.input.toLocaleString()} 
+                      ↑{newsPreview.tokenBreakdown.output.toLocaleString()})
+                    </span>
+                  )}
+                </div>
+                {newsPreview.estimatedCost && (
+                  <div className="cost-info">
+                    <span className="cost-label">Estimated cost:</span>
+                    <span className="cost-value">{newsPreview.estimatedCost.formatted}</span>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
