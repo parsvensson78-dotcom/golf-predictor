@@ -3,20 +3,45 @@ const axios = require('axios');
 const xml2js = require('xml2js');
 
 /**
- * Tournament News & Preview Endpoint with Improved Error Handling
+ * Tournament News & Preview Endpoint - Robust Version
+ * Handles GET requests, POST requests, and query parameters
  */
 exports.handler = async (event, context) => {
-  try {
-    const body = JSON.parse(event.body);
-    const { tour } = body || {};
-    const baseUrl = process.env.URL || 'http://localhost:8888';
+  console.log('[NEWS] Function invoked');
+  console.log('[NEWS] Method:', event.httpMethod);
+  console.log('[NEWS] Query params:', JSON.stringify(event.queryStringParameters));
+  console.log('[NEWS] Has body:', !!event.body);
 
-    console.log(`[NEWS] Starting news fetch for ${tour || 'pga'} tour`);
+  try {
+    // Determine tour from multiple possible sources
+    let tour = 'pga'; // Default
+    
+    // Try query parameters first (most reliable for GET requests)
+    if (event.queryStringParameters && event.queryStringParameters.tour) {
+      tour = event.queryStringParameters.tour;
+      console.log('[NEWS] Tour from query params:', tour);
+    }
+    // Try body if it exists (for POST requests)
+    else if (event.body && event.body.trim() !== '') {
+      try {
+        const body = JSON.parse(event.body);
+        if (body.tour) {
+          tour = body.tour;
+          console.log('[NEWS] Tour from body:', tour);
+        }
+      } catch (parseError) {
+        console.log('[NEWS] Body parse failed, using default tour:', parseError.message);
+      }
+    }
+    
+    const baseUrl = process.env.URL || 'http://localhost:8888';
+    console.log(`[NEWS] Starting news fetch for ${tour} tour`);
 
     // Step 1: Get current tournament info
     let tournament;
     try {
-      const tournamentResponse = await axios.get(`${baseUrl}/.netlify/functions/fetch-tournament?tour=${tour || 'pga'}`, {
+      console.log('[NEWS] Fetching tournament info...');
+      const tournamentResponse = await axios.get(`${baseUrl}/.netlify/functions/fetch-tournament?tour=${tour}`, {
         timeout: 15000
       });
       tournament = tournamentResponse.data;
@@ -29,6 +54,7 @@ exports.handler = async (event, context) => {
     // Step 2: Fetch golf news from RSS feeds (with error handling)
     let newsArticles = [];
     try {
+      console.log('[NEWS] Fetching news articles...');
       newsArticles = await fetchGolfNews(tournament.name, tour);
       console.log(`[NEWS] Fetched ${newsArticles.length} news articles`);
     } catch (newsError) {
@@ -42,13 +68,13 @@ exports.handler = async (event, context) => {
     console.log(`[NEWS] Top ${topPlayers.length} players identified`);
 
     // Step 4: Call Claude API for preview analysis
+    console.log('[NEWS] Calling Claude API...');
     const anthropic = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY
     });
 
     const prompt = buildPreviewPrompt(tournament, newsArticles, topPlayers);
 
-    console.log(`[NEWS] Calling Claude API...`);
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 3000,
@@ -69,7 +95,7 @@ exports.handler = async (event, context) => {
       preview = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
       console.log(`[NEWS] Preview parsed successfully`);
     } catch (parseError) {
-      console.error('[NEWS] Failed to parse Claude response:', responseText);
+      console.error('[NEWS] Failed to parse Claude response:', responseText.substring(0, 200));
       throw new Error('Invalid response format from AI');
     }
 
@@ -123,15 +149,19 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
-    console.error('[NEWS] Fatal error:', error);
+    console.error('[NEWS] Fatal error:', error.message);
+    console.error('[NEWS] Error type:', error.constructor.name);
     console.error('[NEWS] Stack trace:', error.stack);
     
     return {
       statusCode: 500,
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({ 
         error: 'Failed to generate news preview',
         message: error.message,
-        details: error.stack
+        type: error.constructor.name
       })
     };
   }
