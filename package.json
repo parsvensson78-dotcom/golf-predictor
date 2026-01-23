@@ -1,22 +1,24 @@
 {
-  "name": "golf-predictor",
+  "name": "golf-ai-predictor",
   "version": "1.0.0",
-  "description": "PGA and DP World Tour AI Predictions",
+  "description": "AI-powered golf tournament predictions and news analysis",
+  "private": true,
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.24.0",
+    "axios": "^1.6.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "@anthropic-ai/sdk": "^0.30.0",
-    "node-cache": "^5.1.2",
-    "cheerio": "^1.0.0-rc.12",
-    "axios": "^1.6.0"
+    "xml2js": "^0.6.2"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.2.0",
-    "vite": "^5.0.0"
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "vite": "^4.3.0"
   }
 }
