@@ -714,7 +714,7 @@ body {
 .pick-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 15px;
 }
 
@@ -734,6 +734,63 @@ body {
   border-radius: 20px;
   font-weight: bold;
   font-size: 1rem;
+}
+
+/* Pre-Tournament vs Live Odds Comparison */
+.odds-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.odds-comparison {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: #f8f9fa;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.odds-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.odds-label {
+  color: #666;
+  font-weight: 600;
+  min-width: 32px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.odds-value {
+  font-weight: bold;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+}
+
+.odds-value.pre {
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.odds-value.live {
+  background: #c8e6c9;
+  color: #2e7d32;
+  font-size: 1rem;
+}
+
+.odds-movement {
+  font-size: 0.7rem;
+  color: #666;
+  white-space: nowrap;
+  font-weight: 500;
 }
 
 .pick-name {
