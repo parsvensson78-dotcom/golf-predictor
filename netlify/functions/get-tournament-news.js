@@ -151,8 +151,8 @@ async function fetchGolfNews(tournamentName, tour) {
   // RSS Feed URLs
   const feeds = [
     {
-      url: 'https://www.pgatour.com/feeds/news.rss',
-      source: 'PGA Tour'
+      url: 'https://golf.com/feed/',
+      source: 'Golf.com'
     },
     {
       url: 'https://www.espn.com/espn/rss/golf/news',
