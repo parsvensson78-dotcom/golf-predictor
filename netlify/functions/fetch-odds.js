@@ -2,7 +2,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 
 /**
- * Fetch golf odds from Oddschecker
+ * Fetch golf odds from Oddschecker with improved error handling
  * Scrapes multiple bookmakers and calculates average odds
  */
 exports.handler = async (event, context) => {
@@ -10,90 +10,120 @@ exports.handler = async (event, context) => {
     const body = JSON.parse(event.body);
     const { tournamentName, players } = body;
 
-    console.log(`Fetching Oddschecker odds for: ${tournamentName}`);
-    console.log(`Looking for ${players.length} players`);
+    console.log(`[ODDS] Starting fetch for: ${tournamentName}`);
+    console.log(`[ODDS] Looking for ${players.length} players`);
 
-    // Determine Oddschecker URL based on tournament
+    // Determine Oddschecker URL
     const oddsCheckerUrl = getOddsCheckerUrl(tournamentName);
-    console.log(`Oddschecker URL: ${oddsCheckerUrl}`);
+    console.log(`[ODDS] Oddschecker URL: ${oddsCheckerUrl}`);
 
-    // Fetch the Oddschecker page
-    const response = await axios.get(oddsCheckerUrl, {
-      timeout: 15000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Referer': 'https://www.oddschecker.com/golf'
-      }
-    });
+    let oddsData = [];
 
-    const $ = cheerio.load(response.data);
-    const oddsData = [];
+    try {
+      // Fetch the Oddschecker page
+      console.log(`[ODDS] Fetching page...`);
+      const response = await axios.get(oddsCheckerUrl, {
+        timeout: 15000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1'
+        }
+      });
 
-    // Parse the Oddschecker table
-    // Oddschecker structure: table with player names and odds from multiple bookmakers
-    $('.diff-row, .eventTableRow').each((index, element) => {
-      try {
-        const $row = $(element);
-        
-        // Get player name
-        let playerName = $row.find('.bet-name, a.popup').first().text().trim();
-        
-        // Clean up player name (remove extra spaces, flags, etc.)
-        playerName = cleanPlayerName(playerName);
-        
-        if (!playerName) return;
+      console.log(`[ODDS] Page fetched successfully, status: ${response.status}`);
+      console.log(`[ODDS] Content length: ${response.data.length} bytes`);
 
-        // Get all odds from different bookmakers in this row
-        const bookmakerOdds = [];
-        
-        $row.find('.bc, td[data-bk]').each((i, oddsCell) => {
-          const $cell = $(oddsCell);
-          const oddsText = $cell.text().trim();
+      const $ = cheerio.load(response.data);
+
+      // Try multiple selectors for player rows
+      const selectors = [
+        '.diff-row',
+        '.eventTableRow',
+        'tr.diff-row',
+        'tbody tr',
+        '.t1 tr'
+      ];
+
+      let rowsFound = 0;
+      for (const selector of selectors) {
+        const rows = $(selector);
+        if (rows.length > 0) {
+          console.log(`[ODDS] Found ${rows.length} rows using selector: ${selector}`);
+          rowsFound = rows.length;
           
-          // Parse fractional or decimal odds
-          const decimalOdds = parseOdds(oddsText);
-          
-          if (decimalOdds && decimalOdds > 1) {
-            bookmakerOdds.push(decimalOdds);
-          }
-        });
+          rows.each((index, element) => {
+            try {
+              const $row = $(element);
+              
+              // Try multiple selectors for player name
+              let playerName = $row.find('.bet-name').first().text().trim() ||
+                              $row.find('a.popup').first().text().trim() ||
+                              $row.find('td').first().text().trim() ||
+                              $row.find('.sel').first().text().trim();
+              
+              playerName = cleanPlayerName(playerName);
+              
+              if (!playerName || playerName.length < 3) return;
 
-        if (bookmakerOdds.length > 0) {
-          // Calculate average odds
-          const avgOdds = bookmakerOdds.reduce((a, b) => a + b, 0) / bookmakerOdds.length;
-          
-          // Find min and max for reference
-          const minOdds = Math.min(...bookmakerOdds);
-          const maxOdds = Math.max(...bookmakerOdds);
+              // Get all odds cells
+              const bookmakerOdds = [];
+              
+              $row.find('td').each((i, cell) => {
+                const $cell = $(cell);
+                const oddsText = $cell.text().trim();
+                const decimalOdds = parseOdds(oddsText);
+                
+                if (decimalOdds && decimalOdds > 1) {
+                  bookmakerOdds.push(decimalOdds);
+                }
+              });
 
-          oddsData.push({
-            player: playerName,
-            odds: Math.round(avgOdds * 10) / 10, // Average odds rounded to 1 decimal
-            minOdds: Math.round(minOdds * 10) / 10,
-            maxOdds: Math.round(maxOdds * 10) / 10,
-            bookmakerCount: bookmakerOdds.length,
-            rawOdds: bookmakerOdds
+              if (bookmakerOdds.length > 0) {
+                const avgOdds = bookmakerOdds.reduce((a, b) => a + b, 0) / bookmakerOdds.length;
+                const minOdds = Math.min(...bookmakerOdds);
+                const maxOdds = Math.max(...bookmakerOdds);
+
+                oddsData.push({
+                  player: playerName,
+                  odds: Math.round(avgOdds * 10) / 10,
+                  minOdds: Math.round(minOdds * 10) / 10,
+                  maxOdds: Math.round(maxOdds * 10) / 10,
+                  bookmakerCount: bookmakerOdds.length
+                });
+
+                console.log(`[ODDS] ${playerName}: ${avgOdds.toFixed(1)}/1 avg (${bookmakerOdds.length} books)`);
+              }
+            } catch (rowError) {
+              console.error('[ODDS] Error parsing row:', rowError.message);
+            }
           });
 
-          console.log(`${playerName}: Avg ${avgOdds.toFixed(1)} (from ${bookmakerOdds.length} bookmakers, range: ${minOdds}-${maxOdds})`);
+          if (oddsData.length > 0) break; // Stop if we found data
         }
-      } catch (rowError) {
-        console.error('Error parsing row:', rowError.message);
       }
-    });
 
-    console.log(`Successfully scraped ${oddsData.length} players from Oddschecker`);
+      console.log(`[ODDS] Successfully parsed ${oddsData.length} players from ${rowsFound} rows`);
 
-    // Match players from the request with scraped odds
+    } catch (scrapeError) {
+      console.error('[ODDS] Scraping failed:', scrapeError.message);
+      console.error('[ODDS] Error details:', scrapeError);
+      
+      // Return empty odds but don't fail the whole request
+      console.log('[ODDS] Returning empty odds data due to scraping failure');
+    }
+
+    // Match players from request with scraped odds
     const matchedOdds = players.map(requestedPlayer => {
-      // Try to find exact match
+      // Try exact match
       let match = oddsData.find(o => 
         normalizePlayerName(o.player) === normalizePlayerName(requestedPlayer)
       );
 
-      // If no exact match, try partial match
+      // Try partial match
       if (!match) {
         match = oddsData.find(o => {
           const normalized = normalizePlayerName(o.player);
@@ -112,18 +142,17 @@ exports.handler = async (event, context) => {
           source: 'Oddschecker'
         };
       } else {
-        console.log(`No odds found for: ${requestedPlayer}`);
+        // Return null odds if not found, but don't fail
         return {
           player: requestedPlayer,
           odds: null,
-          source: 'Not found'
+          source: 'Not found on Oddschecker'
         };
       }
     });
 
-    // Count successful matches
     const foundCount = matchedOdds.filter(o => o.odds !== null).length;
-    console.log(`Matched ${foundCount}/${players.length} players with odds`);
+    console.log(`[ODDS] Final result: Matched ${foundCount}/${players.length} players`);
 
     return {
       statusCode: 200,
@@ -140,14 +169,22 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
-    console.error('Oddschecker fetch error:', error);
+    console.error('[ODDS] Fatal error:', error);
+    console.error('[ODDS] Stack trace:', error.stack);
     
+    // Return a proper error response instead of crashing
     return {
-      statusCode: 500,
+      statusCode: 200, // Return 200 so the main function doesn't fail
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({
-        error: 'Failed to fetch odds from Oddschecker',
-        message: error.message,
-        odds: [] // Return empty array so app doesn't break
+        odds: [],
+        scrapedCount: 0,
+        matchedCount: 0,
+        source: 'Oddschecker (failed)',
+        error: error.message,
+        timestamp: new Date().toISOString()
       })
     };
   }
@@ -159,56 +196,73 @@ exports.handler = async (event, context) => {
 function getOddsCheckerUrl(tournamentName) {
   const name = tournamentName.toLowerCase();
 
-  // Map tournament names to Oddschecker URLs
+  // Comprehensive tournament URL mappings
   const urlMappings = {
+    // Majors
     'masters': 'https://www.oddschecker.com/golf/us-masters/winner',
     'us open': 'https://www.oddschecker.com/golf/us-open/winner',
     'open championship': 'https://www.oddschecker.com/golf/the-open/winner',
+    'british open': 'https://www.oddschecker.com/golf/the-open/winner',
     'pga championship': 'https://www.oddschecker.com/golf/uspga-championship/winner',
+    
+    // Signature Events
     'players championship': 'https://www.oddschecker.com/golf/the-players-championship/winner',
     'ryder cup': 'https://www.oddschecker.com/golf/ryder-cup/winner',
+    
+    // PGA Tour Regular Season
     'american express': 'https://www.oddschecker.com/golf/the-american-express/winner',
     'farmers insurance': 'https://www.oddschecker.com/golf/farmers-insurance-open/winner',
+    'torrey pines': 'https://www.oddschecker.com/golf/farmers-insurance-open/winner',
     'waste management': 'https://www.oddschecker.com/golf/waste-management-phoenix-open/winner',
-    'phoenix': 'https://www.oddschecker.com/golf/waste-management-phoenix-open/winner',
+    'phoenix open': 'https://www.oddschecker.com/golf/waste-management-phoenix-open/winner',
+    'pebble beach': 'https://www.oddschecker.com/golf/at-t-pebble-beach-pro-am/winner',
     'genesis': 'https://www.oddschecker.com/golf/genesis-invitational/winner',
-    'bay hill': 'https://www.oddschecker.com/golf/arnold-palmer-invitational/winner',
+    'riviera': 'https://www.oddschecker.com/golf/genesis-invitational/winner',
     'arnold palmer': 'https://www.oddschecker.com/golf/arnold-palmer-invitational/winner',
+    'bay hill': 'https://www.oddschecker.com/golf/arnold-palmer-invitational/winner',
     'heritage': 'https://www.oddschecker.com/golf/rbc-heritage/winner',
     'memorial': 'https://www.oddschecker.com/golf/the-memorial-tournament/winner',
-    'travelers': 'https://www.oddschecker.com/golf/travelers-championship/winner'
+    'travelers': 'https://www.oddschecker.com/golf/travelers-championship/winner',
+    'scottish open': 'https://www.oddschecker.com/golf/scottish-open/winner'
   };
 
   // Check for matching tournament
   for (const [key, url] of Object.entries(urlMappings)) {
     if (name.includes(key)) {
+      console.log(`[ODDS] Matched tournament key: ${key}`);
       return url;
     }
   }
 
-  // Default: try to construct URL from tournament name
+  // Fallback: construct URL from tournament name
   const slug = tournamentName
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
-    .replace(/-+/g, '-');
+    .replace(/-+/g, '-')
+    .trim();
   
-  return `https://www.oddschecker.com/golf/${slug}/winner`;
+  const fallbackUrl = `https://www.oddschecker.com/golf/${slug}/winner`;
+  console.log(`[ODDS] Using fallback URL: ${fallbackUrl}`);
+  return fallbackUrl;
 }
 
 /**
- * Parse odds from various formats (fractional, decimal)
+ * Parse odds from various formats
  */
 function parseOdds(oddsText) {
-  if (!oddsText || oddsText === '' || oddsText === '-') return null;
+  if (!oddsText || oddsText === '' || oddsText === '-' || oddsText === 'SP') return null;
 
-  // Remove any non-numeric characters except / and .
+  // Clean the text
   const cleaned = oddsText.replace(/[^\d/.]/g, '');
 
   // Handle fractional odds (e.g., "5/1", "9/2")
   if (cleaned.includes('/')) {
-    const [numerator, denominator] = cleaned.split('/').map(Number);
-    if (numerator && denominator) {
+    const parts = cleaned.split('/');
+    const numerator = parseFloat(parts[0]);
+    const denominator = parseFloat(parts[1]);
+    
+    if (numerator && denominator && denominator > 0) {
       return numerator / denominator + 1; // Convert to decimal
     }
   }
@@ -223,11 +277,12 @@ function parseOdds(oddsText) {
 }
 
 /**
- * Clean player name (remove flags, extra spaces)
+ * Clean player name
  */
 function cleanPlayerName(name) {
   return name
-    .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, '') // Remove flag emojis
+    .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, '') // Remove flags
+    .replace(/\([^)]*\)/g, '') // Remove parentheses content
     .replace(/\s+/g, ' ')
     .trim();
 }
