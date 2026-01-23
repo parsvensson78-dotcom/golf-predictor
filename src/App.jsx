@@ -361,7 +361,27 @@ function App() {
                 <div key={`pick-${requestId}-${index}`} className="pick-card">
                   <div className="pick-header">
                     <span className="pick-number">#{index + 1}</span>
-                    <span className="pick-odds">{Math.round(pick.odds)}/1</span>
+                    <div className="odds-container">
+                      {pick.preTournamentOdds ? (
+                        <div className="odds-comparison">
+                          <div className="odds-row">
+                            <span className="odds-label">Pre:</span>
+                            <span className="odds-value pre">{Math.round(pick.preTournamentOdds)}/1</span>
+                          </div>
+                          <div className="odds-row">
+                            <span className="odds-label">Live:</span>
+                            <span className="odds-value live">{Math.round(pick.odds)}/1</span>
+                            {pick.movementEmoji && (
+                              <span className="odds-movement">
+                                {pick.movementEmoji} {pick.oddsMovement > 0 ? '+' : ''}{pick.oddsMovement}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="pick-odds">{Math.round(pick.odds)}/1</span>
+                      )}
+                    </div>
                   </div>
                   <h3 className="pick-name">{pick.player}</h3>
                   <p className="pick-reasoning">{pick.reasoning}</p>
