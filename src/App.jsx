@@ -3,8 +3,9 @@ import './App.css';
 
 function App() {
   const [tour, setTour] = useState('pga');
-  const [activeTab, setActiveTab] = useState('predictions'); // 'predictions', 'news', or 'matchups'
+  const [activeTab, setActiveTab] = useState('predictions'); // 'predictions', 'avoid', 'news', or 'matchups'
   const [predictions, setPredictions] = useState(null);
+  const [avoidPicks, setAvoidPicks] = useState(null);
   const [newsPreview, setNewsPreview] = useState(null);
   const [matchups, setMatchups] = useState(null);
   const [customMatchup, setCustomMatchup] = useState({ playerA: '', playerB: '' });
@@ -130,9 +131,52 @@ function App() {
     }
   };
 
+  const fetchAvoidPicks = async (selectedTour) => {
+    const newRequestId = requestId + 1;
+    setRequestId(newRequestId);
+    
+    setAvoidPicks(null);
+    setError(null);
+    setLoading(true);
+    
+    try {
+      const timestamp = new Date().getTime();
+      const response = await fetch(
+        `/.netlify/functions/get-avoid-picks`,
+        {
+          method: 'POST',
+          cache: 'no-store',
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+          },
+          body: JSON.stringify({
+            tour: selectedTour,
+            _: timestamp
+          })
+        }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to fetch avoid picks');
+      }
+      
+      const data = await response.json();
+      setAvoidPicks(data);
+      
+    } catch (err) {
+      setError(err.message);
+      console.error('Fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleTourChange = (newTour) => {
     setTour(newTour);
     setPredictions(null);
+    setAvoidPicks(null);
     setNewsPreview(null);
     setMatchups(null);
     setError(null);
@@ -141,6 +185,10 @@ function App() {
 
   const handleGetPredictions = () => {
     fetchPredictions(tour);
+  };
+
+  const handleGetAvoidPicks = () => {
+    fetchAvoidPicks(tour);
   };
 
   const handleGetNews = () => {
@@ -192,6 +240,13 @@ function App() {
           📊 Value Predictions
         </button>
         <button 
+          className={`tab-btn ${activeTab === 'avoid' ? 'active' : ''}`}
+          onClick={() => setActiveTab('avoid')}
+          disabled={loading}
+        >
+          ❌ Avoid Picks
+        </button>
+        <button 
           className={`tab-btn ${activeTab === 'news' ? 'active' : ''}`}
           onClick={() => setActiveTab('news')}
           disabled={loading}
@@ -215,6 +270,14 @@ function App() {
             disabled={loading}
           >
             {loading ? 'Analyzing...' : 'Get Predictions'}
+          </button>
+        ) : activeTab === 'avoid' ? (
+          <button 
+            className="get-predictions-btn"
+            onClick={handleGetAvoidPicks}
+            disabled={loading}
+          >
+            {loading ? 'Analyzing...' : 'Get Avoid Picks'}
           </button>
         ) : activeTab === 'news' ? (
           <button 
@@ -463,26 +526,6 @@ function App() {
             </div>
           </div>
 
-          {/* AVOID PICKS SECTION */}
-          {predictions.avoidPicks && predictions.avoidPicks.length > 0 && (
-            <div className="avoid-section">
-              <h3>❌ Players to Avoid (Poor Course Fit)</h3>
-              <p className="avoid-subtitle">These players have short odds but their stats don't match this course</p>
-              <div className="avoid-grid">
-                {predictions.avoidPicks.map((avoid, index) => (
-                  <div key={`avoid-${requestId}-${index}`} className="avoid-card">
-                    <div className="avoid-header">
-                      <span className="avoid-icon">⚠️</span>
-                      <span className="avoid-odds">{Math.round(avoid.odds)}/1</span>
-                    </div>
-                    <h4 className="avoid-name">{avoid.player}</h4>
-                    <p className="avoid-reasoning">{avoid.reasoning}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           <div className="footer-info">
             <p className="generated-time">
               Generated: {new Date(predictions.generatedAt).toLocaleString()}
@@ -503,6 +546,62 @@ function App() {
                   <div className="cost-info">
                     <span className="cost-label">Estimated cost:</span>
                     <span className="cost-value">{predictions.estimatedCost.formatted}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* AVOID PICKS TAB */}
+      {avoidPicks && !loading && !error && activeTab === 'avoid' && (
+        <div className="avoid-picks-container" key={`avoid-${requestId}-${avoidPicks.generatedAt}`}>
+          <div className="tournament-info">
+            <h2>{avoidPicks.tournament.name}</h2>
+            <div className="tournament-details">
+              <span>📍 {avoidPicks.tournament.course}</span>
+              <span>📅 {avoidPicks.tournament.dates}</span>
+            </div>
+          </div>
+
+          <div className="avoid-section">
+            <h3>❌ Players to Avoid (Poor Course Fit)</h3>
+            <p className="avoid-subtitle">{avoidPicks.reasoning}</p>
+            <div className="avoid-grid">
+              {avoidPicks.avoidPicks && avoidPicks.avoidPicks.map((avoid, index) => (
+                <div key={`avoid-${requestId}-${index}`} className="avoid-card">
+                  <div className="avoid-header">
+                    <span className="avoid-icon">⚠️</span>
+                    <span className="avoid-odds">{Math.round(avoid.odds)}/1</span>
+                  </div>
+                  <h4 className="avoid-name">{avoid.player}</h4>
+                  <p className="avoid-reasoning">{avoid.reasoning}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="footer-info">
+            <p className="generated-time">
+              Generated: {new Date(avoidPicks.generatedAt).toLocaleString()}
+            </p>
+            {avoidPicks.tokensUsed && (
+              <div className="api-usage-info">
+                <div className="token-info">
+                  <span className="token-label">API tokens:</span>
+                  <span className="token-value">{avoidPicks.tokensUsed.toLocaleString()}</span>
+                  {avoidPicks.tokenBreakdown && (
+                    <span className="token-breakdown">
+                      (↓{avoidPicks.tokenBreakdown.input.toLocaleString()} 
+                      ↑{avoidPicks.tokenBreakdown.output.toLocaleString()})
+                    </span>
+                  )}
+                </div>
+                {avoidPicks.estimatedCost && (
+                  <div className="cost-info">
+                    <span className="cost-label">Estimated cost:</span>
+                    <span className="cost-value">{avoidPicks.estimatedCost.formatted}</span>
                   </div>
                 )}
               </div>
