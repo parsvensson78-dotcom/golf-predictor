@@ -177,6 +177,13 @@ exports.handler = async (event, context) => {
       throw new Error('Invalid response format from AI');
     }
 
+    // Calculate cost based on Claude Sonnet 4 pricing
+    const inputTokens = message.usage.input_tokens;
+    const outputTokens = message.usage.output_tokens;
+    const inputCost = (inputTokens / 1000000) * 3.00;  // $3 per million input tokens
+    const outputCost = (outputTokens / 1000000) * 15.00; // $15 per million output tokens
+    const totalCost = inputCost + outputCost;
+
     // Step 8: Return predictions with course info
     return {
       statusCode: 200,
@@ -204,8 +211,19 @@ exports.handler = async (event, context) => {
           notes: predictions.courseNotes || ''
         },
         predictions: predictions.picks || predictions,
+        avoidPicks: predictions.avoid || [],
         generatedAt: new Date().toISOString(),
-        tokensUsed: message.usage.input_tokens + message.usage.output_tokens
+        tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
+        tokenBreakdown: {
+          input: message.usage.input_tokens,
+          output: message.usage.output_tokens
+        },
+        estimatedCost: {
+          inputCost: inputCost,
+          outputCost: outputCost,
+          totalCost: totalCost,
+          formatted: `$${totalCost.toFixed(4)}`
+        }
       })
     };
 
@@ -914,13 +932,21 @@ CRITICAL ANALYSIS FRAMEWORK:
    - Do NOT pick big-name players just because they're popular - focus on course fit
 
 YOUR TASK:
-Select exactly 6 VALUE picks where:
+Select exactly 6 VALUE picks AND identify 3 players to AVOID where:
+
+VALUE PICKS:
 - ALL players should have odds of 20/1 or higher
 - At least 4 players should have odds ABOVE 40/1
 - Players must have statistical evidence they excel at THIS COURSE TYPE
 - Match their SG strengths to the specific course characteristics listed above
 - Consider weather conditions in your analysis
 - Provide a range of odds: some at 20-40/1 (shorter value), some at 40-80/1 (mid-range value), and some at 80-150/1 (longshots)
+
+AVOID PICKS:
+- Identify 3 players who are popular/favorites but have POOR course fit
+- These should be players with short odds (under 30/1) that bettors are backing
+- Explain why their stats DON'T match this course despite market confidence
+- Focus on statistical evidence showing they're overvalued
 
 Return ONLY valid JSON (no markdown):
 {
@@ -933,6 +959,13 @@ Return ONLY valid JSON (no markdown):
       "player": "Player Name",
       "odds": 45.0,
       "reasoning": "SPECIFIC course-fit analysis: Match their SG stats to the exact course demands (length, greens, rough, etc.). Explain why they're undervalued given these characteristics. Include numbers. 2-3 sentences max."
+    }
+  ],
+  "avoid": [
+    {
+      "player": "Player Name",
+      "odds": 18.0,
+      "reasoning": "SPECIFIC mismatch analysis: Explain why their stats DON'T fit this course despite short odds. What weakness will hurt them here? Include stat rankings showing poor fit. 2-3 sentences max."
     }
   ]
 }
