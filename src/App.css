@@ -806,6 +806,318 @@ body {
   font-size: 0.95rem;
 }
 
+/* Avoid Picks Section */
+.avoid-section {
+  margin-top: 30px;
+  padding: 25px;
+  background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+  border-radius: 15px;
+  border: 2px solid #ef5350;
+}
+
+.avoid-section h3 {
+  color: #c62828;
+  font-size: 1.6rem;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.avoid-subtitle {
+  color: #666;
+  font-size: 0.95rem;
+  margin-bottom: 20px;
+  font-style: italic;
+}
+
+.avoid-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 15px;
+}
+
+@media (max-width: 1024px) {
+  .avoid-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .avoid-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.avoid-card {
+  background: white;
+  border-radius: 10px;
+  padding: 18px;
+  border: 2px solid #ef5350;
+  box-shadow: 0 4px 12px rgba(239, 83, 80, 0.2);
+  transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.avoid-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(239, 83, 80, 0.3);
+}
+
+.avoid-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.avoid-icon {
+  font-size: 1.5rem;
+}
+
+.avoid-odds {
+  background: #ef5350;
+  color: white;
+  padding: 5px 12px;
+  border-radius: 15px;
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+
+.avoid-name {
+  color: #c62828;
+  font-size: 1.2rem;
+  margin: 0 0 10px 0;
+  font-weight: 700;
+}
+
+.avoid-reasoning {
+  color: #555;
+  line-height: 1.5;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+/* ========== MATCHUP PREDICTOR STYLES ========== */
+
+.matchup-container {
+  background: white;
+  border-radius: 15px;
+  padding: 30px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+}
+
+.suggested-matchups-section {
+  margin-bottom: 30px;
+}
+
+.suggested-matchups-section h3 {
+  color: #1e3c72;
+  font-size: 1.8rem;
+  margin-bottom: 10px;
+}
+
+.matchup-subtitle {
+  color: #666;
+  font-size: 1rem;
+  margin-bottom: 25px;
+  font-style: italic;
+}
+
+.matchup-card {
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+  border-radius: 15px;
+  padding: 25px;
+  margin-bottom: 25px;
+  border: 2px solid #e0e0e0;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+  transition: all 0.3s;
+}
+
+.matchup-card:hover {
+  border-color: #4CAF50;
+  box-shadow: 0 6px 20px rgba(76, 175, 80, 0.2);
+  transform: translateY(-2px);
+}
+
+.matchup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.matchup-number {
+  background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-weight: bold;
+  font-size: 0.95rem;
+}
+
+.confidence-badge {
+  padding: 6px 14px;
+  border-radius: 15px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+}
+
+.confidence-low {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.confidence-medium, .confidence-mediumlow {
+  background: #fff8e1;
+  color: #f57c00;
+}
+
+.confidence-mediumhigh, .confidence-high {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.matchup-players {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 20px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.player-box {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  border: 2px solid #e0e0e0;
+  position: relative;
+  transition: all 0.3s;
+}
+
+.player-box.winner {
+  border-color: #4CAF50;
+  border-width: 3px;
+  background: linear-gradient(135deg, #f1f8f4 0%, #ffffff 100%);
+}
+
+.player-box h4 {
+  color: #1e3c72;
+  font-size: 1.3rem;
+  margin: 0 0 10px 0;
+  font-weight: 700;
+}
+
+.player-odds {
+  background: #1e3c72;
+  color: white;
+  padding: 5px 12px;
+  border-radius: 12px;
+  display: inline-block;
+  font-weight: bold;
+  margin-bottom: 15px;
+  font-size: 0.9rem;
+}
+
+.player-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 0.9rem;
+}
+
+.stat-row span:first-child {
+  color: #666;
+  font-weight: 500;
+}
+
+.stat-row .stat-value {
+  font-weight: bold;
+  color: #1e3c72;
+}
+
+.winner-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #4CAF50;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 15px;
+  font-weight: bold;
+  font-size: 0.8rem;
+}
+
+.vs-divider {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+  color: white;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 1.1rem;
+  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+}
+
+.matchup-analysis {
+  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+  border-radius: 10px;
+  padding: 15px 20px;
+  border-left: 4px solid #2196F3;
+}
+
+.win-probability {
+  color: #1565c0;
+  font-size: 1rem;
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+
+.win-probability strong {
+  font-size: 1.3rem;
+  color: #0d47a1;
+}
+
+.matchup-reasoning {
+  color: #333;
+  line-height: 1.6;
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+/* Matchup Responsive Design */
+@media (max-width: 768px) {
+  .matchup-players {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+
+  .vs-divider {
+    width: 40px;
+    height: 40px;
+    font-size: 0.95rem;
+    margin: 0 auto;
+  }
+
+  .player-box h4 {
+    font-size: 1.1rem;
+  }
+
+  .matchup-card {
+    padding: 18px;
+  }
+}
+
 /* Footer */
 .footer-info {
   text-align: center;
