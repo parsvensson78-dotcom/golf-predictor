@@ -3,9 +3,11 @@ import './App.css';
 
 function App() {
   const [tour, setTour] = useState('pga');
-  const [activeTab, setActiveTab] = useState('predictions'); // 'predictions' or 'news'
+  const [activeTab, setActiveTab] = useState('predictions'); // 'predictions', 'news', or 'matchups'
   const [predictions, setPredictions] = useState(null);
   const [newsPreview, setNewsPreview] = useState(null);
+  const [matchups, setMatchups] = useState(null);
+  const [customMatchup, setCustomMatchup] = useState({ playerA: '', playerB: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [requestId, setRequestId] = useState(0);
@@ -85,10 +87,54 @@ function App() {
     }
   };
 
+  const fetchMatchups = async (selectedTour, customPlayers = null) => {
+    const newRequestId = requestId + 1;
+    setRequestId(newRequestId);
+    
+    setMatchups(null);
+    setError(null);
+    setLoading(true);
+    
+    try {
+      const timestamp = new Date().getTime();
+      const response = await fetch(
+        `/.netlify/functions/get-matchup-predictions`,
+        {
+          method: 'POST',
+          cache: 'no-store',
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+          },
+          body: JSON.stringify({
+            tour: selectedTour,
+            customMatchup: customPlayers,
+            _: timestamp
+          })
+        }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to fetch matchups');
+      }
+      
+      const data = await response.json();
+      setMatchups(data);
+      
+    } catch (err) {
+      setError(err.message);
+      console.error('Fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleTourChange = (newTour) => {
     setTour(newTour);
     setPredictions(null);
     setNewsPreview(null);
+    setMatchups(null);
     setError(null);
     setRequestId(requestId + 1);
   };
@@ -99,6 +145,18 @@ function App() {
 
   const handleGetNews = () => {
     fetchNewsPreview(tour);
+  };
+
+  const handleGetMatchups = () => {
+    fetchMatchups(tour);
+  };
+
+  const handleCustomMatchup = () => {
+    if (customMatchup.playerA && customMatchup.playerB) {
+      fetchMatchups(tour, customMatchup);
+    } else {
+      alert('Please select both players for custom matchup');
+    }
   };
 
   return (
@@ -140,6 +198,13 @@ function App() {
         >
           📰 News & Preview
         </button>
+        <button 
+          className={`tab-btn ${activeTab === 'matchups' ? 'active' : ''}`}
+          onClick={() => setActiveTab('matchups')}
+          disabled={loading}
+        >
+          🆚 Matchup Predictor
+        </button>
       </div>
 
       <div className="action-section">
@@ -151,13 +216,21 @@ function App() {
           >
             {loading ? 'Analyzing...' : 'Get Predictions'}
           </button>
-        ) : (
+        ) : activeTab === 'news' ? (
           <button 
             className="get-predictions-btn"
             onClick={handleGetNews}
             disabled={loading}
           >
             {loading ? 'Loading...' : 'Get News & Preview'}
+          </button>
+        ) : (
+          <button 
+            className="get-predictions-btn"
+            onClick={handleGetMatchups}
+            disabled={loading}
+          >
+            {loading ? 'Analyzing...' : 'Get Matchup Predictions'}
           </button>
         )}
       </div>
@@ -390,6 +463,26 @@ function App() {
             </div>
           </div>
 
+          {/* AVOID PICKS SECTION */}
+          {predictions.avoidPicks && predictions.avoidPicks.length > 0 && (
+            <div className="avoid-section">
+              <h3>❌ Players to Avoid (Poor Course Fit)</h3>
+              <p className="avoid-subtitle">These players have short odds but their stats don't match this course</p>
+              <div className="avoid-grid">
+                {predictions.avoidPicks.map((avoid, index) => (
+                  <div key={`avoid-${requestId}-${index}`} className="avoid-card">
+                    <div className="avoid-header">
+                      <span className="avoid-icon">⚠️</span>
+                      <span className="avoid-odds">{Math.round(avoid.odds)}/1</span>
+                    </div>
+                    <h4 className="avoid-name">{avoid.player}</h4>
+                    <p className="avoid-reasoning">{avoid.reasoning}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="footer-info">
             <p className="generated-time">
               Generated: {new Date(predictions.generatedAt).toLocaleString()}
@@ -536,6 +629,127 @@ function App() {
                   <div className="cost-info">
                     <span className="cost-label">Estimated cost:</span>
                     <span className="cost-value">{newsPreview.estimatedCost.formatted}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MATCHUP PREDICTOR TAB */}
+      {matchups && !loading && !error && activeTab === 'matchups' && (
+        <div className="matchup-container" key={`matchup-${requestId}-${matchups.generatedAt}`}>
+          <div className="tournament-info">
+            <h2>{matchups.tournament.name}</h2>
+            <div className="tournament-details">
+              <span>📍 {matchups.tournament.course}</span>
+              <span>📅 {matchups.tournament.dates}</span>
+            </div>
+          </div>
+
+          {/* SUGGESTED MATCHUPS */}
+          {matchups.suggestedMatchups && matchups.suggestedMatchups.length > 0 && (
+            <div className="suggested-matchups-section">
+              <h3>🆚 AI-Suggested Matchups</h3>
+              <p className="matchup-subtitle">Head-to-head predictions based on stats and course fit</p>
+              
+              {matchups.suggestedMatchups.map((matchup, index) => (
+                <div key={index} className="matchup-card">
+                  <div className="matchup-header">
+                    <span className="matchup-number">Matchup #{index + 1}</span>
+                    <span className={`confidence-badge confidence-${matchup.confidence.toLowerCase().replace('-', '')}`}>
+                      {matchup.confidence}
+                    </span>
+                  </div>
+
+                  <div className="matchup-players">
+                    <div className={`player-box ${matchup.pick === matchup.playerA.name ? 'winner' : ''}`}>
+                      <h4>{matchup.playerA.name}</h4>
+                      <div className="player-odds">{Math.round(matchup.playerA.odds)}/1</div>
+                      <div className="player-stats">
+                        <div className="stat-row">
+                          <span>SG:OTT</span>
+                          <span className="stat-value">{matchup.playerA.sgOTT}</span>
+                        </div>
+                        <div className="stat-row">
+                          <span>SG:APP</span>
+                          <span className="stat-value">{matchup.playerA.sgAPP}</span>
+                        </div>
+                        <div className="stat-row">
+                          <span>SG:ARG</span>
+                          <span className="stat-value">{matchup.playerA.sgARG}</span>
+                        </div>
+                        <div className="stat-row">
+                          <span>SG:Putt</span>
+                          <span className="stat-value">{matchup.playerA.sgPutt}</span>
+                        </div>
+                      </div>
+                      {matchup.pick === matchup.playerA.name && (
+                        <div className="winner-badge">✓ PICK</div>
+                      )}
+                    </div>
+
+                    <div className="vs-divider">VS</div>
+
+                    <div className={`player-box ${matchup.pick === matchup.playerB.name ? 'winner' : ''}`}>
+                      <h4>{matchup.playerB.name}</h4>
+                      <div className="player-odds">{Math.round(matchup.playerB.odds)}/1</div>
+                      <div className="player-stats">
+                        <div className="stat-row">
+                          <span>SG:OTT</span>
+                          <span className="stat-value">{matchup.playerB.sgOTT}</span>
+                        </div>
+                        <div className="stat-row">
+                          <span>SG:APP</span>
+                          <span className="stat-value">{matchup.playerB.sgAPP}</span>
+                        </div>
+                        <div className="stat-row">
+                          <span>SG:ARG</span>
+                          <span className="stat-value">{matchup.playerB.sgARG}</span>
+                        </div>
+                        <div className="stat-row">
+                          <span>SG:Putt</span>
+                          <span className="stat-value">{matchup.playerB.sgPutt}</span>
+                        </div>
+                      </div>
+                      {matchup.pick === matchup.playerB.name && (
+                        <div className="winner-badge">✓ PICK</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="matchup-analysis">
+                    <div className="win-probability">
+                      Win Probability: <strong>{matchup.winProbability}%</strong>
+                    </div>
+                    <p className="matchup-reasoning">{matchup.reasoning}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="footer-info">
+            <p className="generated-time">
+              Generated: {new Date(matchups.generatedAt).toLocaleString()}
+            </p>
+            {matchups.tokensUsed && (
+              <div className="api-usage-info">
+                <div className="token-info">
+                  <span className="token-label">API tokens:</span>
+                  <span className="token-value">{matchups.tokensUsed.toLocaleString()}</span>
+                  {matchups.tokenBreakdown && (
+                    <span className="token-breakdown">
+                      (↓{matchups.tokenBreakdown.input.toLocaleString()} 
+                      ↑{matchups.tokenBreakdown.output.toLocaleString()})
+                    </span>
+                  )}
+                </div>
+                {matchups.estimatedCost && (
+                  <div className="cost-info">
+                    <span className="cost-label">Estimated cost:</span>
+                    <span className="cost-value">{matchups.estimatedCost.formatted}</span>
                   </div>
                 )}
               </div>
