@@ -4,20 +4,23 @@ const fs = require('fs').promises;
 const path = require('path');
 
 /**
- * Scheduled Function: Fetch Pre-Tournament Odds Every Wednesday at 5 AM
+ * Scheduled Function: Fetch Pre-Tournament Odds Twice Daily
  * 
- * This runs automatically via Netlify scheduled functions
- * Stores odds in a JSON file for comparison with live odds
+ * Runs at 8 AM and 8 PM every day until tournament starts
+ * Stores odds snapshots for tracking market movements
+ * 
+ * Schedule: 0 8,20 * * * (8 AM and 8 PM UTC)
  */
 exports.handler = async (event, context) => {
-  console.log('[PRE-ODDS] Starting Wednesday pre-tournament odds fetch...');
+  console.log('[PRE-ODDS] Starting scheduled odds fetch...');
+  console.log('[PRE-ODDS] Time:', new Date().toISOString());
   
   try {
     // Determine which tournament is happening this week
     const tournament = await getCurrentTournament();
     
     if (!tournament) {
-      console.log('[PRE-ODDS] No tournament found for this week');
+      console.log('[PRE-ODDS] No tournament found');
       return {
         statusCode: 200,
         body: JSON.stringify({ message: 'No tournament this week' })
@@ -31,29 +34,48 @@ exports.handler = async (event, context) => {
     
     console.log(`[PRE-ODDS] Successfully scraped ${oddsData.length} players`);
 
+    // Prepare timestamp for this snapshot
+    const now = new Date();
+    const timestamp = now.toISOString();
+    const dayOfWeek = now.getDay(); // 0=Sunday, 1=Monday, etc.
+    const hour = now.getUTCHours();
+    
+    // Determine if this is morning (8am) or evening (8pm) snapshot
+    const snapshotType = hour === 8 ? 'morning' : 'evening';
+    
     // Prepare cache data
     const cacheData = {
       tournament: tournament.name,
       course: tournament.course,
       dates: tournament.dates,
       tour: tournament.tour,
-      fetchedAt: new Date().toISOString(),
-      fetchDay: 'Wednesday',
+      fetchedAt: timestamp,
+      dayOfWeek: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek],
+      snapshotType: snapshotType,
+      hour: hour,
       odds: oddsData
     };
 
     // Store in cache file
     const cacheDir = '/tmp/odds-cache';
-    const cacheFile = path.join(cacheDir, 'pre-tournament-odds.json');
-    
-    // Ensure directory exists
     await fs.mkdir(cacheDir, { recursive: true });
     
-    // Write cache file
-    await fs.writeFile(cacheFile, JSON.stringify(cacheData, null, 2));
+    // Always update the main cache file (used for live comparison)
+    const mainCacheFile = path.join(cacheDir, 'pre-tournament-odds.json');
+    await fs.writeFile(mainCacheFile, JSON.stringify(cacheData, null, 2));
+    console.log(`[PRE-ODDS] Main cache updated: ${mainCacheFile}`);
     
-    console.log(`[PRE-ODDS] Cache saved to ${cacheFile}`);
+    // Also save timestamped snapshot for historical tracking
+    const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    const snapshotFile = path.join(cacheDir, `odds-${dateStr}-${snapshotType}.json`);
+    await fs.writeFile(snapshotFile, JSON.stringify(cacheData, null, 2));
+    console.log(`[PRE-ODDS] Snapshot saved: ${snapshotFile}`);
+    
+    // Keep only last 7 days of snapshots (cleanup old files)
+    await cleanupOldSnapshots(cacheDir);
+
     console.log(`[PRE-ODDS] Cached ${oddsData.length} players for ${tournament.name}`);
+    console.log(`[PRE-ODDS] Snapshot: ${cacheData.dayOfWeek} ${snapshotType}`);
 
     return {
       statusCode: 200,
@@ -61,7 +83,9 @@ exports.handler = async (event, context) => {
         success: true,
         tournament: tournament.name,
         playerCount: oddsData.length,
-        fetchedAt: cacheData.fetchedAt
+        fetchedAt: cacheData.fetchedAt,
+        snapshotType: snapshotType,
+        dayOfWeek: cacheData.dayOfWeek
       })
     };
 
@@ -76,6 +100,31 @@ exports.handler = async (event, context) => {
     };
   }
 };
+
+/**
+ * Clean up snapshot files older than 7 days
+ */
+async function cleanupOldSnapshots(cacheDir) {
+  try {
+    const files = await fs.readdir(cacheDir);
+    const now = Date.now();
+    const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
+    
+    for (const file of files) {
+      if (file.startsWith('odds-') && file.endsWith('.json') && file !== 'pre-tournament-odds.json') {
+        const filePath = path.join(cacheDir, file);
+        const stats = await fs.stat(filePath);
+        
+        if (stats.mtimeMs < sevenDaysAgo) {
+          await fs.unlink(filePath);
+          console.log(`[PRE-ODDS] Cleaned up old snapshot: ${file}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.log('[PRE-ODDS] Cleanup skipped:', error.message);
+  }
+}
 
 /**
  * Get current week's tournament
