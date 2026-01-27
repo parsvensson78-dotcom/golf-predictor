@@ -322,6 +322,7 @@ function cleanPlayerName(name) {
   return name
     .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, '') // Remove flags
     .replace(/\([^)]*\)/g, '') // Remove parentheses content
+    .replace(/,/g, '') // Remove commas (DataGolf uses "LastName, FirstName" format)
     .replace(/\s+/g, ' ')
     .trim();
 }
