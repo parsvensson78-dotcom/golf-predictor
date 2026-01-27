@@ -41,6 +41,8 @@ exports.handler = async (event, context) => {
     });
     const oddsData = oddsResponse.data;
 
+    console.log(`[MATCHUP] Received odds for ${oddsData.odds.length} players`);
+
     // Step 4: Get weather
     let weatherInfo = 'Weather data not available';
     try {
@@ -64,17 +66,25 @@ exports.handler = async (event, context) => {
     // Step 5: Get course info
     const courseInfo = await getCourseInfo(tournament.course);
 
-    // Step 6: Prepare player data with stats and odds
+    // Step 6: Prepare player data with stats and odds (WITH CONVERSION)
     const playersWithData = statsData.players
       .map(stat => {
-        const odds = oddsData.odds.find(o => 
-          o.player.toLowerCase() === stat.player.toLowerCase()
+        const oddsEntry = oddsData.odds.find(o => 
+          normalizePlayerName(o.player) === normalizePlayerName(stat.player)
         );
+        
+        // Convert American odds to decimal
+        let decimalOdds = null;
+        if (oddsEntry?.odds) {
+          decimalOdds = americanToDecimal(oddsEntry.odds);
+          console.log(`[MATCHUP] ${stat.player}: American ${oddsEntry.odds} → Decimal ${decimalOdds.toFixed(1)}`);
+        }
         
         return {
           name: stat.player,
           rank: stat.stats.rank,
-          odds: odds?.odds || null,
+          odds: decimalOdds, // Now in decimal format
+          americanOdds: oddsEntry?.americanOdds || null,
           sgTotal: stat.stats.sgTotal,
           sgOTT: stat.stats.sgOTT,
           sgAPP: stat.stats.sgAPP,
@@ -118,7 +128,7 @@ exports.handler = async (event, context) => {
     try {
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       matchupData = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
-      console.log(`[MATCHUP] Analysis complete`);
+      console.log(`[MATCHUP] Analysis complete - ${matchupData.suggestedMatchups?.length || 0} matchups generated`);
     } catch (parseError) {
       console.error('[MATCHUP] Failed to parse Claude response:', responseText);
       throw new Error('Invalid response format from AI');
@@ -178,6 +188,35 @@ exports.handler = async (event, context) => {
 };
 
 /**
+ * Convert American odds to decimal odds
+ */
+function americanToDecimal(americanOdds) {
+  if (!americanOdds || americanOdds === 0) return null;
+  
+  if (americanOdds > 0) {
+    // Positive American odds: +1800 = 19.0 decimal
+    return (americanOdds / 100) + 1;
+  } else {
+    // Negative American odds: -200 = 1.5 decimal
+    return (100 / Math.abs(americanOdds)) + 1;
+  }
+}
+
+/**
+ * Normalize player name for matching
+ */
+function normalizePlayerName(name) {
+  let normalized = name
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  const parts = normalized.split(' ');
+  return parts.sort().join(' ');
+}
+
+/**
  * Get basic course info (simplified version)
  */
 async function getCourseInfo(courseName) {
@@ -195,7 +234,7 @@ function buildMatchupPrompt(tournament, players, weather, courseInfo, customMatc
   // Format top 40 players for analysis
   const topPlayers = players.slice(0, 40);
   const playerList = topPlayers.map(p => 
-    `${p.name} [${p.odds}/1] - SG: Total:${p.sgTotal} OTT:${p.sgOTT} APP:${p.sgAPP} ARG:${p.sgARG} Putt:${p.sgPutt}`
+    `${p.name} [${p.odds.toFixed(1)}] - SG: Total:${p.sgTotal} OTT:${p.sgOTT} APP:${p.sgAPP} ARG:${p.sgARG} Putt:${p.sgPutt}`
   ).join('\n');
 
   let customMatchupPrompt = '';
@@ -205,10 +244,10 @@ function buildMatchupPrompt(tournament, players, weather, courseInfo, customMatc
     
     customMatchupPrompt = `
 CUSTOM MATCHUP REQUESTED:
-Player A: ${playerA?.name || customMatchup.playerA} [${playerA?.odds || '?'}/1]
+Player A: ${playerA?.name || customMatchup.playerA} [${playerA?.odds?.toFixed(1) || '?'}]
 Stats: SG Total:${playerA?.sgTotal || '?'} OTT:${playerA?.sgOTT || '?'} APP:${playerA?.sgAPP || '?'} ARG:${playerA?.sgARG || '?'} Putt:${playerA?.sgPutt || '?'}
 
-Player B: ${playerB?.name || customMatchup.playerB} [${playerB?.odds || '?'}/1]
+Player B: ${playerB?.name || customMatchup.playerB} [${playerB?.odds?.toFixed(1) || '?'}]
 Stats: SG Total:${playerB?.sgTotal || '?'} OTT:${playerB?.sgOTT || '?'} APP:${playerB?.sgAPP || '?'} ARG:${playerB?.sgARG || '?'} Putt:${playerB?.sgPutt || '?'}
 
 YOU MUST analyze this specific matchup and include it in your response as "customMatchup".
@@ -226,20 +265,20 @@ Weather: ${weather}
 COURSE TYPE:
 The course rewards: ${courseInfo.keyDemands.join(', ')}
 
-TOP PLAYERS IN FIELD WITH STATS:
+TOP PLAYERS IN FIELD WITH STATS (decimal odds shown):
 ${playerList}
 
 ${customMatchupPrompt}
 
 YOUR TASK:
-1. Identify 4-5 INTERESTING suggested matchups between players with similar odds (within 10/1 of each other)
+1. Identify 4-5 INTERESTING suggested matchups between players with similar odds (within 10.0 of each other)
 2. For each matchup, analyze stats, course fit, and weather impact
 3. Pick a winner and provide win probability
 ${customMatchup ? '4. Analyze the custom matchup requested above' : ''}
 
 MATCHUP SELECTION CRITERIA:
-- Choose players with similar odds (makes it interesting)
-- Mix of favorites (10-30/1), mid-tier (30-60/1), and longshots (60-100/1)
+- Choose players with similar decimal odds (makes it interesting)
+- Mix of favorites (10-30), mid-tier (30-60), and longshots (60-100)
 - Look for stat advantages that create clear edges
 - Consider course fit differences
 
