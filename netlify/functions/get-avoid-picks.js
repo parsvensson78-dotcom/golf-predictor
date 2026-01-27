@@ -40,6 +40,8 @@ exports.handler = async (event, context) => {
     });
     const oddsData = oddsResponse.data;
 
+    console.log(`[AVOID] Received odds for ${oddsData.odds.length} players`);
+
     // Step 4: Get weather
     let weatherInfo = 'Weather data not available';
     try {
@@ -60,23 +62,45 @@ exports.handler = async (event, context) => {
       console.error('[AVOID] Weather fetch failed:', weatherError.message);
     }
 
-    // Step 5: Build player data
+    // Step 5: Build player data with PROPER odds conversion
     const playersWithOdds = statsData.players
       .map(stat => {
-        const odds = oddsData.odds.find(o => 
-          o.player.toLowerCase() === stat.player.toLowerCase()
+        const oddsEntry = oddsData.odds.find(o => 
+          normalizePlayerName(o.player) === normalizePlayerName(stat.player)
         );
+        
+        // Convert American odds to decimal
+        let decimalOdds = null;
+        if (oddsEntry?.odds) {
+          decimalOdds = americanToDecimal(oddsEntry.odds);
+          console.log(`[AVOID] ${stat.player}: American ${oddsEntry.odds} → Decimal ${decimalOdds.toFixed(1)}`);
+        }
         
         return {
           player: stat.player,
-          odds: odds?.odds || null,
+          odds: decimalOdds, // Now in decimal format
+          americanOdds: oddsEntry?.americanOdds || null,
           stats: stat.stats
         };
       })
-      .filter(p => p.odds !== null && p.odds < 30) // Only favorites/short odds
+      .filter(p => p.odds !== null && p.odds < 30) // Now correctly filters decimal odds under 30
       .sort((a, b) => a.odds - b.odds);
 
-    console.log(`[AVOID] ${playersWithOdds.length} players with short odds for analysis`);
+    console.log(`[AVOID] ${playersWithOdds.length} players with short odds (under 30/1) for analysis`);
+
+    if (playersWithOdds.length === 0) {
+      console.log('[AVOID] No players with odds under 30/1 found');
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tournament: { name: tournament.name, course: tournament.course },
+          avoidPicks: [],
+          reasoning: 'No short odds players found in the field',
+          generatedAt: new Date().toISOString()
+        })
+      };
+    }
 
     // Step 6: Get course info
     const courseInfo = getCourseBasicInfo(tournament.course);
@@ -113,7 +137,7 @@ exports.handler = async (event, context) => {
       avoidData = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
       console.log(`[AVOID] Analysis complete, ${avoidData.avoid?.length || 0} avoid picks`);
     } catch (parseError) {
-      console.error('[AVOID] Failed to parse Claude response');
+      console.error('[AVOID] Failed to parse Claude response:', responseText);
       throw new Error('Invalid response format from AI');
     }
 
@@ -170,6 +194,35 @@ exports.handler = async (event, context) => {
 };
 
 /**
+ * Convert American odds to decimal odds
+ */
+function americanToDecimal(americanOdds) {
+  if (!americanOdds || americanOdds === 0) return null;
+  
+  if (americanOdds > 0) {
+    // Positive American odds: +1800 = 19.0 decimal
+    return (americanOdds / 100) + 1;
+  } else {
+    // Negative American odds: -200 = 1.5 decimal
+    return (100 / Math.abs(americanOdds)) + 1;
+  }
+}
+
+/**
+ * Normalize player name for matching
+ */
+function normalizePlayerName(name) {
+  let normalized = name
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  const parts = normalized.split(' ');
+  return parts.sort().join(' ');
+}
+
+/**
  * Get basic course info
  */
 function getCourseBasicInfo(courseName) {
@@ -184,7 +237,7 @@ function getCourseBasicInfo(courseName) {
  */
 function buildAvoidPicksPrompt(tournament, players, weather, courseInfo) {
   const playerList = players.slice(0, 30).map(p => 
-    `${p.player} [${p.odds}/1] - Rank:${p.stats.rank} SG:Total:${p.stats.sgTotal} OTT:${p.stats.sgOTT} APP:${p.stats.sgAPP} ARG:${p.stats.sgARG} Putt:${p.stats.sgPutt}`
+    `${p.player} [${p.odds.toFixed(1)}] - Rank:${p.stats.rank} SG:Total:${p.stats.sgTotal} OTT:${p.stats.sgOTT} APP:${p.stats.sgAPP} ARG:${p.stats.sgARG} Putt:${p.stats.sgPutt}`
   ).join('\n');
 
   return `You are a professional golf analyst identifying players to AVOID betting on this week.
@@ -195,11 +248,11 @@ Course: ${tournament.course}
 Location: ${tournament.location}
 Weather: ${weather}
 
-FAVORITES & SHORT ODDS PLAYERS:
+FAVORITES & SHORT ODDS PLAYERS (decimal odds shown):
 ${playerList}
 
 YOUR TASK:
-Identify exactly 3 players with SHORT ODDS (under 30/1) who have POOR course fit and should be avoided.
+Identify exactly 3 players with SHORT ODDS (under 30.0 decimal) who have POOR course fit and should be avoided.
 
 CRITERIA FOR AVOID PICKS:
 - Players with SHORT odds (market backing them)
@@ -229,5 +282,5 @@ Return ONLY valid JSON (no markdown):
   ]
 }
 
-Focus on SPECIFIC stat mismatches. Example: "Ranks #89 in SG:APP (-0.4) on a course with tiny bentgrass greens demanding elite approach play. His #102 SG:Putt on poa annua (-0.6) creates double penalty. At 15/1, market ignoring course history stats."`;
+Focus on SPECIFIC stat mismatches. Example: "Ranks #89 in SG:APP (-0.4) on a course with tiny bentgrass greens demanding elite approach play. His #102 SG:Putt on poa annua (-0.6) creates double penalty. At 15.0 decimal odds, market ignoring course history stats."`;
 }
