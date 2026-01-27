@@ -44,6 +44,9 @@ exports.handler = async (event, context) => {
     }
 
     // STEP 2: Fetch current/live odds from DataGolf API
+    // According to DataGolf docs: https://datagolf.com/api-access
+    // Endpoint: betting-tools/outrights
+    // Returns: { event_name, odds: [ { dg_id, player_name, draftkings, fanduel, bet365, ... } ] }
     const tour = determineTour(tournamentName);
     const dataGolfUrl = `https://feeds.datagolf.com/betting-tools/outrights?tour=${tour}&market=win&odds_format=american&file_format=json&key=${DATAGOLF_API_KEY}`;
     
