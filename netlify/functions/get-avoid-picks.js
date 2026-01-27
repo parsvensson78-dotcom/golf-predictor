@@ -20,8 +20,19 @@ exports.handler = async (event, context) => {
     const tournament = tournamentResponse.data;
     console.log(`[AVOID] Tournament: ${tournament.name}`);
 
-    // Step 2: Fetch stats for field (top 80 players only to save time)
-    const playerNames = tournament.field.slice(0, 80).map(p => p.name);
+    // Step 2: Fetch odds (this now returns ALL players in the field automatically)
+    console.log(`[AVOID] Fetching odds for full field...`);
+    const oddsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-odds`, {
+      tournamentName: tournament.name,
+      players: [] // Not needed anymore, but keeping for backwards compatibility
+    }, {
+      timeout: 20000
+    });
+    const oddsData = oddsResponse.data;
+    console.log(`[AVOID] Received odds for ${oddsData.odds.length} players`);
+
+    // Step 3: Get player names from odds data (top 80 for stats)
+    const playerNames = oddsData.odds.slice(0, 80).map(o => o.player);
     console.log(`[AVOID] Fetching stats for ${playerNames.length} players`);
     
     const statsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-stats`, {
@@ -30,17 +41,6 @@ exports.handler = async (event, context) => {
       timeout: 25000
     });
     const statsData = statsResponse.data;
-
-    // Step 3: Fetch odds
-    const oddsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-odds`, {
-      tournamentName: tournament.name,
-      players: playerNames
-    }, {
-      timeout: 20000
-    });
-    const oddsData = oddsResponse.data;
-
-    console.log(`[AVOID] Received odds for ${oddsData.odds.length} players`);
 
     // Step 4: Get weather
     let weatherInfo = 'Weather data not available';
