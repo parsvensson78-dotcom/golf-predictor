@@ -21,8 +21,19 @@ exports.handler = async (event, context) => {
     const tournament = tournamentResponse.data;
     console.log(`[MATCHUP] Tournament: ${tournament.name}`);
 
-    // Step 2: Fetch player stats for field
-    const playerNames = tournament.field.slice(0, 120).map(p => p.name);
+    // Step 2: Fetch odds (this now returns ALL players in the field automatically)
+    console.log(`[MATCHUP] Fetching odds for full field...`);
+    const oddsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-odds`, {
+      tournamentName: tournament.name,
+      players: [] // Not needed anymore
+    }, {
+      timeout: 20000
+    });
+    const oddsData = oddsResponse.data;
+    console.log(`[MATCHUP] Received odds for ${oddsData.odds.length} players`);
+
+    // Step 3: Get player names from odds data (top 120 for stats)
+    const playerNames = oddsData.odds.slice(0, 120).map(o => o.player);
     console.log(`[MATCHUP] Fetching stats for ${playerNames.length} players`);
     
     const statsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-stats`, {
@@ -31,17 +42,6 @@ exports.handler = async (event, context) => {
       timeout: 30000
     });
     const statsData = statsResponse.data;
-
-    // Step 3: Fetch odds
-    const oddsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-odds`, {
-      tournamentName: tournament.name,
-      players: playerNames
-    }, {
-      timeout: 20000
-    });
-    const oddsData = oddsResponse.data;
-
-    console.log(`[MATCHUP] Received odds for ${oddsData.odds.length} players`);
 
     // Step 4: Get weather
     let weatherInfo = 'Weather data not available';
