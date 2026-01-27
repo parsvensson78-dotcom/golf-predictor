@@ -44,6 +44,8 @@ exports.handler = async (event, context) => {
     });
     const oddsData = oddsResponse.data;
 
+    console.log(`[ODDS] Received odds for ${oddsData.odds.length} players from ${oddsData.source}`);
+
     // Step 4: Get weather forecast using WeatherAPI.com
     let weatherInfo = 'Weather data not available';
     let dailyForecast = [];
@@ -128,14 +130,22 @@ exports.handler = async (event, context) => {
     // Step 6: Prepare COMPLETE field data for Claude
     const playersWithData = statsData.players
       .map(stat => {
-        const odds = oddsData.odds.find(o => 
+        const oddsEntry = oddsData.odds.find(o => 
           o.player.toLowerCase() === stat.player.toLowerCase()
         );
+        
+        // Convert American odds to decimal odds for display/analysis
+        let decimalOdds = null;
+        if (oddsEntry?.odds) {
+          decimalOdds = americanToDecimal(oddsEntry.odds);
+          console.log(`[ODDS] ${stat.player}: American ${oddsEntry.odds} → Decimal ${decimalOdds.toFixed(1)}`);
+        }
         
         return {
           name: stat.player,
           rank: stat.stats.rank,
-          odds: odds?.odds || null,
+          odds: decimalOdds, // Now in decimal format
+          americanOdds: oddsEntry?.americanOdds || null, // Keep formatted American odds for reference
           sgTotal: stat.stats.sgTotal,
           sgOTT: stat.stats.sgOTT,
           sgAPP: stat.stats.sgAPP,
@@ -238,6 +248,23 @@ exports.handler = async (event, context) => {
     };
   }
 };
+
+/**
+ * Convert American odds to decimal odds
+ * American: +1800 → Decimal: 19.0 → Fractional: 18/1
+ * American: -200 → Decimal: 1.5 → Fractional: 1/2
+ */
+function americanToDecimal(americanOdds) {
+  if (!americanOdds || americanOdds === 0) return null;
+  
+  if (americanOdds > 0) {
+    // Positive American odds: +1800 = 19.0 decimal
+    return (americanOdds / 100) + 1;
+  } else {
+    // Negative American odds: -200 = 1.5 decimal
+    return (100 / Math.abs(americanOdds)) + 1;
+  }
+}
 
 /**
  * Get detailed course characteristics based on course name
@@ -881,13 +908,13 @@ IMPORTANT: If course details say "Analyze" or are generic, YOU MUST research and
 COMPLETE FIELD (${players.length} players):
 
 TOP FAVORITES (odds 5-20) - SKIP THESE - TOO SHORT FOR VALUE:
-${favorites.map(p => `${p.name} [${p.odds}] - Rank:${p.rank||'?'} | SG:${p.sgTotal} (OTT:${p.sgOTT} APP:${p.sgAPP} ARG:${p.sgARG} Putt:${p.sgPutt})`).join('\n')}
+${favorites.map(p => `${p.name} [${p.odds?.toFixed(1)}] - Rank:${p.rank||'?'} | SG:${p.sgTotal} (OTT:${p.sgOTT} APP:${p.sgAPP} ARG:${p.sgARG} Putt:${p.sgPutt})`).join('\n')}
 
 VALUE ZONE (odds 20-100) - FOCUS HERE FOR MOST PICKS:
-${midTier.map(p => `${p.name} [${p.odds}] - Rank:${p.rank||'?'} | SG:${p.sgTotal} (OTT:${p.sgOTT} APP:${p.sgAPP} ARG:${p.sgARG} Putt:${p.sgPutt})`).join('\n')}
+${midTier.map(p => `${p.name} [${p.odds?.toFixed(1)}] - Rank:${p.rank||'?'} | SG:${p.sgTotal} (OTT:${p.sgOTT} APP:${p.sgAPP} ARG:${p.sgARG} Putt:${p.sgPutt})`).join('\n')}
 
 LONGSHOTS (odds 100+) - CONSIDER 1-2 IF COURSE FIT IS EXCEPTIONAL:
-${longshots.map(p => `${p.name} [${p.odds}] - Rank:${p.rank||'?'} | SG:${p.sgTotal} (OTT:${p.sgOTT} APP:${p.sgAPP} ARG:${p.sgARG} Putt:${p.sgPutt})`).join('\n')}
+${longshots.map(p => `${p.name} [${p.odds?.toFixed(1)}] - Rank:${p.rank||'?'} | SG:${p.sgTotal} (OTT:${p.sgOTT} APP:${p.sgAPP} ARG:${p.sgARG} Putt:${p.sgPutt})`).join('\n')}
 
 CRITICAL ANALYSIS FRAMEWORK:
 
