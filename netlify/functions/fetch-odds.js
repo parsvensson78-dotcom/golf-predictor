@@ -77,9 +77,9 @@ exports.handler = async (event, context) => {
         try {
           const playerName = cleanPlayerName(player.player_name);
           
-          // DEBUG: Show first 3 players to see name format
+          // DEBUG: Show first 3 players to see name format AND normalization
           if (oddsData.length < 3) {
-            console.log(`[DEBUG] DataGolf raw: "${player.player_name}" → cleaned: "${playerName}"`);
+            console.log(`[DEBUG] DataGolf raw: "${player.player_name}" → cleaned: "${playerName}" → normalized: "${normalizePlayerName(playerName)}"`);
           }
           
           // Collect all available odds from different books
@@ -150,10 +150,16 @@ exports.handler = async (event, context) => {
         normalizePlayerName(o.player) === normalizePlayerName(requestedPlayer)
       );
 
-      // DEBUG: Log failed matches for first 5 players
-      if (!liveMatch && debugCount < 5) {
+      // DEBUG: Log first 3 successful matches
+      if (liveMatch && debugCount < 8) {
         debugCount++;
-        console.log(`[DEBUG] NO MATCH for "${requestedPlayer}" (normalized: "${normalizePlayerName(requestedPlayer)}")`);
+        console.log(`[DEBUG] ✅ MATCHED: "${requestedPlayer}" → "${liveMatch.player}"`);
+      }
+
+      // DEBUG: Log failed matches for first 5 players  
+      if (!liveMatch && debugCount < 8) {
+        debugCount++;
+        console.log(`[DEBUG] ❌ NO MATCH for "${requestedPlayer}" (normalized: "${normalizePlayerName(requestedPlayer)}")`);
         // Show what we're comparing against
         const similar = oddsData.find(o => {
           const normalized = normalizePlayerName(o.player);
