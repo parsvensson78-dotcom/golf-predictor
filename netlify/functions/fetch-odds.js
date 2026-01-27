@@ -141,6 +141,8 @@ exports.handler = async (event, context) => {
     players.slice(0, 3).forEach(p => {
       console.log(`[DEBUG] Requested: "${p}" → normalized: "${normalizePlayerName(p)}"`);
     });
+
+    let debugCount = 0; // Add counter for debug logging
     
     const matchedOdds = players.map(requestedPlayer => {
       // Find live odds match
@@ -149,7 +151,8 @@ exports.handler = async (event, context) => {
       );
 
       // DEBUG: Log failed matches for first 5 players
-      if (!liveMatch && matchedOdds.length < 5) {
+      if (!liveMatch && debugCount < 5) {
+        debugCount++;
         console.log(`[DEBUG] NO MATCH for "${requestedPlayer}" (normalized: "${normalizePlayerName(requestedPlayer)}")`);
         // Show what we're comparing against
         const similar = oddsData.find(o => {
