@@ -41,6 +41,9 @@ async function fetchDataGolfTournament(tour, apiKey) {
     console.log(`[TOURNAMENT] Fetching from DataGolf API for tour: ${tour}`);
     
     // STEP 1: Get current tournament schedule
+    // According to DataGolf docs: https://datagolf.com/api-access
+    // Endpoint: get-schedule
+    // Returns: { schedule: [ { event_id, event_name, date, end_date, course_name, ... } ] }
     const scheduleUrl = `https://feeds.datagolf.com/get-schedule?tour=${tour}&file_format=json&key=${apiKey}`;
     
     console.log(`[TOURNAMENT] Fetching schedule...`);
