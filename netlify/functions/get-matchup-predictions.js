@@ -75,16 +75,24 @@ exports.handler = async (event, context) => {
         
         // Convert American odds to decimal
         let decimalOdds = null;
+        let decimalMinOdds = null;
+        let decimalMaxOdds = null;
+        
         if (oddsEntry?.odds) {
           decimalOdds = americanToDecimal(oddsEntry.odds);
-          console.log(`[MATCHUP] ${stat.player}: American ${oddsEntry.odds} → Decimal ${decimalOdds.toFixed(1)}`);
+          decimalMinOdds = oddsEntry.minOdds ? americanToDecimal(oddsEntry.minOdds) : null;
+          decimalMaxOdds = oddsEntry.maxOdds ? americanToDecimal(oddsEntry.maxOdds) : null;
+          console.log(`[MATCHUP] ${stat.player}: Avg ${decimalOdds.toFixed(1)} | Best ${decimalMinOdds?.toFixed(1)} | Worst ${decimalMaxOdds?.toFixed(1)}`);
         }
         
         return {
           name: stat.player,
           rank: stat.stats.rank,
-          odds: decimalOdds, // Now in decimal format
+          odds: decimalOdds, // Average odds in decimal format
+          minOdds: decimalMinOdds, // Best odds for bettor
+          maxOdds: decimalMaxOdds, // Worst odds for bettor
           americanOdds: oddsEntry?.americanOdds || null,
+          bookmakerCount: oddsEntry?.bookmakerCount || 0,
           sgTotal: stat.stats.sgTotal,
           sgOTT: stat.stats.sgOTT,
           sgAPP: stat.stats.sgAPP,
