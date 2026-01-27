@@ -522,20 +522,20 @@ function App() {
                   <h3 className="pick-name">{pick.player}</h3>
 
 {/* NEW: Odds Breakdown */}
-{pick.americanMinOdds && pick.americanMaxOdds && (
+{pick.minOdds && pick.maxOdds && (
   <div className="odds-breakdown">
     <div className="odds-breakdown-item">
       <span className="odds-breakdown-label">Best:</span>
-      <span className="odds-breakdown-value best">{pick.americanMinOdds}</span>
+      <span className="odds-breakdown-value best">{Math.round(pick.minOdds)}/1</span>
       {pick.bestBookmaker && <span className="odds-breakdown-book">({pick.bestBookmaker})</span>}
     </div>
     <div className="odds-breakdown-item">
       <span className="odds-breakdown-label">Avg:</span>
-      <span className="odds-breakdown-value avg">{pick.americanOdds}</span>
+      <span className="odds-breakdown-value avg">{Math.round(pick.odds)}/1</span>
     </div>
     <div className="odds-breakdown-item">
       <span className="odds-breakdown-label">Worst:</span>
-      <span className="odds-breakdown-value worst">{pick.americanMaxOdds}</span>
+      <span className="odds-breakdown-value worst">{Math.round(pick.maxOdds)}/1</span>
       {pick.worstBookmaker && <span className="odds-breakdown-book">({pick.worstBookmaker})</span>}
     </div>
   </div>
