@@ -113,19 +113,30 @@ exports.handler = async (event, context) => {
     // If no endpoint worked, generate estimated stats
     if (Object.keys(playerStats).length === 0) {
       console.log(`[STATS] All endpoints failed. Generating estimated stats...`);
-      throw new Error('No working DataGolf endpoint found');
-    }
-
-    } catch (apiError) {
-      console.error('[STATS] DataGolf API request failed:', apiError.message);
-      if (apiError.response) {
-        console.error('[STATS] API Response Status:', apiError.response.status);
-        console.error('[STATS] API Response Data:', apiError.response.data);
-      }
       
-      // Fall back to estimated stats
-      console.log('[STATS] Falling back to estimated stats');
-      throw apiError; // Re-throw to trigger fallback
+      // Generate estimated stats for all requested players
+      players.forEach((player, index) => {
+        const normalizedName = normalizePlayerName(player);
+        
+        const fieldPosition = index / Math.max(players.length - 1, 1);
+        const skillLevel = 1 - fieldPosition;
+        
+        const sgTotal = parseFloat((skillLevel * 3.5 - 1.0).toFixed(2));
+        const variance = (Math.random() - 0.5) * 0.3;
+        
+        playerStats[normalizedName] = {
+          name: player,
+          rank: index + 1,
+          sgTotal: parseFloat((sgTotal + variance).toFixed(2)),
+          sgOTT: parseFloat((sgTotal * 0.25 + (Math.random() - 0.5) * 0.2).toFixed(2)),
+          sgAPP: parseFloat((sgTotal * 0.35 + (Math.random() - 0.5) * 0.2).toFixed(2)),
+          sgARG: parseFloat((sgTotal * 0.20 + (Math.random() - 0.5) * 0.15).toFixed(2)),
+          sgPutt: parseFloat((sgTotal * 0.20 + (Math.random() - 0.5) * 0.2).toFixed(2)),
+          estimated: true
+        };
+      });
+      
+      console.log(`[STATS] Generated estimated stats for ${Object.keys(playerStats).length} players`);
     }
 
     // Match requested players with stats
