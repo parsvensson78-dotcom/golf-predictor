@@ -498,39 +498,28 @@ function App() {
                   <div className="pick-header">
                     <span className="pick-number">#{index + 1}</span>
                     <div className="odds-container">
-                      {Math.round(pick.odds)}/1
+                      {pick.preTournamentOdds ? (
+                        <div className="odds-comparison">
+                          <div className="odds-row">
+                            <span className="odds-label">Pre:</span>
+                            <span className="odds-value pre">{Math.round(pick.preTournamentOdds)}/1</span>
+                          </div>
+                          <div className="odds-row">
+                            <span className="odds-label">Live:</span>
+                            <span className="odds-value live">{Math.round(pick.odds)}/1</span>
+                            {pick.movementEmoji && (
+                              <span className="odds-movement">
+                                {pick.movementEmoji} {pick.oddsMovement > 0 ? '+' : ''}{pick.oddsMovement}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="pick-odds">{Math.round(pick.odds)}/1</span>
+                      )}
                     </div>
                   </div>
                   <h3 className="pick-name">{pick.player}</h3>
-                  
-                  {/* ODDS BREAKDOWN SECTION */}
-                  <div className="odds-breakdown-section">
-                    <div className="odds-breakdown-grid">
-                      <div className="odds-item best">
-                        <div className="odds-label">Best Odds</div>
-                        <div className="odds-value">{pick.americanMinOdds || 'N/A'}</div>
-                        {pick.bestBookmaker && (
-                          <div className="odds-bookmaker">{pick.bestBookmaker}</div>
-                        )}
-                      </div>
-                      <div className="odds-item average">
-                        <div className="odds-label">Average</div>
-                        <div className="odds-value">{pick.americanOdds || 'N/A'}</div>
-                        <div className="odds-bookmaker">{pick.bookmakerCount || 0} books</div>
-                      </div>
-                      <div className="odds-item worst">
-                        <div className="odds-label">Worst Odds</div>
-                        <div className="odds-value">{pick.americanMaxOdds || 'N/A'}</div>
-                        {pick.worstBookmaker && (
-                          <div className="odds-bookmaker">{pick.worstBookmaker}</div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="odds-tip">
-                      💡 Shop around - odds vary between bookmakers
-                    </div>
-                  </div>
-
                   <p className="pick-reasoning">{pick.reasoning}</p>
                 </div>
               ))}
