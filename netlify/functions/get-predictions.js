@@ -156,13 +156,17 @@ exports.handler = async (event, context) => {
           console.log(`[ODDS] ${stat.player}: NO MATCH FOUND`);
         }
         
-        return {
+          return {
           name: stat.player,
           rank: stat.stats.rank,
           odds: decimalOdds, // Average odds in decimal format
           minOdds: decimalMinOdds, // Best odds for bettor
           maxOdds: decimalMaxOdds, // Worst odds for bettor
-          americanOdds: oddsEntry?.americanOdds || null,
+          americanOdds: oddsEntry?.odds || null, // Average American odds
+          americanMinOdds: oddsEntry?.minOdds || null, // Best American odds
+          americanMaxOdds: oddsEntry?.maxOdds || null, // Worst American odds
+          bestBookmaker: oddsEntry?.bestBookmaker || null,
+          worstBookmaker: oddsEntry?.worstBookmaker || null,
           bookmakerCount: oddsEntry?.bookmakerCount || 0,
           sgTotal: stat.stats.sgTotal,
           sgOTT: stat.stats.sgOTT,
