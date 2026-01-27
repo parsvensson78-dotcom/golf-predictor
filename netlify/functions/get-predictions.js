@@ -45,6 +45,14 @@ exports.handler = async (event, context) => {
     const oddsData = oddsResponse.data;
 
     console.log(`[ODDS] Received odds for ${oddsData.odds.length} players from ${oddsData.source}`);
+    
+    // Debug: Check the structure of the first player from each source
+    if (statsData.players && statsData.players.length > 0) {
+      console.log(`[DEBUG] First player from stats:`, JSON.stringify(statsData.players[0]));
+    }
+    if (oddsData.odds && oddsData.odds.length > 0) {
+      console.log(`[DEBUG] First player from odds:`, JSON.stringify(oddsData.odds[0]));
+    }
 
     // Step 4: Get weather forecast using WeatherAPI.com
     let weatherInfo = 'Weather data not available';
@@ -139,6 +147,8 @@ exports.handler = async (event, context) => {
         if (oddsEntry?.odds) {
           decimalOdds = americanToDecimal(oddsEntry.odds);
           console.log(`[ODDS] ${stat.player}: American ${oddsEntry.odds} → Decimal ${decimalOdds.toFixed(1)}`);
+        } else {
+          console.log(`[ODDS] ${stat.player}: NO MATCH FOUND`);
         }
         
         return {
