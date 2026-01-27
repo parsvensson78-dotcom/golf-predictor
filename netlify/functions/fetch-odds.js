@@ -134,114 +134,22 @@ exports.handler = async (event, context) => {
       console.log('[ODDS] Returning empty odds data due to API failure');
     }
 
-    // STEP 3: Match players from request with both live and pre-tournament odds
+    // STEP 3: Return all players from DataGolf (they're the actual tournament field)
     
-    // DEBUG: Show first 3 requested players
-    console.log(`[DEBUG] First 3 requested players:`);
-    players.slice(0, 3).forEach(p => {
-      console.log(`[DEBUG] Requested: "${p}" → normalized: "${normalizePlayerName(p)}"`);
-    });
+    console.log(`[ODDS] Returning all ${oddsData.length} players from DataGolf`);
 
-    let debugCount = 0; // Add counter for debug logging
+    // Convert oddsData to match expected format
+    const allPlayers = oddsData.map(player => ({
+      player: player.player,
+      odds: player.odds,
+      americanOdds: player.americanOdds,
+      minOdds: player.minOdds,
+      maxOdds: player.maxOdds,
+      bookmakerCount: player.bookmakerCount,
+      source: 'DataGolf (Live)'
+    }));
     
-    const matchedOdds = players.map(requestedPlayer => {
-      // Find live odds match
-      let liveMatch = oddsData.find(o => 
-        normalizePlayerName(o.player) === normalizePlayerName(requestedPlayer)
-      );
-
-      // DEBUG: Log first 3 successful matches
-      if (liveMatch && debugCount < 8) {
-        debugCount++;
-        console.log(`[DEBUG] ✅ MATCHED: "${requestedPlayer}" → "${liveMatch.player}"`);
-      }
-
-      // DEBUG: Log failed matches for first 5 players  
-      if (!liveMatch && debugCount < 8) {
-        debugCount++;
-        console.log(`[DEBUG] ❌ NO MATCH for "${requestedPlayer}" (normalized: "${normalizePlayerName(requestedPlayer)}")`);
-        // Show what we're comparing against
-        const similar = oddsData.find(o => {
-          const normalized = normalizePlayerName(o.player);
-          const requested = normalizePlayerName(requestedPlayer);
-          return normalized.includes(requested.split(' ')[0]) || requested.includes(normalized.split(' ')[0]);
-        });
-        if (similar) {
-          console.log(`[DEBUG] Closest match would be: "${similar.player}" (normalized: "${normalizePlayerName(similar.player)}")`);
-        }
-      }
-
-      if (!liveMatch) {
-        liveMatch = oddsData.find(o => {
-          const normalized = normalizePlayerName(o.player);
-          const requested = normalizePlayerName(requestedPlayer);
-          return normalized.includes(requested) || requested.includes(normalized);
-        });
-      }
-
-      // Find pre-tournament odds match
-      let preMatch = preTournamentOdds.find(o =>
-        normalizePlayerName(o.player) === normalizePlayerName(requestedPlayer)
-      );
-
-      if (!preMatch) {
-        preMatch = preTournamentOdds.find(o => {
-          const normalized = normalizePlayerName(o.player);
-          const requested = normalizePlayerName(requestedPlayer);
-          return normalized.includes(requested) || requested.includes(normalized);
-        });
-      }
-
-      // Build response object
-      const result = {
-        player: requestedPlayer,
-        odds: liveMatch?.odds || null,
-        americanOdds: liveMatch?.americanOdds || null,
-        minOdds: liveMatch?.minOdds || null,
-        maxOdds: liveMatch?.maxOdds || null,
-        bookmakerCount: liveMatch?.bookmakerCount || 0,
-        source: liveMatch ? 'DataGolf (Live)' : 'Not found'
-      };
-
-      // Add pre-tournament data if available
-      if (preMatch) {
-        result.preTournamentOdds = preMatch.odds;
-        result.preTournamentDate = preTournamentDate;
-        
-        // Calculate movement if both odds available
-        if (liveMatch && preMatch) {
-          const diff = liveMatch.odds - preMatch.odds;
-          result.oddsMovement = diff;
-          
-          // For American odds, movement interpretation:
-          // Positive odds getting MORE positive = lengthening (less favored)
-          // Positive odds getting LESS positive = shortening (more favored)
-          if (diff > 50) {
-            result.movementDirection = 'lengthened'; // Less popular
-            result.movementEmoji = '📈';
-          } else if (diff < -50) {
-            result.movementDirection = 'shortened'; // More popular
-            result.movementEmoji = '📉';
-          } else {
-            result.movementDirection = 'stable';
-            result.movementEmoji = '➡️';
-          }
-          
-          // Calculate percentage change
-          if (preMatch.odds > 0 && liveMatch.odds > 0) {
-            result.movementPercentage = Math.round((diff / preMatch.odds) * 100);
-          }
-        }
-      }
-
-      return result;
-    });
-
-    const foundCount = matchedOdds.filter(o => o.odds !== null).length;
-    const withPreOdds = matchedOdds.filter(o => o.preTournamentOdds).length;
-    
-    console.log(`[ODDS] Final result: Matched ${foundCount}/${players.length} live odds`);
-    console.log(`[ODDS] Pre-tournament odds available for ${withPreOdds} players`);
+    console.log(`[ODDS] Final result: Returning ${allPlayers.length} players with live odds`);
 
     return {
       statusCode: 200,
@@ -249,9 +157,9 @@ exports.handler = async (event, context) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        odds: matchedOdds,
+        odds: allPlayers,
         scrapedCount: oddsData.length,
-        matchedCount: foundCount,
+        matchedCount: allPlayers.length,
         source: 'DataGolf API',
         timestamp: new Date().toISOString()
       })
