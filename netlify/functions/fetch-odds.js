@@ -109,7 +109,7 @@ exports.handler = async (event, context) => {
               americanOdds: formatAmericanOdds(avgOdds)
             });
 
-            console.log(`[ODDS] ${playerName}: ${formatAmericanOdds(avgOdds)} avg (${bookOdds.length} books)`);
+            console.log(`[ODDS] ${playerName}: Avg ${formatAmericanOdds(avgOdds)} | Best ${formatAmericanOdds(minOdds)} | Worst ${formatAmericanOdds(maxOdds)} (${bookOdds.length} books)`);
           }
         } catch (playerError) {
           console.error(`[ODDS] Error processing player ${player.player_name}:`, playerError.message);
