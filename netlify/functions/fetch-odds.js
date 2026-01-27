@@ -299,11 +299,18 @@ function cleanPlayerName(name) {
 
 /**
  * Normalize player name for matching
+ * Handles both "LastName, FirstName" and "FirstName LastName" formats
  */
 function normalizePlayerName(name) {
-  return name
+  let normalized = name
     .toLowerCase()
     .replace(/[^a-z\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+  
+  // Split into parts to create a sortable key
+  const parts = normalized.split(' ');
+  // Return concatenated parts sorted alphabetically
+  // This makes "xander schauffele" and "schauffele xander" match
+  return parts.sort().join(' ');
 }
