@@ -1597,3 +1597,65 @@ body {
     text-align: center;
   }
 }
+
+/* Odds Breakdown */
+.odds-breakdown {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+  display: flex;
+  justify-content: space-around;
+  gap: 10px;
+  border: 1px solid #e0e0e0;
+}
+
+.odds-breakdown-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.odds-breakdown-label {
+  font-size: 0.75rem;
+  color: #666;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.odds-breakdown-value {
+  font-size: 1.1rem;
+  font-weight: bold;
+}
+
+.odds-breakdown-value.best {
+  color: #4CAF50;
+}
+
+.odds-breakdown-value.avg {
+  color: #2196F3;
+}
+
+.odds-breakdown-value.worst {
+  color: #f44336;
+}
+
+.odds-breakdown-book {
+  font-size: 0.7rem;
+  color: #999;
+  font-style: italic;
+}
+
+@media (max-width: 600px) {
+  .odds-breakdown {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .odds-breakdown-item {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
