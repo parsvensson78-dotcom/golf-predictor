@@ -520,7 +520,28 @@ function App() {
                     </div>
                   </div>
                   <h3 className="pick-name">{pick.player}</h3>
-                  <p className="pick-reasoning">{pick.reasoning}</p>
+
+{/* NEW: Odds Breakdown */}
+{pick.americanMinOdds && pick.americanMaxOdds && (
+  <div className="odds-breakdown">
+    <div className="odds-breakdown-item">
+      <span className="odds-breakdown-label">Best:</span>
+      <span className="odds-breakdown-value best">{pick.americanMinOdds}</span>
+      {pick.bestBookmaker && <span className="odds-breakdown-book">({pick.bestBookmaker})</span>}
+    </div>
+    <div className="odds-breakdown-item">
+      <span className="odds-breakdown-label">Avg:</span>
+      <span className="odds-breakdown-value avg">{pick.americanOdds}</span>
+    </div>
+    <div className="odds-breakdown-item">
+      <span className="odds-breakdown-label">Worst:</span>
+      <span className="odds-breakdown-value worst">{pick.americanMaxOdds}</span>
+      {pick.worstBookmaker && <span className="odds-breakdown-book">({pick.worstBookmaker})</span>}
+    </div>
+  </div>
+)}
+
+<p className="pick-reasoning">{pick.reasoning}</p>
                 </div>
               ))}
             </div>
