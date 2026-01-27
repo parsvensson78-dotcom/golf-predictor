@@ -139,7 +139,7 @@ exports.handler = async (event, context) => {
     const playersWithData = statsData.players
       .map(stat => {
         const oddsEntry = oddsData.odds.find(o => 
-          o.player.toLowerCase() === stat.player.toLowerCase()
+          normalizePlayerName(o.player) === normalizePlayerName(stat.player)
         );
         
         // Convert American odds to decimal odds for display/analysis
@@ -282,6 +282,21 @@ function americanToDecimal(americanOdds) {
     // Negative American odds: -200 = 1.5 decimal
     return (100 / Math.abs(americanOdds)) + 1;
   }
+}
+
+/**
+ * Normalize player name for matching
+ * Handles both "LastName, FirstName" and "FirstName LastName" formats
+ */
+function normalizePlayerName(name) {
+  let normalized = name
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  const parts = normalized.split(' ');
+  return parts.sort().join(' ');
 }
 
 /**
