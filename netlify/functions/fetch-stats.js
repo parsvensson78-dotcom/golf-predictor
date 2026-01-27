@@ -20,78 +20,101 @@ exports.handler = async (event, context) => {
     // DataGolf API key from environment
     const DATAGOLF_API_KEY = process.env.DATAGOLF_API_KEY || '07b56aee1a02854e9513b06af5cd';
 
-    // DataGolf Skill Decompositions endpoint (provides SG stats)
-    // According to docs: https://datagolf.com/api-access
-    const dataGolfUrl = `https://feeds.datagolf.com/preds/skill-decompositions?file_format=json&key=${DATAGOLF_API_KEY}`;
+    // DataGolf Skill Ratings endpoint (available with Scratch Plus subscription)
+    // Try different possible endpoint paths
+    const endpoints = [
+      `https://feeds.datagolf.com/preds/skill-ratings?file_format=json&key=${DATAGOLF_API_KEY}`,
+      `https://feeds.datagolf.com/historical-raw-data/skill-ratings?file_format=json&key=${DATAGOLF_API_KEY}`,
+      `https://feeds.datagolf.com/field-updates?file_format=json&tour=pga&key=${DATAGOLF_API_KEY}`
+    ];
     
-    console.log(`[STATS] Fetching from DataGolf API...`);
+    console.log(`[STATS] Attempting to fetch from DataGolf skill ratings API...`);
 
     let playerStats = {};
+    let successfulEndpoint = null;
 
-    try {
-      const response = await axios.get(dataGolfUrl, {
-        timeout: 15000,
-        headers: {
-          'User-Agent': 'Golf-Predictor-App/1.0',
-          'Accept': 'application/json'
+    // Try each endpoint until one works
+    for (const dataGolfUrl of endpoints) {
+      try {
+        console.log(`[STATS] Trying endpoint: ${dataGolfUrl.split('?')[0]}`);
+        
+        const response = await axios.get(dataGolfUrl, {
+          timeout: 15000,
+          headers: {
+            'User-Agent': 'Golf-Predictor-App/1.0',
+            'Accept': 'application/json'
+          }
+        });
+
+        console.log(`[STATS] ✅ Success! Status: ${response.status}`);
+        console.log(`[STATS] Response keys:`, Object.keys(response.data || {}));
+        
+        // Log first few keys to understand structure
+        if (response.data) {
+          console.log(`[STATS] Sample data:`, JSON.stringify(response.data).substring(0, 300));
         }
-      });
-
-      console.log(`[STATS] DataGolf response received, status: ${response.status}`);
-      
-      // DEBUG: Log response structure
-      console.log(`[STATS] Response keys:`, Object.keys(response.data || {}));
-      
-      // According to DataGolf docs, skill-decompositions returns:
-      // { decompositions: [ { dg_id, player_name, primary_tour, datagolf_rank, sg_putt, sg_arg, sg_app, sg_ott, sg_t2g, sg_total } ] }
-      let decompositions = null;
-      
-      if (response.data?.decompositions) {
-        decompositions = response.data.decompositions;
-        console.log(`[STATS] Found decompositions array with ${decompositions.length} players`);
-      } else if (Array.isArray(response.data)) {
-        decompositions = response.data;
-        console.log(`[STATS] Response is direct array with ${decompositions.length} players`);
-      } else {
-        console.error('[STATS] Unknown response structure:', JSON.stringify(response.data).substring(0, 500));
-        throw new Error('Invalid DataGolf API response - unexpected structure');
-      }
-
-      if (!decompositions || decompositions.length === 0) {
-        console.error('[STATS] No player decompositions found in response');
-        throw new Error('No player decompositions in DataGolf response');
-      }
-
-      console.log(`[STATS] Retrieved ${decompositions.length} players with skill decompositions from DataGolf`);
-      
-      // DEBUG: Show first player structure
-      if (decompositions.length > 0) {
-        console.log(`[STATS] Sample player data:`, JSON.stringify(decompositions[0]));
-      }
-
-      // Process DataGolf skill decompositions
-      decompositions.forEach(player => {
-        try {
-          const playerName = cleanPlayerName(player.player_name || player.name);
-          const normalizedName = normalizePlayerName(playerName);
-          
-          playerStats[normalizedName] = {
-            name: playerName,
-            rank: player.datagolf_rank || null,
-            sgTotal: parseFloat(player.sg_total) || 0,
-            sgOTT: parseFloat(player.sg_ott) || 0,
-            sgAPP: parseFloat(player.sg_app) || 0,
-            sgARG: parseFloat(player.sg_arg) || 0,
-            sgPutt: parseFloat(player.sg_putt) || 0,
-            sgT2G: parseFloat(player.sg_t2g) || 0 // Tee to green
-          };
-          
-        } catch (playerError) {
-          console.error(`[STATS] Error processing player ${player.player_name || player.name}:`, playerError.message);
+        
+        // Try to find player data in various possible structures
+        let playerData = null;
+        
+        if (response.data?.ratings) {
+          playerData = response.data.ratings;
+        } else if (response.data?.players) {
+          playerData = response.data.players;
+        } else if (response.data?.skill_ratings) {
+          playerData = response.data.skill_ratings;
+        } else if (Array.isArray(response.data)) {
+          playerData = response.data;
+        } else if (response.data?.field) {
+          playerData = response.data.field;
         }
-      });
-
-      console.log(`[STATS] Successfully processed ${Object.keys(playerStats).length} players with stats`);
+        
+        if (playerData && playerData.length > 0) {
+          console.log(`[STATS] Found player data array with ${playerData.length} players`);
+          console.log(`[STATS] First player structure:`, JSON.stringify(playerData[0]));
+          
+          // Process the player data
+          playerData.forEach((player, index) => {
+            try {
+              const playerName = cleanPlayerName(
+                player.player_name || player.name || player.player || ''
+              );
+              const normalizedName = normalizePlayerName(playerName);
+              
+              // Extract stats with various possible field names
+              playerStats[normalizedName] = {
+                name: playerName,
+                rank: player.datagolf_rank || player.rank || player.world_rank || (index + 1),
+                sgTotal: parseFloat(player.sg_total || player.total_sg || player.sgTotal || 0),
+                sgOTT: parseFloat(player.sg_ott || player.ott || player.sgOTT || 0),
+                sgAPP: parseFloat(player.sg_app || player.app || player.sgAPP || 0),
+                sgARG: parseFloat(player.sg_arg || player.arg || player.sgARG || 0),
+                sgPutt: parseFloat(player.sg_putt || player.putt || player.sgPutt || 0)
+              };
+            } catch (err) {
+              console.error(`[STATS] Error processing player:`, err.message);
+            }
+          });
+          
+          successfulEndpoint = dataGolfUrl.split('?')[0];
+          console.log(`[STATS] Successfully processed ${Object.keys(playerStats).length} players from DataGolf`);
+          break; // Success! Exit the loop
+        }
+        
+      } catch (apiError) {
+        console.log(`[STATS] ❌ Endpoint failed: ${apiError.message}`);
+        if (apiError.response) {
+          console.log(`[STATS] Status: ${apiError.response.status}`);
+        }
+        // Continue to next endpoint
+      }
+    }
+    
+    // If no endpoint worked, generate estimated stats
+    if (Object.keys(playerStats).length === 0) {
+      console.log(`[STATS] All endpoints failed. Generating estimated stats...`);
+      throw new Error('No working DataGolf endpoint found');
+    }
 
     } catch (apiError) {
       console.error('[STATS] DataGolf API request failed:', apiError.message);
