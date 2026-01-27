@@ -58,13 +58,17 @@ async function fetchDataGolfTournament(tour, apiKey) {
 
     // Find current or upcoming tournament
     const now = new Date();
+    console.log(`[TOURNAMENT] Current date/time: ${now.toISOString()}`);
+    
     const currentTournament = findCurrentTournament(scheduleResponse.data.schedule, now);
     
     if (!currentTournament) {
+      console.error('[TOURNAMENT] No current tournament found in schedule');
       throw new Error('No current tournament found');
     }
 
-    console.log(`[TOURNAMENT] Found: ${currentTournament.event_name}`);
+    console.log(`[TOURNAMENT] Selected: ${currentTournament.event_name}`);
+    console.log(`[TOURNAMENT] Tournament dates: ${currentTournament.date || currentTournament.start_date} to ${currentTournament.end_date || 'N/A'}`);
 
     // STEP 2: Get the field from betting odds endpoint
     // This ensures we only get players with actual betting odds
@@ -141,32 +145,79 @@ async function fetchDataGolfTournament(tour, apiKey) {
 
 /**
  * Find current or upcoming tournament from schedule
+ * Improved logic to handle DataGolf's schedule format
  */
 function findCurrentTournament(schedule, now) {
   // Convert schedule to array if needed
   const tournaments = Array.isArray(schedule) ? schedule : Object.values(schedule);
   
-  // Sort by date
-  const sorted = tournaments.sort((a, b) => {
+  console.log(`[TOURNAMENT] Analyzing ${tournaments.length} tournaments`);
+  
+  // Filter out clearly past tournaments (ended more than 3 days ago)
+  const threeDaysAgo = new Date(now);
+  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+  
+  const recentTournaments = tournaments.filter(t => {
+    const endDate = new Date(t.end_date || t.date);
+    return endDate >= threeDaysAgo;
+  });
+  
+  console.log(`[TOURNAMENT] ${recentTournaments.length} recent/upcoming tournaments`);
+  
+  // Sort by start date
+  const sorted = recentTournaments.sort((a, b) => {
     const dateA = new Date(a.date || a.start_date);
     const dateB = new Date(b.date || b.start_date);
     return dateA - dateB;
   });
 
-  // Find current or next tournament
+  // Strategy 1: Find tournament happening NOW (started but not ended)
   for (const tournament of sorted) {
     const startDate = new Date(tournament.date || tournament.start_date);
     const endDate = new Date(tournament.end_date || startDate);
-    endDate.setDate(endDate.getDate() + 4); // Add buffer for tournament week
     
-    // If tournament is current or upcoming (within next 7 days)
-    if (endDate >= now || (startDate - now) / (1000 * 60 * 60 * 24) <= 7) {
+    // Add standard tournament length if no end date (typically 4 days)
+    if (!tournament.end_date) {
+      endDate.setDate(endDate.getDate() + 4);
+    }
+    
+    // Tournament is happening now
+    if (startDate <= now && endDate >= now) {
+      console.log(`[TOURNAMENT] Found IN PROGRESS: ${tournament.event_name}`);
+      console.log(`[TOURNAMENT] Start: ${startDate.toISOString()}, End: ${endDate.toISOString()}`);
       return tournament;
     }
   }
 
-  // If no match, return first upcoming tournament
-  return sorted.find(t => new Date(t.date || t.start_date) >= now) || sorted[0];
+  // Strategy 2: Find next upcoming tournament (within next 10 days)
+  const tenDaysFromNow = new Date(now);
+  tenDaysFromNow.setDate(tenDaysFromNow.getDate() + 10);
+  
+  for (const tournament of sorted) {
+    const startDate = new Date(tournament.date || tournament.start_date);
+    
+    // Tournament starts in the future but within 10 days
+    if (startDate > now && startDate <= tenDaysFromNow) {
+      console.log(`[TOURNAMENT] Found UPCOMING: ${tournament.event_name}`);
+      console.log(`[TOURNAMENT] Starts: ${startDate.toISOString()}`);
+      return tournament;
+    }
+  }
+
+  // Strategy 3: Just get the next tournament in the future
+  const nextTournament = sorted.find(t => {
+    const startDate = new Date(t.date || t.start_date);
+    return startDate > now;
+  });
+  
+  if (nextTournament) {
+    console.log(`[TOURNAMENT] Found NEXT: ${nextTournament.event_name}`);
+    return nextTournament;
+  }
+
+  // Strategy 4: Fallback - return first tournament in sorted list
+  console.log(`[TOURNAMENT] Using FALLBACK: ${sorted[0]?.event_name || 'None'}`);
+  return sorted[0];
 }
 
 /**
@@ -249,6 +300,7 @@ function getCourseForTournament(tournamentName) {
 
 /**
  * Hardcoded fallback if DataGolf API fails
+ * Updated for late January 2026
  */
 function getHardcodedFallback(tour) {
   const now = new Date();
@@ -256,32 +308,18 @@ function getHardcodedFallback(tour) {
   const day = now.getDate();
 
   if (tour === 'pga') {
-    // January 2026 PGA Tour schedule
-    if (month === 0) { // January
-      if (day >= 29) {
-        return {
-          name: 'AT&T Pebble Beach Pro-Am',
-          course: 'Pebble Beach Golf Links, Spyglass Hill',
-          location: 'Pebble Beach, California',
-          dates: 'Jan 30 - Feb 2, 2026',
-          tour: 'pga',
-          fieldSize: 156,
-          field: generateBasicField(156),
-          fallback: true
-        };
-      } else {
-        return {
-          name: 'Farmers Insurance Open',
-          course: 'Torrey Pines (South Course)',
-          location: 'San Diego, California',
-          dates: 'Jan 29 - Feb 1, 2026',
-          tour: 'pga',
-          fieldSize: 156,
-          field: generateBasicField(156),
-          fallback: true
-        };
-      }
-    }
+    // January 29 - February 1, 2026: Farmers Insurance Open
+    // This is the current tournament as of Jan 27
+    return {
+      name: 'Farmers Insurance Open',
+      course: 'Torrey Pines (South Course)',
+      location: 'San Diego, California',
+      dates: 'Jan 29 - Feb 1, 2026',
+      tour: 'pga',
+      fieldSize: 156,
+      field: generateBasicField(156),
+      fallback: true
+    };
   } else if (tour === 'euro') {
     return {
       name: 'Ras Al Khaimah Championship',
