@@ -44,9 +44,6 @@ exports.handler = async (event, context) => {
     }
 
     // STEP 2: Fetch current/live odds from DataGolf API
-    // According to DataGolf docs: https://datagolf.com/api-access
-    // Endpoint: betting-tools/outrights
-    // Returns: { event_name, odds: [ { dg_id, player_name, draftkings, fanduel, bet365, ... } ] }
     const tour = determineTour(tournamentName);
     const dataGolfUrl = `https://feeds.datagolf.com/betting-tools/outrights?tour=${tour}&market=win&odds_format=american&file_format=json&key=${DATAGOLF_API_KEY}`;
     
@@ -75,7 +72,6 @@ exports.handler = async (event, context) => {
       console.log(`[ODDS] Retrieved ${rawOdds.length} players with odds from DataGolf`);
 
       // Process DataGolf odds
-      // DataGolf returns: { player_name, draftkings, fanduel, bet365, etc. }
       rawOdds.forEach(player => {
         try {
           const playerName = cleanPlayerName(player.player_name);
@@ -85,39 +81,60 @@ exports.handler = async (event, context) => {
             console.log(`[DEBUG] DataGolf raw: "${player.player_name}" → cleaned: "${playerName}" → normalized: "${normalizePlayerName(playerName)}"`);
           }
           
-          // Collect all available odds from different books
+          // Collect all available odds from different books with bookmaker names
           const bookOdds = [];
-          const bookmakers = [
-            'draftkings', 'fanduel', 'betmgm', 'pointsbet', 'williamhill_us',
-            'bet365', 'pinnacle', 'bovada', 'betrivers', 'caesars', 'unibet'
-          ];
+          const bookmakerMap = {
+            'draftkings': 'DraftKings',
+            'fanduel': 'FanDuel',
+            'betmgm': 'BetMGM',
+            'pointsbet': 'PointsBet',
+            'williamhill_us': 'William Hill',
+            'bet365': 'Bet365',
+            'pinnacle': 'Pinnacle',
+            'bovada': 'Bovada',
+            'betrivers': 'BetRivers',
+            'caesars': 'Caesars',
+            'unibet': 'Unibet'
+          };
           
-          bookmakers.forEach(book => {
+          Object.keys(bookmakerMap).forEach(book => {
             if (player[book] && player[book] !== null) {
               // DataGolf returns American odds as integers (e.g., 1200 for +1200)
               const odds = parseInt(player[book]);
               if (!isNaN(odds) && odds !== 0) {
-                bookOdds.push(odds);
+                bookOdds.push({
+                  bookmaker: bookmakerMap[book],
+                  odds: odds
+                });
               }
             }
           });
 
           if (bookOdds.length > 0) {
             // Calculate average, min, max American odds
-            const avgOdds = Math.round(bookOdds.reduce((a, b) => a + b, 0) / bookOdds.length);
-            const minOdds = Math.max(...bookOdds); // Max = best odds for bettor (e.g., +2000 > +1500)
-            const maxOdds = Math.min(...bookOdds); // Min = worst odds for bettor
+            const oddsValues = bookOdds.map(b => b.odds);
+            const avgOdds = Math.round(oddsValues.reduce((a, b) => a + b, 0) / oddsValues.length);
+            
+            // Max = best odds for bettor (e.g., +2000 > +1500)
+            const bestOddsValue = Math.max(...oddsValues);
+            const bestBookmaker = bookOdds.find(b => b.odds === bestOddsValue)?.bookmaker;
+            
+            // Min = worst odds for bettor
+            const worstOddsValue = Math.min(...oddsValues);
+            const worstBookmaker = bookOdds.find(b => b.odds === worstOddsValue)?.bookmaker;
 
             oddsData.push({
               player: playerName,
               odds: avgOdds,
-              minOdds: minOdds,
-              maxOdds: maxOdds,
+              minOdds: bestOddsValue,
+              maxOdds: worstOddsValue,
+              bestBookmaker: bestBookmaker,
+              worstBookmaker: worstBookmaker,
               bookmakerCount: bookOdds.length,
               americanOdds: formatAmericanOdds(avgOdds)
             });
 
-            console.log(`[ODDS] ${playerName}: Avg ${formatAmericanOdds(avgOdds)} | Best ${formatAmericanOdds(minOdds)} | Worst ${formatAmericanOdds(maxOdds)} (${bookOdds.length} books)`);
+            console.log(`[ODDS] ${playerName}: Avg ${formatAmericanOdds(avgOdds)} | Best ${formatAmericanOdds(bestOddsValue)} (${bestBookmaker}) | Worst ${formatAmericanOdds(worstOddsValue)} (${worstBookmaker}) (${bookOdds.length} books)`);
           }
         } catch (playerError) {
           console.error(`[ODDS] Error processing player ${player.player_name}:`, playerError.message);
@@ -148,6 +165,8 @@ exports.handler = async (event, context) => {
       americanOdds: player.americanOdds,
       minOdds: player.minOdds,
       maxOdds: player.maxOdds,
+      bestBookmaker: player.bestBookmaker,
+      worstBookmaker: player.worstBookmaker,
       bookmakerCount: player.bookmakerCount,
       source: 'DataGolf (Live)'
     }));
