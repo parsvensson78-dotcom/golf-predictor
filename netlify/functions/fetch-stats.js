@@ -20,8 +20,9 @@ exports.handler = async (event, context) => {
     // DataGolf API key from environment
     const DATAGOLF_API_KEY = process.env.DATAGOLF_API_KEY || '07b56aee1a02854e9513b06af5cd';
 
-    // DataGolf Skill Ratings endpoint
-    const dataGolfUrl = `https://feeds.datagolf.com/preds/skill-ratings?file_format=json&key=${DATAGOLF_API_KEY}`;
+    // DataGolf Skill Decompositions endpoint (provides SG stats)
+    // According to docs: https://datagolf.com/api-access
+    const dataGolfUrl = `https://feeds.datagolf.com/preds/skill-decompositions?file_format=json&key=${DATAGOLF_API_KEY}`;
     
     console.log(`[STATS] Fetching from DataGolf API...`);
 
@@ -38,19 +39,40 @@ exports.handler = async (event, context) => {
 
       console.log(`[STATS] DataGolf response received, status: ${response.status}`);
       
-      if (!response.data || !response.data.ratings) {
-        console.error('[STATS] Invalid DataGolf response structure');
-        throw new Error('Invalid DataGolf API response');
+      // DEBUG: Log response structure
+      console.log(`[STATS] Response keys:`, Object.keys(response.data || {}));
+      
+      // According to DataGolf docs, skill-decompositions returns:
+      // { decompositions: [ { dg_id, player_name, primary_tour, datagolf_rank, sg_putt, sg_arg, sg_app, sg_ott, sg_t2g, sg_total } ] }
+      let decompositions = null;
+      
+      if (response.data?.decompositions) {
+        decompositions = response.data.decompositions;
+        console.log(`[STATS] Found decompositions array with ${decompositions.length} players`);
+      } else if (Array.isArray(response.data)) {
+        decompositions = response.data;
+        console.log(`[STATS] Response is direct array with ${decompositions.length} players`);
+      } else {
+        console.error('[STATS] Unknown response structure:', JSON.stringify(response.data).substring(0, 500));
+        throw new Error('Invalid DataGolf API response - unexpected structure');
       }
 
-      const ratings = response.data.ratings;
-      console.log(`[STATS] Retrieved ${ratings.length} players with ratings from DataGolf`);
+      if (!decompositions || decompositions.length === 0) {
+        console.error('[STATS] No player decompositions found in response');
+        throw new Error('No player decompositions in DataGolf response');
+      }
 
-      // Process DataGolf ratings
-      // DataGolf returns: { player_name, datagolf_rank, sg_total, sg_ott, sg_app, sg_arg, sg_putt }
-      ratings.forEach(player => {
+      console.log(`[STATS] Retrieved ${decompositions.length} players with skill decompositions from DataGolf`);
+      
+      // DEBUG: Show first player structure
+      if (decompositions.length > 0) {
+        console.log(`[STATS] Sample player data:`, JSON.stringify(decompositions[0]));
+      }
+
+      // Process DataGolf skill decompositions
+      decompositions.forEach(player => {
         try {
-          const playerName = cleanPlayerName(player.player_name);
+          const playerName = cleanPlayerName(player.player_name || player.name);
           const normalizedName = normalizePlayerName(playerName);
           
           playerStats[normalizedName] = {
@@ -60,11 +82,12 @@ exports.handler = async (event, context) => {
             sgOTT: parseFloat(player.sg_ott) || 0,
             sgAPP: parseFloat(player.sg_app) || 0,
             sgARG: parseFloat(player.sg_arg) || 0,
-            sgPutt: parseFloat(player.sg_putt) || 0
+            sgPutt: parseFloat(player.sg_putt) || 0,
+            sgT2G: parseFloat(player.sg_t2g) || 0 // Tee to green
           };
           
         } catch (playerError) {
-          console.error(`[STATS] Error processing player ${player.player_name}:`, playerError.message);
+          console.error(`[STATS] Error processing player ${player.player_name || player.name}:`, playerError.message);
         }
       });
 
