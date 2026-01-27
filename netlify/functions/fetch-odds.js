@@ -77,6 +77,11 @@ exports.handler = async (event, context) => {
         try {
           const playerName = cleanPlayerName(player.player_name);
           
+          // DEBUG: Show first 3 players to see name format
+          if (oddsData.length < 3) {
+            console.log(`[DEBUG] DataGolf raw: "${player.player_name}" → cleaned: "${playerName}"`);
+          }
+          
           // Collect all available odds from different books
           const bookOdds = [];
           const bookmakers = [
@@ -130,11 +135,32 @@ exports.handler = async (event, context) => {
     }
 
     // STEP 3: Match players from request with both live and pre-tournament odds
+    
+    // DEBUG: Show first 3 requested players
+    console.log(`[DEBUG] First 3 requested players:`);
+    players.slice(0, 3).forEach(p => {
+      console.log(`[DEBUG] Requested: "${p}" → normalized: "${normalizePlayerName(p)}"`);
+    });
+    
     const matchedOdds = players.map(requestedPlayer => {
       // Find live odds match
       let liveMatch = oddsData.find(o => 
         normalizePlayerName(o.player) === normalizePlayerName(requestedPlayer)
       );
+
+      // DEBUG: Log failed matches for first 5 players
+      if (!liveMatch && matchedOdds.length < 5) {
+        console.log(`[DEBUG] NO MATCH for "${requestedPlayer}" (normalized: "${normalizePlayerName(requestedPlayer)}")`);
+        // Show what we're comparing against
+        const similar = oddsData.find(o => {
+          const normalized = normalizePlayerName(o.player);
+          const requested = normalizePlayerName(requestedPlayer);
+          return normalized.includes(requested.split(' ')[0]) || requested.includes(normalized.split(' ')[0]);
+        });
+        if (similar) {
+          console.log(`[DEBUG] Closest match would be: "${similar.player}" (normalized: "${normalizePlayerName(similar.player)}")`);
+        }
+      }
 
       if (!liveMatch) {
         liveMatch = oddsData.find(o => {
@@ -308,9 +334,6 @@ function normalizePlayerName(name) {
     .replace(/\s+/g, ' ')
     .trim();
   
-  // Split into parts to create a sortable key
   const parts = normalized.split(' ');
-  // Return concatenated parts sorted alphabetically
-  // This makes "xander schauffele" and "schauffele xander" match
   return parts.sort().join(' ');
 }
