@@ -153,71 +153,116 @@ function findCurrentTournament(schedule, now) {
   
   console.log(`[TOURNAMENT] Analyzing ${tournaments.length} tournaments`);
   
-  // Filter out clearly past tournaments (ended more than 3 days ago)
-  const threeDaysAgo = new Date(now);
-  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+  // DEBUG: Log first tournament to see date format
+  if (tournaments.length > 0) {
+    console.log(`[TOURNAMENT] Sample tournament:`, JSON.stringify(tournaments[0], null, 2));
+  }
   
-  const recentTournaments = tournaments.filter(t => {
-    const endDate = new Date(t.end_date || t.date);
-    return endDate >= threeDaysAgo;
-  });
+  // Parse dates more robustly - DataGolf might use various formats
+  const parseDate = (dateStr) => {
+    if (!dateStr) return null;
+    
+    try {
+      // Try direct parsing first
+      let parsed = new Date(dateStr);
+      if (!isNaN(parsed.getTime())) {
+        return parsed;
+      }
+      
+      // Try YYYY-MM-DD format
+      if (typeof dateStr === 'string' && dateStr.includes('-')) {
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+          parsed = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          if (!isNaN(parsed.getTime())) {
+            return parsed;
+          }
+        }
+      }
+      
+      return null;
+    } catch (e) {
+      console.error(`[TOURNAMENT] Error parsing date "${dateStr}":`, e.message);
+      return null;
+    }
+  };
   
-  console.log(`[TOURNAMENT] ${recentTournaments.length} recent/upcoming tournaments`);
+  // Filter and parse tournaments with valid dates
+  const validTournaments = tournaments.map(t => {
+    const startDate = parseDate(t.date || t.start_date);
+    const endDate = parseDate(t.end_date) || (startDate ? new Date(startDate.getTime() + 4 * 24 * 60 * 60 * 1000) : null);
+    
+    return {
+      ...t,
+      _startDate: startDate,
+      _endDate: endDate
+    };
+  }).filter(t => t._startDate !== null);
+  
+  console.log(`[TOURNAMENT] ${validTournaments.length} tournaments with valid dates`);
+  
+  if (validTournaments.length === 0) {
+    console.error('[TOURNAMENT] No tournaments with valid dates found');
+    return null;
+  }
   
   // Sort by start date
-  const sorted = recentTournaments.sort((a, b) => {
-    const dateA = new Date(a.date || a.start_date);
-    const dateB = new Date(b.date || b.start_date);
-    return dateA - dateB;
+  const sorted = validTournaments.sort((a, b) => {
+    return a._startDate - b._startDate;
   });
-
+  
   // Strategy 1: Find tournament happening NOW (started but not ended)
   for (const tournament of sorted) {
-    const startDate = new Date(tournament.date || tournament.start_date);
-    const endDate = new Date(tournament.end_date || startDate);
-    
-    // Add standard tournament length if no end date (typically 4 days)
-    if (!tournament.end_date) {
-      endDate.setDate(endDate.getDate() + 4);
-    }
-    
-    // Tournament is happening now
-    if (startDate <= now && endDate >= now) {
+    if (tournament._startDate <= now && tournament._endDate >= now) {
       console.log(`[TOURNAMENT] Found IN PROGRESS: ${tournament.event_name}`);
-      console.log(`[TOURNAMENT] Start: ${startDate.toISOString()}, End: ${endDate.toISOString()}`);
+      console.log(`[TOURNAMENT] Start: ${tournament._startDate.toISOString()}, End: ${tournament._endDate.toISOString()}`);
       return tournament;
     }
   }
 
-  // Strategy 2: Find next upcoming tournament (within next 10 days)
-  const tenDaysFromNow = new Date(now);
-  tenDaysFromNow.setDate(tenDaysFromNow.getDate() + 10);
+  // Strategy 2: Find next upcoming tournament (within next 14 days)
+  const fourteenDaysFromNow = new Date(now);
+  fourteenDaysFromNow.setDate(fourteenDaysFromNow.getDate() + 14);
   
   for (const tournament of sorted) {
-    const startDate = new Date(tournament.date || tournament.start_date);
-    
-    // Tournament starts in the future but within 10 days
-    if (startDate > now && startDate <= tenDaysFromNow) {
-      console.log(`[TOURNAMENT] Found UPCOMING: ${tournament.event_name}`);
-      console.log(`[TOURNAMENT] Starts: ${startDate.toISOString()}`);
+    // Tournament starts in the future but within 14 days
+    if (tournament._startDate > now && tournament._startDate <= fourteenDaysFromNow) {
+      console.log(`[TOURNAMENT] Found UPCOMING (within 14 days): ${tournament.event_name}`);
+      console.log(`[TOURNAMENT] Starts: ${tournament._startDate.toISOString()}`);
       return tournament;
     }
   }
 
-  // Strategy 3: Just get the next tournament in the future
-  const nextTournament = sorted.find(t => {
-    const startDate = new Date(t.date || t.start_date);
-    return startDate > now;
-  });
+  // Strategy 3: Find tournament that ended recently (within last 7 days)
+  // This is for post-tournament but pre-next-tournament period
+  const sevenDaysAgo = new Date(now);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const tournament = sorted[i];
+    if (tournament._endDate >= sevenDaysAgo && tournament._endDate < now) {
+      console.log(`[TOURNAMENT] Found RECENTLY ENDED: ${tournament.event_name}`);
+      console.log(`[TOURNAMENT] Ended: ${tournament._endDate.toISOString()}`);
+      return tournament;
+    }
+  }
+
+  // Strategy 4: Just get the next tournament in the future
+  const nextTournament = sorted.find(t => t._startDate > now);
   
   if (nextTournament) {
-    console.log(`[TOURNAMENT] Found NEXT: ${nextTournament.event_name}`);
+    console.log(`[TOURNAMENT] Found NEXT FUTURE: ${nextTournament.event_name}`);
+    console.log(`[TOURNAMENT] Starts: ${nextTournament._startDate.toISOString()}`);
     return nextTournament;
   }
 
-  // Strategy 4: Fallback - return first tournament in sorted list
-  console.log(`[TOURNAMENT] Using FALLBACK: ${sorted[0]?.event_name || 'None'}`);
-  return sorted[0];
+  // Strategy 5: Fallback - return last tournament in sorted list (most recent)
+  const lastTournament = sorted[sorted.length - 1];
+  console.log(`[TOURNAMENT] Using FALLBACK (most recent): ${lastTournament?.event_name || 'None'}`);
+  if (lastTournament) {
+    console.log(`[TOURNAMENT] Dates: ${lastTournament._startDate.toISOString()} - ${lastTournament._endDate.toISOString()}`);
+  }
+  return lastTournament;
 }
 
 /**
@@ -244,8 +289,8 @@ function formatLocation(tournament) {
  */
 function formatDates(tournament) {
   try {
-    const startDate = new Date(tournament.date || tournament.start_date);
-    const endDate = tournament.end_date ? new Date(tournament.end_date) : null;
+    const startDate = new Date(tournament.date || tournament.start_date || tournament._startDate);
+    const endDate = tournament._endDate || (tournament.end_date ? new Date(tournament.end_date) : null);
     
     const options = { month: 'short', day: 'numeric' };
     const start = startDate.toLocaleDateString('en-US', options);
