@@ -36,12 +36,13 @@ exports.handler = async (event, context) => {
     const statsData = statsResponse.data;
 
     // Step 3: Fetch odds for complete field
-    const oddsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-odds`, {
-      tournamentName: tournament.name,
-      players: playerNames
-    }, {
-      timeout: 20000
-    });
+const oddsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-odds`, {
+  tournamentName: tournament.name,
+  players: playerNames,
+  tour: tournament.tour
+}, {
+  timeout: 20000
+});
     const oddsData = oddsResponse.data;
 
     console.log(`[ODDS] Received odds for ${oddsData.odds.length} players from ${oddsData.source}`);
