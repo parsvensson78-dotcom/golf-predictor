@@ -137,49 +137,41 @@ exports.handler = async (event, context) => {
 
     // Step 6: Prepare COMPLETE field data for Claude
     const playersWithData = statsData.players
-      .map(stat => {
-        const oddsEntry = oddsData.odds.find(o => 
-          normalizePlayerName(o.player) === normalizePlayerName(stat.player)
-        );
-        
-        // Convert American odds to decimal odds for display/analysis
-        let decimalOdds = null;
-        let decimalMinOdds = null;
-        let decimalMaxOdds = null;
-        
-        if (oddsEntry?.odds) {
-          decimalOdds = americanToDecimal(oddsEntry.odds);
-          decimalMinOdds = oddsEntry.minOdds ? americanToDecimal(oddsEntry.minOdds) : null;
-          decimalMaxOdds = oddsEntry.maxOdds ? americanToDecimal(oddsEntry.maxOdds) : null;
-          console.log(`[ODDS] ${stat.player}: Avg ${decimalOdds.toFixed(1)} | Best ${decimalMinOdds?.toFixed(1)} | Worst ${decimalMaxOdds?.toFixed(1)}`);
-        } else {
-          console.log(`[ODDS] ${stat.player}: NO MATCH FOUND`);
-        }
-        
-          return {
-          name: stat.player,
-          rank: stat.stats.rank,
-          odds: decimalOdds, // Average odds in decimal format
-          minOdds: decimalMinOdds, // Best odds for bettor
-          maxOdds: decimalMaxOdds, // Worst odds for bettor
-          americanOdds: oddsEntry?.odds || null, // Average American odds
-          americanMinOdds: oddsEntry?.minOdds || null, // Best American odds
-          americanMaxOdds: oddsEntry?.maxOdds || null, // Worst American odds
-          bestBookmaker: oddsEntry?.bestBookmaker || null,
-          worstBookmaker: oddsEntry?.worstBookmaker || null,
-          bookmakerCount: oddsEntry?.bookmakerCount || 0,
-          sgTotal: stat.stats.sgTotal,
-          sgOTT: stat.stats.sgOTT,
-          sgAPP: stat.stats.sgAPP,
-          sgARG: stat.stats.sgARG,
-          sgPutt: stat.stats.sgPutt
-        };
-      })
-      .filter(p => p.odds !== null && !p.notFound)
-      .sort((a, b) => (a.odds || 999) - (b.odds || 999));
+  .map(stat => {
+    const oddsEntry = oddsData.odds.find(o => 
+      normalizePlayerName(o.player) === normalizePlayerName(stat.player)
+    );
+    
+    // Convert average odds to decimal (minOdds and maxOdds already converted in fetch-odds)
+    const decimalOdds = oddsEntry?.odds ? americanToDecimal(oddsEntry.odds) : null;
+    
+    if (decimalOdds) {
+      console.log(`[ODDS] ${stat.player}: Avg ${decimalOdds.toFixed(1)} | Best ${oddsEntry?.minOdds?.toFixed(1)} (${oddsEntry?.bestBookmaker}) | Worst ${oddsEntry?.maxOdds?.toFixed(1)} (${oddsEntry?.worstBookmaker})`);
+    } else {
+      console.log(`[ODDS] ${stat.player}: NO MATCH FOUND`);
+    }
+    
+    return {
+      name: stat.player,
+      rank: stat.stats.rank,
+      odds: decimalOdds,  // Average odds in decimal
+      minOdds: oddsEntry?.minOdds || null,  // Best odds (already decimal from fetch-odds)
+      maxOdds: oddsEntry?.maxOdds || null,  // Worst odds (already decimal from fetch-odds)
+      bestBookmaker: oddsEntry?.bestBookmaker || null,
+      worstBookmaker: oddsEntry?.worstBookmaker || null,
+      bookmakerCount: oddsEntry?.bookmakerCount || 0,
+      sgTotal: stat.stats.sgTotal,
+      sgOTT: stat.stats.sgOTT,
+      sgAPP: stat.stats.sgAPP,
+      sgARG: stat.stats.sgARG,
+      sgPutt: stat.stats.sgPutt
+    };
+  })
+  .filter(p => p.odds !== null && !p.notFound)
+  .sort((a, b) => (a.odds || 999) - (b.odds || 999));
 
-    console.log(`Analyzing complete field: ${playersWithData.length} players with valid data`);
-
+console.log(`Analyzing complete field: ${playersWithData.length} players with valid data`);
+    
     // Step 7: Call Claude API with enhanced course info
     const anthropic = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY
