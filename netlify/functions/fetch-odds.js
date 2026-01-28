@@ -7,10 +7,11 @@ const axios = require('axios');
 exports.handler = async (event, context) => {
   try {
     const body = JSON.parse(event.body);
-    const { tournamentName, players } = body;
+    const { tournamentName, players, tour } = body;
 
     console.log(`[ODDS] Starting DataGolf fetch for: ${tournamentName}`);
     console.log(`[ODDS] Looking for ${players.length} players`);
+    console.log(`[ODDS] Tour: ${tour}`);
 
     // DataGolf API key from environment
     const DATAGOLF_API_KEY = process.env.DATAGOLF_API_KEY || '07b56aee1a02854e9513b06af5cd';
@@ -44,8 +45,9 @@ exports.handler = async (event, context) => {
     }
 
     // STEP 2: Fetch current/live odds from DataGolf API
-    const tour = determineTour(tournamentName);
-    const dataGolfUrl = `https://feeds.datagolf.com/betting-tools/outrights?tour=${tour}&market=win&odds_format=american&file_format=json&key=${DATAGOLF_API_KEY}`;
+    // STEP 2: Fetch current/live odds from DataGolf API
+  const apiTour = tour === 'dp' ? 'euro' : tour;
+  const dataGolfUrl = `https://feeds.datagolf.com/betting-tools/outrights?tour=${apiTour}&market=win&odds_format=american&file_format=json&key=${DATAGOLF_API_KEY}`;
     
     console.log(`[ODDS] DataGolf URL: ${dataGolfUrl}`);
 
@@ -208,38 +210,6 @@ exports.handler = async (event, context) => {
     };
   }
 };
-
-/**
- * Determine tour code for DataGolf API
- */
-function determineTour(tournamentName) {
-  const name = tournamentName.toLowerCase();
-  
-  // DP World Tour tournaments
-  const dpWorldTournaments = [
-    'dp world', 'european tour', 'dubai', 'scottish open', 'irish open',
-    'spanish open', 'italian open', 'bmw pga', 'dunhill', 'alfred dunhill'
-  ];
-  
-  for (const keyword of dpWorldTournaments) {
-    if (name.includes(keyword)) {
-      return 'euro';
-    }
-  }
-  
-  // LIV Golf
-  if (name.includes('liv')) {
-    return 'liv';
-  }
-  
-  // Korn Ferry
-  if (name.includes('korn ferry')) {
-    return 'kft';
-  }
-  
-  // Default to PGA Tour
-  return 'pga';
-}
 
 /**
  * Format American odds with + sign
