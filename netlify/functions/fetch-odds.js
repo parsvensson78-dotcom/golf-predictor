@@ -124,15 +124,15 @@ exports.handler = async (event, context) => {
             const worstBookmaker = bookOdds.find(b => b.odds === worstOddsValue)?.bookmaker;
 
             oddsData.push({
-              player: playerName,
-              odds: avgOdds,
-              minOdds: bestOddsValue,
-              maxOdds: worstOddsValue,
-              bestBookmaker: bestBookmaker,
-              worstBookmaker: worstBookmaker,
-              bookmakerCount: bookOdds.length,
-              americanOdds: formatAmericanOdds(avgOdds)
-            });
+  player: playerName,
+  odds: avgOdds,  // Keep American for internal use
+  minOdds: americanToDecimal(bestOddsValue),  // Convert to decimal
+  maxOdds: americanToDecimal(worstOddsValue), // Convert to decimal
+  bestBookmaker: bestBookmaker,
+  worstBookmaker: worstBookmaker,
+  bookmakerCount: bookOdds.length,
+  americanOdds: formatAmericanOdds(avgOdds)
+});
 
             console.log(`[ODDS] ${playerName}: Avg ${formatAmericanOdds(avgOdds)} | Best ${formatAmericanOdds(bestOddsValue)} (${bestBookmaker}) | Worst ${formatAmericanOdds(worstOddsValue)} (${worstBookmaker}) (${bookOdds.length} books)`);
           }
@@ -276,4 +276,17 @@ function normalizePlayerName(name) {
   
   const parts = normalized.split(' ');
   return parts.sort().join(' ');
+}
+
+/**
+ * Convert American odds to decimal
+ */
+function americanToDecimal(americanOdds) {
+  if (!americanOdds || americanOdds === 0) return null;
+  
+  if (americanOdds > 0) {
+    return (americanOdds / 100) + 1;
+  } else {
+    return (100 / Math.abs(americanOdds)) + 1;
+  }
 }
