@@ -307,67 +307,247 @@ function normalizePlayerName(name) {
 }
 
 /**
- * Build optimized prompt for Claude
+ * Build enhanced prompt for Claude with weather analysis
  */
-function buildClaudePrompt(tournament, players, weather, courseInfo) {
+function buildClaudePrompt(tournament, players, weatherSummary, courseInfo) {
   const favorites = players.slice(0, 15);
   const midTier = players.slice(15, 50);
   const longshots = players.slice(50);
 
-  // Build player lists without excessive logging details
+  // Analyze weather conditions
+  const weatherAnalysis = analyzeWeatherConditions(weatherSummary);
+
+  // Determine primary course demands based on characteristics
+  const courseDemands = analyzeCourseSkillDemands(courseInfo);
+
+  // Format player lists
   const formatPlayerList = (playerList) => playerList
-    .map(p => `${p.name} [${p.odds?.toFixed(1)}] - R${p.rank||'?'} | SG:${p.sgTotal} (OTT:${p.sgOTT} APP:${p.sgAPP} ARG:${p.sgARG} P:${p.sgPutt})`)
+    .map(p => `${p.name} [${p.odds?.toFixed(1)}] - R${p.rank||'?'} | SG:${p.sgTotal?.toFixed(2)} (OTT:${p.sgOTT?.toFixed(2)} APP:${p.sgAPP?.toFixed(2)} ARG:${p.sgARG?.toFixed(2)} P:${p.sgPutt?.toFixed(2)})`)
     .join('\n');
 
-  return `You are a professional golf analyst specializing in finding VALUE picks based on course fit, NOT favorites.
+  return `You are a professional golf analyst specializing in finding VALUE picks based on course fit and conditions, NOT favorites.
 
-TOURNAMENT:
-Name: ${tournament.name}
+TOURNAMENT: ${tournament.name}
 Course: ${courseInfo.courseName || courseInfo.eventName}
 Location: ${courseInfo.location}${courseInfo.city ? ` (${courseInfo.city}${courseInfo.state ? ', ' + courseInfo.state : ''})` : ''}
-Weather: ${weather}
 
-COURSE INFORMATION:
-${courseInfo.par ? `Par: ${courseInfo.par}` : 'Par: Research required'}
-${courseInfo.yardage ? `Yardage: ${courseInfo.yardage} yards` : 'Yardage: Research required'}
-${courseInfo.width ? `Fairways: ${courseInfo.width}` : ''}
-${courseInfo.greens ? `Greens: ${courseInfo.greens}` : ''}
-${courseInfo.rough ? `Rough: ${courseInfo.rough}` : ''}
+COURSE PROFILE:
+${courseInfo.par ? `Par: ${courseInfo.par}` : 'Par: Unknown'}
+${courseInfo.yardage ? `Yardage: ${courseInfo.yardage} yards (${courseInfo.yardage > 7400 ? 'LONG - Distance critical' : courseInfo.yardage > 7200 ? 'Above Average Length' : 'Standard Length'})` : 'Yardage: Unknown'}
+${courseInfo.avgScore && courseInfo.par ? `Scoring: ${courseInfo.avgScore} avg (${(courseInfo.avgScore - courseInfo.par) > 0 ? '+' : ''}${(courseInfo.avgScore - courseInfo.par).toFixed(1)} vs par) - ${courseInfo.avgScore - courseInfo.par > 1 ? 'DIFFICULT' : courseInfo.avgScore - courseInfo.par > 0.5 ? 'Challenging' : 'Scorable'}` : ''}
+Fairways: ${courseInfo.width || 'Unknown'}
+Greens: ${courseInfo.greens || 'Unknown'}
+Rough: ${courseInfo.rough || 'Unknown'}
+${courseInfo.difficulty ? `Difficulty Rating: ${courseInfo.difficulty}` : ''}
 ${courseInfo.keyFeatures?.length ? `Key Features: ${courseInfo.keyFeatures.join(', ')}` : ''}
-${courseInfo.rewards?.length ? `Rewards: ${courseInfo.rewards.join(', ')}` : ''}
 
-COMPLETE FIELD (${players.length} players):
+PRIMARY SKILL DEMANDS (prioritize these SG categories):
+${courseDemands}
 
-TOP FAVORITES (odds 5-20) - SKIP THESE - TOO SHORT FOR VALUE:
+WEATHER CONDITIONS & IMPACT:
+${weatherAnalysis}
+
+COMPLETE FIELD (${players.length} players analyzed):
+
+🚫 TOP FAVORITES (odds 5-20) - SKIP THESE - NO VALUE:
 ${formatPlayerList(favorites)}
 
-VALUE ZONE (odds 20-100) - FOCUS HERE FOR MOST PICKS:
+💎 VALUE ZONE (odds 20-100) - PRIMARY FOCUS - MOST PICKS HERE:
 ${formatPlayerList(midTier)}
 
-LONGSHOTS (odds 100+) - CONSIDER 1-2 IF COURSE FIT IS EXCEPTIONAL:
+🎯 LONGSHOTS (odds 100+) - SELECT 1-2 ONLY IF EXCEPTIONAL COURSE FIT:
 ${formatPlayerList(longshots)}
 
-YOUR TASK:
-Select exactly 6 VALUE picks where:
-- ALL players should have odds of 20/1 or higher
-- At least 4 players should have odds ABOVE 40/1
-- Players must have statistical evidence they excel at THIS COURSE TYPE
-- Match their SG strengths to course characteristics
-- Consider weather conditions
-- Provide a range: 20-40/1 (value), 40-80/1 (mid-range), 80-150/1 (longshots)
+YOUR TASK - MULTI-FACTOR ANALYSIS:
+Select exactly 6 VALUE picks using this decision framework:
+
+1. COURSE FIT (Most Important - 50% weight):
+   - Match SG stats to PRIMARY SKILL DEMANDS listed above
+   - Players MUST show strength in the course's key statistical categories
+   - Example: Long course → prioritize high SG:OTT players
+   - Example: Tight course → prioritize SG:APP and SG:ARG over SG:OTT
+
+2. WEATHER ADAPTATION (Important - 25% weight):
+   - Apply weather impact analysis from above
+   - Wind → favor SG:OTT (ball flight control)
+   - Wet conditions → favor length (SG:OTT) and wedge play (SG:APP)
+   - Calm conditions → favor putting (SG:Putt becomes critical)
+
+3. ODDS VALUE (Important - 25% weight):
+   - ALL picks MUST be 20/1 or higher
+   - At least 4 picks MUST be 40/1 or higher
+   - Target distribution: 2 picks at 20-40/1, 2-3 picks at 40-80/1, 1-2 picks at 80-150/1
+   - Avoid favorites under 20/1 regardless of course fit
+
+4. STATISTICAL QUALITY:
+   - Prefer positive SG:Total (indicates above-average player)
+   - Look for "unbalanced" players (one great SG stat that matches course needs)
+   - Example: Player with +1.2 SG:OTT but only +0.2 SG:Putt might be undervalued on long course
+
+REASONING REQUIREMENTS:
+For each pick, explain:
+- Which PRIMARY SKILL DEMAND they satisfy (specific SG stat)
+- How WEATHER impacts their performance
+- Why their ODDS represent value (market inefficiency)
+- Keep to 2-3 sentences max
 
 Return ONLY valid JSON (no markdown):
 {
-  "courseType": "Description of ${courseInfo.courseName || courseInfo.eventName}${courseInfo.yardage && courseInfo.par ? `: ${courseInfo.yardage} yards, Par ${courseInfo.par}` : ''}, what skills it rewards, why",
-  "weatherImpact": "How ${weather} affects strategy at this course",
-  "keyFactors": ["3-4 specific course factors", "that determine success"],
-  "courseNotes": "2-3 sentences explaining course setup${courseInfo.yardage && courseInfo.par ? ` at ${courseInfo.yardage} yards, Par ${courseInfo.par}` : ''}, what makes it unique, how it creates betting value",
+  "courseType": "Comprehensive description of ${courseInfo.courseName || courseInfo.eventName}${courseInfo.yardage && courseInfo.par ? ` (${courseInfo.yardage} yards, Par ${courseInfo.par})` : ''}. Explain the course setup, primary challenge, what type of player succeeds here, and why this creates betting opportunities.",
+  "weatherImpact": "Specific analysis of how the weather conditions will affect scoring and strategy. Which skills become more/less important? How does this create value opportunities?",
+  "keyFactors": ["Factor 1: Course characteristic + required skill", "Factor 2: Weather impact + skill adaptation", "Factor 3: Scoring pattern + betting angle", "Factor 4: Historical pattern or course setup insight"],
+  "courseNotes": "3-4 sentences analyzing: (1) The course's defining characteristic at ${courseInfo.yardage || 'this'} yards, (2) How weather amplifies or reduces certain demands, (3) What creates betting value - which player types are overpriced vs underpriced, (4) Specific stat ranges that correlate with success here.",
   "picks": [
     {
       "player": "Player Name",
       "odds": 45.0,
-      "reasoning": "SPECIFIC course-fit analysis matching SG stats to exact course demands. Why undervalued. 2-3 sentences max."
+      "reasoning": "Course fit: [Specific SG stat match to PRIMARY DEMAND]. Weather: [How conditions favor this player]. Value: [Why odds are too high - market inefficiency]. 2-3 sentences."
     }
   ]
 }`;
+}
+
+/**
+ * Analyze weather conditions and provide specific player selection guidance
+ */
+function analyzeWeatherConditions(weatherSummary) {
+  if (!weatherSummary || weatherSummary === 'Weather data not available') {
+    return 'Weather data not available - focus purely on course characteristics and historical stats.';
+  }
+
+  // Parse weather summary to extract conditions
+  const windSpeeds = [];
+  const rainChances = [];
+  let conditions = weatherSummary;
+
+  // Extract wind speeds
+  const windMatches = weatherSummary.match(/Wind:\s*(\d+)mph/g);
+  if (windMatches) {
+    windMatches.forEach(match => {
+      const speed = parseInt(match.match(/\d+/)[0]);
+      windSpeeds.push(speed);
+    });
+  }
+
+  // Extract rain chances
+  const rainMatches = weatherSummary.match(/Rain:\s*(\d+)%/g);
+  if (rainMatches) {
+    rainMatches.forEach(match => {
+      const chance = parseInt(match.match(/\d+/)[0]);
+      rainChances.push(chance);
+    });
+  }
+
+  const avgWind = windSpeeds.length > 0 
+    ? Math.round(windSpeeds.reduce((a, b) => a + b, 0) / windSpeeds.length) 
+    : 0;
+  const maxWind = windSpeeds.length > 0 ? Math.max(...windSpeeds) : 0;
+  const highRainDays = rainChances.filter(r => r > 50).length;
+  const anyRainDays = rainChances.filter(r => r > 30).length;
+
+  let analysis = [`Raw Conditions: ${conditions}`, ''];
+
+  // Wind analysis
+  if (maxWind >= 15) {
+    analysis.push(`⚠️ HIGH WIND ALERT (${maxWind}mph max, ${avgWind}mph avg):`);
+    analysis.push('- CRITICAL: Prioritize SG:OTT (ball flight control, trajectory management)');
+    analysis.push('- Secondary: SG:APP (wind-adjusted approach shots)');
+    analysis.push('- Deprioritize: SG:Putt (less important when scores are high)');
+    analysis.push('- Look for: Players with positive SG:OTT who are undervalued');
+  } else if (avgWind >= 10) {
+    analysis.push(`💨 MODERATE WIND (${avgWind}mph avg):`);
+    analysis.push('- Important: SG:OTT (trajectory control matters)');
+    analysis.push('- Balanced approach: All SG categories relevant');
+  } else {
+    analysis.push(`😌 CALM CONDITIONS (${avgWind}mph avg):`);
+    analysis.push('- CRITICAL: SG:Putt (low scores, putting wins)');
+    analysis.push('- Secondary: SG:APP (hitting greens for birdie chances)');
+    analysis.push('- Deprioritize: SG:OTT (length advantage reduced when conditions are easy)');
+  }
+
+  // Rain analysis
+  if (highRainDays >= 2) {
+    analysis.push('');
+    analysis.push(`🌧️ WET CONDITIONS (${highRainDays} days with 50%+ rain):`);
+    analysis.push('- CRITICAL: SG:OTT (length advantage on soft fairways/greens)');
+    analysis.push('- Important: SG:APP (wedge play, soft greens hold shots)');
+    analysis.push('- Consider: SG:ARG (soft conditions around greens)');
+    analysis.push('- Deprioritize: SG:Putt (soft greens are easier to putt)');
+  } else if (anyRainDays > 0) {
+    analysis.push('');
+    analysis.push(`🌦️ SOME RAIN POSSIBLE (${anyRainDays} days with 30%+ chance):`);
+    analysis.push('- Slight advantage: Longer hitters (SG:OTT)');
+    analysis.push('- Monitor: Conditions may soften as week progresses');
+  }
+
+  return analysis.join('\n');
+}
+
+/**
+ * Analyze course characteristics to determine primary skill demands
+ */
+function analyzeCourseSkillDemands(courseInfo) {
+  const demands = [];
+
+  // Yardage analysis
+  if (courseInfo.yardage) {
+    if (courseInfo.yardage > 7500) {
+      demands.push('1. SG:OTT (PRIMARY) - Extreme length demands elite driving distance and accuracy');
+    } else if (courseInfo.yardage > 7300) {
+      demands.push('1. SG:OTT (CRITICAL) - Long course heavily favors driving distance');
+    } else if (courseInfo.yardage > 7100) {
+      demands.push('1. SG:OTT (Important) - Above-average length requires solid driving');
+    } else {
+      demands.push('1. SG:APP + SG:ARG (PRIMARY) - Shorter course emphasizes precision over power');
+    }
+  }
+
+  // Width analysis
+  if (courseInfo.width) {
+    const width = courseInfo.width.toLowerCase();
+    if (width.includes('narrow') || width.includes('tight')) {
+      demands.push('2. SG:APP (CRITICAL) - Narrow fairways require precision iron play and course management');
+      demands.push('3. SG:ARG (Important) - Tight course means more scrambling opportunities');
+    } else if (width.includes('wide') || width.includes('generous')) {
+      demands.push('2. SG:OTT (Enhanced) - Wide fairways reward aggressive driving for distance');
+      demands.push('3. SG:APP (Important) - Longer approaches from extra distance');
+    }
+  }
+
+  // Rough analysis
+  if (courseInfo.rough) {
+    const rough = courseInfo.rough.toLowerCase();
+    if (rough.includes('heavy') || rough.includes('thick') || rough.includes('penal')) {
+      demands.push('4. SG:OTT (Accuracy) - Heavy rough severely punishes offline drives');
+      demands.push('5. SG:ARG (Critical) - Recovery skills essential for scrambling');
+    }
+  }
+
+  // Green analysis
+  if (courseInfo.greens) {
+    const greens = courseInfo.greens.toLowerCase();
+    if (greens.includes('fast') || greens.includes('firm') || greens.includes('bentgrass')) {
+      demands.push('6. SG:Putt (Enhanced) - Fast greens amplify putting skill differences');
+    } else if (greens.includes('poa') || greens.includes('bumpy')) {
+      demands.push('6. SG:APP (Critical) - Inconsistent greens demand precise approach distance control');
+    }
+  }
+
+  // Difficulty analysis
+  if (courseInfo.difficulty) {
+    const difficulty = courseInfo.difficulty.toLowerCase();
+    if (difficulty.includes('very difficult') || difficulty.includes('extremely')) {
+      demands.push('7. SG:Total (Quality) - Difficult course requires well-rounded elite players');
+    }
+  }
+
+  // Default if no specific demands identified
+  if (demands.length === 0) {
+    demands.push('1. SG:OTT (Important) - Driving quality sets up scoring opportunities');
+    demands.push('2. SG:APP (Important) - Iron play for green-in-regulation');
+    demands.push('3. SG:ARG (Moderate) - Short game for scrambling');
+    demands.push('4. SG:Putt (Moderate) - Putting to convert scoring chances');
+  }
+
+  return demands.join('\n');
 }
