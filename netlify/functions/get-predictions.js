@@ -252,9 +252,18 @@ exports.handler = async (event, context) => {
         weather: weatherInfo,
         dailyForecast: dailyForecast,
         courseInfo: {
-          name: courseInfo.courseName || courseInfo.name,
+          name: courseInfo.courseName || courseInfo.eventName,
           courseName: courseInfo.courseName,
+          courseKey: courseInfo.courseKey,
           location: courseInfo.location,
+          city: courseInfo.city,
+          state: courseInfo.state,
+          country: courseInfo.country,
+          par: courseInfo.par,
+          yardage: courseInfo.yardage,
+          eventId: courseInfo.eventId,
+          status: courseInfo.status,
+          winner: courseInfo.winner,
           source: courseInfo.source
         },
         courseAnalysis: {
@@ -336,15 +345,22 @@ function buildClaudePrompt(tournament, players, weather, courseInfo) {
 
 TOURNAMENT:
 Name: ${tournament.name}
-Course: ${courseInfo.courseName || courseInfo.name}
-Location: ${courseInfo.location}
+Course: ${courseInfo.courseName || courseInfo.eventName}
+Location: ${courseInfo.location}${courseInfo.city ? ` (${courseInfo.city}${courseInfo.state ? ', ' + courseInfo.state : ''})` : ''}
 Weather: ${weather}
 
+COURSE INFORMATION FROM DATAGOLF:
+${courseInfo.par ? `Par: ${courseInfo.par}` : 'Par: Unknown (research required)'}
+${courseInfo.yardage ? `Yardage: ${courseInfo.yardage} yards` : 'Yardage: Unknown (research required)'}
+Course Name: ${courseInfo.courseName || courseInfo.eventName}
+Course Key: ${courseInfo.courseKey || 'N/A'}
+${courseInfo.winner ? `Previous Winner: ${courseInfo.winner}` : ''}
+
 COURSE ANALYSIS REQUIRED:
-Based on the course name "${courseInfo.courseName || courseInfo.name}" and location "${courseInfo.location}", you must analyze and determine:
+Based on the course data above for "${courseInfo.courseName || courseInfo.eventName}" and location "${courseInfo.location}", analyze:
 
 1. COURSE CHARACTERISTICS:
-   - Likely yardage and par (research this specific course)
+   ${courseInfo.yardage && courseInfo.par ? `- Confirmed: ${courseInfo.yardage} yards, Par ${courseInfo.par}` : '- Research expected yardage and par for this specific course'}
    - Fairway width (narrow/moderate/wide)
    - Green size and firmness
    - Rough type and severity
@@ -352,16 +368,16 @@ Based on the course name "${courseInfo.courseName || courseInfo.name}" and locat
 
 2. SKILLS REWARDED:
    - What does THIS specific course reward?
-   - Is it a long course requiring distance (SG:OTT)?
+   ${courseInfo.yardage ? (courseInfo.yardage > 7500 ? '- Long course likely requiring distance (SG:OTT)' : courseInfo.yardage < 7200 ? '- Shorter course favoring accuracy over distance' : '- Balanced length requiring complete game') : '- Determine if distance or accuracy is more important'}
    - Does it have small greens requiring approach precision (SG:APP)?
    - Is there heavy rough demanding scrambling (SG:ARG)?
    - Are the greens particularly challenging (SG:Putt)?
 
 3. HISTORICAL CONTEXT:
-   - What types of players have succeeded here before?
+   ${courseInfo.winner ? `- Previous winner: ${courseInfo.winner} - what are their strengths?` : '- What types of players have succeeded here before?'}
    - Are there any course-specific factors (elevation, wind, coastal, etc.)?
 
-Use your knowledge of professional golf courses to provide SPECIFIC analysis of ${courseInfo.courseName || courseInfo.name}.
+Use your knowledge of professional golf courses${courseInfo.courseName ? ` and specifically ${courseInfo.courseName}` : ''} to provide SPECIFIC analysis.
 
 COMPLETE FIELD (${players.length} players):
 
@@ -377,8 +393,9 @@ ${longshots.map(p => `${p.name} [${p.odds?.toFixed(1)}] - Rank:${p.rank||'?'} | 
 CRITICAL ANALYSIS FRAMEWORK:
 
 1. COURSE TYPE IDENTIFICATION:
-   - Research and identify the specific characteristics of ${courseInfo.courseName || courseInfo.name}
-   - Determine course length and what that means for required skills
+   - Research and identify the specific characteristics of ${courseInfo.courseName || courseInfo.eventName}
+   ${courseInfo.yardage ? `- Known length: ${courseInfo.yardage} yards ${courseInfo.par ? `(Par ${courseInfo.par})` : ''}` : '- Determine course length'}
+   ${courseInfo.yardage && courseInfo.yardage > 7500 ? '- Long course: Distance (SG:OTT) is CRITICAL' : courseInfo.yardage && courseInfo.yardage < 7200 ? '- Shorter course: Accuracy and iron play MORE important than distance' : '- Analyze what skills matter most'}
    - Analyze fairway width and its impact on driving strategy
    - Consider green characteristics and putting demands
    - Evaluate rough severity and scrambling requirements
@@ -413,18 +430,18 @@ Select exactly 6 VALUE picks where:
 
 Return ONLY valid JSON (no markdown):
 {
-  "courseType": "Detailed description of ${courseInfo.courseName || courseInfo.name}: estimated length, what skills it rewards, why (e.g., '7765-yard test of power requiring elite distance off tee, with heavy rough demanding strong scrambling')",
+  "courseType": "Detailed description of ${courseInfo.courseName || courseInfo.eventName}${courseInfo.yardage && courseInfo.par ? `: ${courseInfo.yardage} yards, Par ${courseInfo.par}` : ''}, what skills it rewards, why (e.g., '7765-yard Par 72 test of power requiring elite distance off tee, with heavy rough demanding strong scrambling')",
   "weatherImpact": "How today's weather (${weather}) affects strategy and which skills become more important at this specific course",
-  "keyFactors": ["List 3-4 specific course factors", "that determine success", "based on your analysis of ${courseInfo.courseName || courseInfo.name}"],
-  "courseNotes": "2-3 detailed sentences explaining ${courseInfo.courseName || courseInfo.name} setup. Include specific details about estimated par, length, what makes this course unique, and how these factors create betting value. Example: 'At approximately 7,300 yards and par 72, this Pete Dye design features narrow, tree-lined fairways and small, elevated greens. The course heavily penalizes wayward tee shots, making accuracy far more valuable than distance. Players who excel in approach play (high SG:APP) and scrambling (high SG:ARG) have a massive edge that the betting market consistently undervalues.'",
+  "keyFactors": ["List 3-4 specific course factors", "that determine success", "based on your analysis of ${courseInfo.courseName || courseInfo.eventName}"],
+  "courseNotes": "2-3 detailed sentences explaining ${courseInfo.courseName || courseInfo.eventName} setup. ${courseInfo.yardage && courseInfo.par ? `At ${courseInfo.yardage} yards and Par ${courseInfo.par}, ` : 'Include specific details about par and length, '}what makes this course unique, and how these factors create betting value. Example: 'At 7,300 yards and par 72, this Pete Dye design features narrow, tree-lined fairways and small, elevated greens. The course heavily penalizes wayward tee shots, making accuracy far more valuable than distance. Players who excel in approach play (high SG:APP) and scrambling (high SG:ARG) have a massive edge that the betting market consistently undervalues.'",
   "picks": [
     {
       "player": "Player Name",
       "odds": 45.0,
-      "reasoning": "SPECIFIC course-fit analysis: Match their SG stats to the exact course demands you identified for ${courseInfo.courseName || courseInfo.name}. Explain why they're undervalued given these characteristics. Include numbers. 2-3 sentences max."
+      "reasoning": "SPECIFIC course-fit analysis: Match their SG stats to the exact course demands you identified for ${courseInfo.courseName || courseInfo.eventName}. Explain why they're undervalued given these characteristics. Include numbers. 2-3 sentences max."
     }
   ]
 }
 
-Be specific with course-stat matchups and use your knowledge of ${courseInfo.courseName || courseInfo.name} to provide accurate analysis.`;
+Be specific with course-stat matchups and use your knowledge of ${courseInfo.courseName || courseInfo.eventName} to provide accurate analysis.`;
 }
