@@ -1,262 +1,205 @@
 const axios = require('axios');
 
 /**
- * Fetch golf odds from DataGolf API
- * Returns accurate American odds from aggregated sportsbooks
+ * OPTIMIZED fetch-odds.js
+ * Fetches golf odds from DataGolf API with bookmaker breakdown
  */
 exports.handler = async (event, context) => {
   try {
-    const body = JSON.parse(event.body);
-    const { tournamentName, players, tour } = body;
-
-    console.log(`[ODDS] Starting DataGolf fetch for: ${tournamentName}`);
-    console.log(`[ODDS] Looking for ${players.length} players`);
-    console.log(`[ODDS] Tour: ${tour}`);
-
-    // DataGolf API key from environment
-    const DATAGOLF_API_KEY = process.env.DATAGOLF_API_KEY || '07b56aee1a02854e9513b06af5cd';
-
-    // STEP 1: Load pre-tournament cached odds (from Wednesday)
-    let preTournamentOdds = [];
-    let preTournamentDate = null;
+    const { tournamentName, players, tour } = JSON.parse(event.body);
     
-    try {
-      const fs = require('fs').promises;
-      const cacheFile = '/tmp/odds-cache/pre-tournament-odds.json';
-      const cacheData = await fs.readFile(cacheFile, 'utf8');
-      const cached = JSON.parse(cacheData);
-      
-      console.log(`[ODDS] Found cached pre-tournament odds for: ${cached.tournament}`);
-      console.log(`[ODDS] Cached on: ${cached.fetchedAt}`);
-      
-      // Check if cached tournament matches current tournament
-      const tournamentMatch = cached.tournament.toLowerCase().includes(tournamentName.toLowerCase().split(' ')[0]) ||
-                             tournamentName.toLowerCase().includes(cached.tournament.toLowerCase().split(' ')[0]);
-      
-      if (tournamentMatch) {
-        preTournamentOdds = cached.odds || [];
-        preTournamentDate = cached.fetchedAt;
-        console.log(`[ODDS] Loaded ${preTournamentOdds.length} pre-tournament odds`);
-      } else {
-        console.log(`[ODDS] Cached tournament doesn't match current tournament`);
-      }
-    } catch (cacheError) {
-      console.log(`[ODDS] No pre-tournament cache available: ${cacheError.message}`);
+    console.log(`[ODDS] Fetching for ${tournamentName} (${tour.toUpperCase()}, ${players.length} players)`);
+
+    const apiKey = process.env.DATAGOLF_API_KEY || '07b56aee1a02854e9513b06af5cd';
+    const apiTour = tour === 'dp' ? 'euro' : tour;
+    
+    // Fetch live odds from DataGolf
+    const oddsData = await fetchDataGolfOdds(apiTour, apiKey);
+    
+    if (oddsData.length === 0) {
+      console.log('[ODDS] No odds data available, returning empty response');
+      return createResponse([], 'DataGolf API (no data)');
     }
 
-    // STEP 2: Fetch current/live odds from DataGolf API
-    // STEP 2: Fetch current/live odds from DataGolf API
-  const apiTour = tour === 'dp' ? 'euro' : tour;
-  const dataGolfUrl = `https://feeds.datagolf.com/betting-tools/outrights?tour=${apiTour}&market=win&odds_format=american&file_format=json&key=${DATAGOLF_API_KEY}`;
+    console.log(`[ODDS] Successfully processed ${oddsData.length} players with odds`);
     
-    console.log(`[ODDS] DataGolf URL: ${dataGolfUrl}`);
-
-    let oddsData = [];
-
-    try {
-      console.log(`[ODDS] Fetching from DataGolf API...`);
-      const response = await axios.get(dataGolfUrl, {
-        timeout: 15000,
-        headers: {
-          'User-Agent': 'Golf-Predictor-App/1.0',
-          'Accept': 'application/json'
-        }
-      });
-
-      console.log(`[ODDS] DataGolf response received, status: ${response.status}`);
-      
-      if (!response.data || !response.data.odds) {
-        console.error('[ODDS] Invalid DataGolf response structure');
-        throw new Error('Invalid DataGolf API response');
-      }
-
-      const rawOdds = response.data.odds;
-      console.log(`[ODDS] Retrieved ${rawOdds.length} players with odds from DataGolf`);
-
-      // Process DataGolf odds
-      rawOdds.forEach(player => {
-        try {
-          const playerName = cleanPlayerName(player.player_name);
-          
-          // DEBUG: Show first 3 players to see name format AND normalization
-          if (oddsData.length < 3) {
-            console.log(`[DEBUG] DataGolf raw: "${player.player_name}" → cleaned: "${playerName}" → normalized: "${normalizePlayerName(playerName)}"`);
-          }
-          
-          // Collect all available odds from different books with bookmaker names
-          const bookOdds = [];
-          const bookmakerMap = {
-            'draftkings': 'DraftKings',
-            'fanduel': 'FanDuel',
-            'betmgm': 'BetMGM',
-            'pointsbet': 'PointsBet',
-            'williamhill_us': 'William Hill',
-            'bet365': 'Bet365',
-            'pinnacle': 'Pinnacle',
-            'bovada': 'Bovada',
-            'betrivers': 'BetRivers',
-            'caesars': 'Caesars',
-            'unibet': 'Unibet'
-          };
-          
-          Object.keys(bookmakerMap).forEach(book => {
-            if (player[book] && player[book] !== null) {
-              // DataGolf returns American odds as integers (e.g., 1200 for +1200)
-              const odds = parseInt(player[book]);
-              if (!isNaN(odds) && odds !== 0) {
-                bookOdds.push({
-                  bookmaker: bookmakerMap[book],
-                  odds: odds
-                });
-              }
-            }
-          });
-
-          if (bookOdds.length > 0) {
-            // Calculate average, min, max American odds
-            const oddsValues = bookOdds.map(b => b.odds);
-            const avgOdds = Math.round(oddsValues.reduce((a, b) => a + b, 0) / oddsValues.length);
-            
-            // Max = best odds for bettor (e.g., +2000 > +1500)
-            const bestOddsValue = Math.max(...oddsValues);
-            const bestBookmaker = bookOdds.find(b => b.odds === bestOddsValue)?.bookmaker;
-            
-            // Min = worst odds for bettor
-            const worstOddsValue = Math.min(...oddsValues);
-            const worstBookmaker = bookOdds.find(b => b.odds === worstOddsValue)?.bookmaker;
-
-            oddsData.push({
-  player: playerName,
-  odds: avgOdds,  // Keep American for internal use
-  minOdds: americanToDecimal(bestOddsValue),  // Convert to decimal
-  maxOdds: americanToDecimal(worstOddsValue), // Convert to decimal
-  bestBookmaker: bestBookmaker,
-  worstBookmaker: worstBookmaker,
-  bookmakerCount: bookOdds.length,
-  americanOdds: formatAmericanOdds(avgOdds)
-});
-
-            console.log(`[ODDS] ${playerName}: Avg ${formatAmericanOdds(avgOdds)} | Best ${formatAmericanOdds(bestOddsValue)} (${bestBookmaker}) | Worst ${formatAmericanOdds(worstOddsValue)} (${worstBookmaker}) (${bookOdds.length} books)`);
-          }
-        } catch (playerError) {
-          console.error(`[ODDS] Error processing player ${player.player_name}:`, playerError.message);
-        }
-      });
-
-      console.log(`[ODDS] Successfully processed ${oddsData.length} players with odds`);
-
-    } catch (apiError) {
-      console.error('[ODDS] DataGolf API request failed:', apiError.message);
-      if (apiError.response) {
-        console.error('[ODDS] API Response Status:', apiError.response.status);
-        console.error('[ODDS] API Response Data:', apiError.response.data);
-      }
-      
-      // Return empty odds but don't fail the whole request
-      console.log('[ODDS] Returning empty odds data due to API failure');
-    }
-
-    // STEP 3: Return all players from DataGolf (they're the actual tournament field)
-    
-    console.log(`[ODDS] Returning all ${oddsData.length} players from DataGolf`);
-
-    // Convert oddsData to match expected format
-    const allPlayers = oddsData.map(player => ({
-      player: player.player,
-      odds: player.odds,
-      americanOdds: player.americanOdds,
-      minOdds: player.minOdds,
-      maxOdds: player.maxOdds,
-      bestBookmaker: player.bestBookmaker,
-      worstBookmaker: player.worstBookmaker,
-      bookmakerCount: player.bookmakerCount,
-      source: 'DataGolf (Live)'
-    }));
-    
-    console.log(`[ODDS] Final result: Returning ${allPlayers.length} players with live odds`);
-
-    return {
-      statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        odds: allPlayers,
-        scrapedCount: oddsData.length,
-        matchedCount: allPlayers.length,
-        source: 'DataGolf API',
-        timestamp: new Date().toISOString()
-      })
-    };
+    return createResponse(oddsData, 'DataGolf API');
 
   } catch (error) {
-    console.error('[ODDS] Fatal error:', error);
-    console.error('[ODDS] Stack trace:', error.stack);
-    
-    // Return a proper error response instead of crashing
-    return {
-      statusCode: 200, // Return 200 so the main function doesn't fail
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        odds: [],
-        scrapedCount: 0,
-        matchedCount: 0,
-        source: 'DataGolf API (failed)',
-        error: error.message,
-        timestamp: new Date().toISOString()
-      })
-    };
+    console.error('[ODDS] Error:', error.message);
+    return createResponse([], 'DataGolf API (failed)', error.message);
   }
 };
+
+/**
+ * Fetch odds from DataGolf API
+ */
+async function fetchDataGolfOdds(tour, apiKey) {
+  const url = `https://feeds.datagolf.com/betting-tools/outrights?tour=${tour}&market=win&odds_format=american&file_format=json&key=${apiKey}`;
+  
+  console.log(`[ODDS] Calling DataGolf API (tour=${tour})...`);
+
+  try {
+    const response = await axios.get(url, {
+      timeout: 15000,
+      headers: {
+        'User-Agent': 'Golf-Predictor-App/1.0',
+        'Accept': 'application/json'
+      }
+    });
+
+    if (!response.data?.odds) {
+      console.error('[ODDS] Invalid DataGolf response structure');
+      return [];
+    }
+
+    const rawOdds = response.data.odds;
+    console.log(`[ODDS] Retrieved ${rawOdds.length} players from DataGolf`);
+
+    return processOddsData(rawOdds);
+
+  } catch (error) {
+    console.error('[ODDS] API request failed:', error.message);
+    if (error.response) {
+      console.error('[ODDS] Status:', error.response.status);
+    }
+    return [];
+  }
+}
+
+/**
+ * Process raw odds data from DataGolf
+ */
+function processOddsData(rawOdds) {
+  const processedOdds = [];
+
+  for (const player of rawOdds) {
+    try {
+      const playerName = cleanPlayerName(player.player_name);
+      const bookOdds = extractBookmakerOdds(player);
+
+      if (bookOdds.length === 0) continue;
+
+      const oddsValues = bookOdds.map(b => b.odds);
+      const avgOdds = Math.round(oddsValues.reduce((a, b) => a + b, 0) / oddsValues.length);
+      
+      // Best odds = highest value (e.g., +2000 > +1500)
+      const bestOdds = Math.max(...oddsValues);
+      const bestBookmaker = bookOdds.find(b => b.odds === bestOdds)?.bookmaker;
+      
+      // Worst odds = lowest value
+      const worstOdds = Math.min(...oddsValues);
+      const worstBookmaker = bookOdds.find(b => b.odds === worstOdds)?.bookmaker;
+
+      processedOdds.push({
+        player: playerName,
+        odds: avgOdds,  // American odds (integer)
+        americanOdds: formatAmericanOdds(avgOdds),
+        minOdds: americanToDecimal(bestOdds),  // Best odds in decimal
+        maxOdds: americanToDecimal(worstOdds), // Worst odds in decimal
+        bestBookmaker,
+        worstBookmaker,
+        bookmakerCount: bookOdds.length,
+        source: 'DataGolf (Live)'
+      });
+
+    } catch (error) {
+      console.error(`[ODDS] Error processing ${player.player_name}:`, error.message);
+    }
+  }
+
+  return processedOdds;
+}
+
+/**
+ * Extract odds from all available bookmakers
+ */
+function extractBookmakerOdds(player) {
+  const BOOKMAKERS = {
+    'draftkings': 'DraftKings',
+    'fanduel': 'FanDuel',
+    'betmgm': 'BetMGM',
+    'pointsbet': 'PointsBet',
+    'williamhill_us': 'William Hill',
+    'bet365': 'Bet365',
+    'pinnacle': 'Pinnacle',
+    'bovada': 'Bovada',
+    'betrivers': 'BetRivers',
+    'caesars': 'Caesars',
+    'unibet': 'Unibet'
+  };
+
+  const bookOdds = [];
+
+  for (const [key, name] of Object.entries(BOOKMAKERS)) {
+    if (player[key] && player[key] !== null) {
+      const odds = parseInt(player[key]);
+      if (!isNaN(odds) && odds !== 0) {
+        bookOdds.push({ bookmaker: name, odds });
+      }
+    }
+  }
+
+  return bookOdds;
+}
+
+/**
+ * Create standardized response
+ */
+function createResponse(oddsData, source, error = null) {
+  return {
+    statusCode: 200,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      odds: oddsData,
+      scrapedCount: oddsData.length,
+      matchedCount: oddsData.length,
+      source,
+      error,
+      timestamp: new Date().toISOString()
+    })
+  };
+}
 
 /**
  * Format American odds with + sign
  */
 function formatAmericanOdds(odds) {
-  if (odds > 0) {
-    return `+${odds}`;
-  }
-  return `${odds}`;
+  return odds > 0 ? `+${odds}` : `${odds}`;
 }
 
 /**
- * Clean player name
+ * Clean player name (remove flags, parentheses, commas)
  */
 function cleanPlayerName(name) {
   return name
-    .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, '') // Remove flags
-    .replace(/\([^)]*\)/g, '') // Remove parentheses content
-    .replace(/,/g, '') // Remove commas (DataGolf uses "LastName, FirstName" format)
+    .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, '') // Remove flag emojis
+    .replace(/\([^)]*\)/g, '') // Remove parentheses
+    .replace(/,/g, '') // Remove commas
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 /**
  * Normalize player name for matching
- * Handles both "LastName, FirstName" and "FirstName LastName" formats
  */
 function normalizePlayerName(name) {
-  let normalized = name
+  const normalized = name
     .toLowerCase()
     .replace(/[^a-z\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
   
-  const parts = normalized.split(' ');
-  return parts.sort().join(' ');
+  return normalized.split(' ').sort().join(' ');
 }
 
 /**
- * Convert American odds to decimal
+ * Convert American odds to decimal odds
  */
 function americanToDecimal(americanOdds) {
   if (!americanOdds || americanOdds === 0) return null;
   
-  if (americanOdds > 0) {
-    return (americanOdds / 100) + 1;
-  } else {
-    return (100 / Math.abs(americanOdds)) + 1;
-  }
+  return americanOdds > 0 
+    ? (americanOdds / 100) + 1 
+    : (100 / Math.abs(americanOdds)) + 1;
 }
