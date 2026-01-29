@@ -137,7 +137,7 @@ exports.handler = async (event, context) => {
       timeout: 10000
     });
     const courseInfo = courseResponse.data;
-    console.log('Course info fetched from DataGolf:', courseInfo.name);
+    console.log('Course info fetched:', courseInfo.courseName || courseInfo.eventName);
 
     // Step 6: Prepare COMPLETE field data for Claude
     const playersWithData = statsData.players
@@ -194,14 +194,24 @@ exports.handler = async (event, context) => {
     });
 
     const responseText = message.content[0].text;
+    console.log('[CLAUDE] Response length:', responseText.length);
+    console.log('[CLAUDE] First 200 chars:', responseText.substring(0, 200));
+    console.log('[CLAUDE] Last 200 chars:', responseText.substring(responseText.length - 200));
     
     // Parse JSON response from Claude
     let predictions;
     try {
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      predictions = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
+      if (!jsonMatch) {
+        console.error('[CLAUDE] No JSON found in response');
+        throw new Error('No JSON found in AI response');
+      }
+      console.log('[CLAUDE] JSON match length:', jsonMatch[0].length);
+      predictions = JSON.parse(jsonMatch[0]);
+      console.log('[CLAUDE] Successfully parsed predictions with', predictions.picks?.length, 'picks');
     } catch (parseError) {
-      console.error('Failed to parse Claude response:', responseText);
+      console.error('[CLAUDE] Failed to parse response:', parseError.message);
+      console.error('[CLAUDE] Full response text:', responseText);
       throw new Error('Invalid response format from AI');
     }
 
