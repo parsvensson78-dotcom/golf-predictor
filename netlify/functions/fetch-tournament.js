@@ -1,35 +1,22 @@
 const axios = require('axios');
 
 /**
- * Fetch tournament information and field from DataGolf API
- * This ensures the field matches exactly with players who have betting odds
+ * OPTIMIZED fetch-tournament.js
+ * Fetches current tournament info and field from DataGolf API
  */
 exports.handler = async (event, context) => {
   try {
     const tour = event.queryStringParameters?.tour || 'pga';
+    console.log(`[TOURNAMENT] Fetching ${tour.toUpperCase()} tour tournament`);
+
+    const apiKey = process.env.DATAGOLF_API_KEY || '07b56aee1a02854e9513b06af5cd';
+    const apiTour = tour === 'dp' ? 'euro' : tour;
     
-    console.log(`[TOURNAMENT] Fetching ${tour.toUpperCase()} tour tournament from DataGolf`);
-
-    // DataGolf API key
-    const DATAGOLF_API_KEY = process.env.DATAGOLF_API_KEY || '07b56aee1a02854e9513b06af5cd';
-
-    if (tour === 'pga') {
-      return await fetchDataGolfTournament('pga', DATAGOLF_API_KEY);
-    } else if (tour === 'dp') {
-      return await fetchDataGolfTournament('euro', DATAGOLF_API_KEY);
-    } else {
-      throw new Error('Invalid tour specified');
-    }
+    return await fetchDataGolfTournament(apiTour, apiKey);
 
   } catch (error) {
     console.error('[TOURNAMENT] Error:', error.message);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        error: 'Failed to fetch tournament',
-        message: error.message
-      })
-    };
+    return createErrorResponse(error.message);
   }
 };
 
@@ -38,233 +25,211 @@ exports.handler = async (event, context) => {
  */
 async function fetchDataGolfTournament(tour, apiKey) {
   try {
-    console.log(`[TOURNAMENT] Fetching from DataGolf API for tour: ${tour}`);
+    console.log(`[TOURNAMENT] Fetching DataGolf data for tour: ${tour}`);
     
-    // STEP 1: Get current tournament schedule
-    const scheduleUrl = `https://feeds.datagolf.com/get-schedule?tour=${tour}&file_format=json&key=${apiKey}`;
-    
-    console.log(`[TOURNAMENT] Fetching schedule...`);
-    const scheduleResponse = await axios.get(scheduleUrl, {
-      timeout: 15000,
-      headers: {
-        'User-Agent': 'Golf-Predictor-App/1.0',
-        'Accept': 'application/json'
-      }
-    });
+    // Fetch schedule and field in parallel
+    const [schedule, field] = await Promise.all([
+      fetchSchedule(tour, apiKey),
+      fetchField(tour, apiKey)
+    ]);
 
-    if (!scheduleResponse.data || !scheduleResponse.data.schedule) {
-      throw new Error('Invalid schedule response from DataGolf');
-    }
-
-    // Find current or upcoming tournament
-    const now = new Date();
-    console.log(`[TOURNAMENT] Current date/time: ${now.toISOString()}`);
-    
-    const currentTournament = findCurrentTournament(scheduleResponse.data.schedule, now);
+    const currentTournament = findCurrentTournament(schedule);
     
     if (!currentTournament) {
-      console.error('[TOURNAMENT] No current tournament found in schedule');
-      throw new Error('No current tournament found');
+      console.log('[TOURNAMENT] No current tournament found, using fallback');
+      return createSuccessResponse(getFallbackTournament(tour));
     }
 
-    console.log(`[TOURNAMENT] Selected: ${currentTournament.event_name}`);
-    console.log(`[TOURNAMENT] Tournament dates: ${currentTournament.start_date || currentTournament.date} to ${currentTournament.end_date || 'N/A'}`);
-
-    // STEP 2: Get the field from betting odds endpoint
-    const oddsUrl = `https://feeds.datagolf.com/betting-tools/outrights?tour=${tour}&market=win&odds_format=american&file_format=json&key=${apiKey}`;
+    const tournamentData = buildTournamentData(currentTournament, field, tour);
     
-    console.log(`[TOURNAMENT] Fetching field from betting odds...`);
-    const oddsResponse = await axios.get(oddsUrl, {
-      timeout: 15000,
-      headers: {
-        'User-Agent': 'Golf-Predictor-App/1.0',
-        'Accept': 'application/json'
-      }
-    });
-
-    if (!oddsResponse.data || !oddsResponse.data.odds) {
-      throw new Error('Invalid odds response from DataGolf');
-    }
-
-    // Build field from players with odds
-    const field = oddsResponse.data.odds.map((player, index) => ({
-      name: player.player_name,
-      rank: index + 1,
-      dg_id: player.dg_id || null
-    }));
-
-    console.log(`[TOURNAMENT] Field size: ${field.length} players with betting odds`);
-
-    // STEP 3: Build complete tournament data
-    const tournamentData = {
-      name: currentTournament.event_name,
-      course: currentTournament.course_name || currentTournament.course || getCourseForTournament(currentTournament.event_name),
-      location: formatLocation(currentTournament),
-      dates: formatDates(currentTournament),
-      tour: tour === 'euro' ? 'dp' : tour,
-      fieldSize: field.length,
-      field: field,
-      event_id: currentTournament.event_id || null,
-      calendar_year: currentTournament.calendar_year || new Date().getFullYear()
-    };
-
-    console.log(`[TOURNAMENT] ${tournamentData.tour.toUpperCase()}: ${tournamentData.name}`);
-    console.log(`[TOURNAMENT] Course: ${tournamentData.course}`);
-    console.log(`[TOURNAMENT] Field: ${tournamentData.fieldSize} players`);
-
-    return {
-      statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=3600'
-      },
-      body: JSON.stringify(tournamentData)
-    };
+    console.log(`[TOURNAMENT] ✅ ${tournamentData.name} (${tournamentData.fieldSize} players)`);
+    
+    return createSuccessResponse(tournamentData);
 
   } catch (error) {
     console.error('[TOURNAMENT] DataGolf fetch failed:', error.message);
-    if (error.response) {
-      console.error('[TOURNAMENT] API Response Status:', error.response.status);
-      console.error('[TOURNAMENT] API Response Data:', JSON.stringify(error.response.data));
-    }
-    
-    console.log('[TOURNAMENT] Using fallback hardcoded tournament');
-    const fallback = getHardcodedFallback(tour);
-    
-    return {
-      statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(fallback)
-    };
+    console.log('[TOURNAMENT] Using fallback data');
+    return createSuccessResponse(getFallbackTournament(tour));
   }
+}
+
+/**
+ * Fetch tournament schedule from DataGolf
+ */
+async function fetchSchedule(tour, apiKey) {
+  const url = `https://feeds.datagolf.com/get-schedule?tour=${tour}&file_format=json&key=${apiKey}`;
+  
+  console.log(`[TOURNAMENT] Fetching schedule...`);
+  
+  const response = await axios.get(url, {
+    timeout: 15000,
+    headers: {
+      'User-Agent': 'Golf-Predictor-App/1.0',
+      'Accept': 'application/json'
+    }
+  });
+
+  if (!response.data?.schedule) {
+    throw new Error('Invalid schedule response from DataGolf');
+  }
+
+  return Array.isArray(response.data.schedule) 
+    ? response.data.schedule 
+    : Object.values(response.data.schedule);
+}
+
+/**
+ * Fetch field from betting odds endpoint
+ */
+async function fetchField(tour, apiKey) {
+  const url = `https://feeds.datagolf.com/betting-tools/outrights?tour=${tour}&market=win&odds_format=american&file_format=json&key=${apiKey}`;
+  
+  console.log(`[TOURNAMENT] Fetching field...`);
+  
+  const response = await axios.get(url, {
+    timeout: 15000,
+    headers: {
+      'User-Agent': 'Golf-Predictor-App/1.0',
+      'Accept': 'application/json'
+    }
+  });
+
+  if (!response.data?.odds) {
+    throw new Error('Invalid odds response from DataGolf');
+  }
+
+  return response.data.odds.map((player, index) => ({
+    name: player.player_name,
+    rank: index + 1,
+    dg_id: player.dg_id || null
+  }));
 }
 
 /**
  * Find current or upcoming tournament from schedule
  */
-function findCurrentTournament(schedule, now) {
-  const tournaments = Array.isArray(schedule) ? schedule : Object.values(schedule);
+function findCurrentTournament(tournaments) {
+  const now = new Date();
+  console.log(`[TOURNAMENT] Analyzing ${tournaments.length} tournaments (${now.toISOString()})`);
   
-  console.log(`[TOURNAMENT] Analyzing ${tournaments.length} tournaments`);
-  
-  if (tournaments.length > 0) {
-    console.log(`[TOURNAMENT] Sample tournament:`, JSON.stringify(tournaments[0], null, 2));
-  }
-  
-  const parseDate = (dateStr) => {
-    if (!dateStr) return null;
-    
-    try {
-      let parsed = new Date(dateStr);
-      if (!isNaN(parsed.getTime())) {
-        return parsed;
-      }
-      
-      if (typeof dateStr === 'string' && dateStr.includes('-')) {
-        const parts = dateStr.split('-');
-        if (parts.length === 3) {
-          parsed = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-          if (!isNaN(parsed.getTime())) {
-            return parsed;
-          }
-        }
-      }
-      
-      return null;
-    } catch (e) {
-      console.error(`[TOURNAMENT] Error parsing date "${dateStr}":`, e.message);
-      return null;
-    }
-  };
-  
-  const validTournaments = tournaments.map(t => {
-    const startDate = parseDate(t.date || t.start_date);
-    // DataGolf doesn't provide end_date, so calculate it (tournaments are typically 4 days Thu-Sun)
-    const endDate = startDate ? new Date(startDate.getTime() + 3 * 24 * 60 * 60 * 1000) : null;
-    
-    return {
-      ...t,
-      _startDate: startDate,
-      _endDate: endDate,
-      // Add calculated end_date to the object so it can be used later
-      end_date: endDate ? endDate.toISOString().split('T')[0] : null
-    };
-  }).filter(t => t._startDate !== null);
-  
-  console.log(`[TOURNAMENT] ${validTournaments.length} tournaments with valid dates`);
-  
-  if (validTournaments.length === 0) {
-    console.error('[TOURNAMENT] No tournaments with valid dates found');
+  // Parse and enrich tournaments with dates
+  const enrichedTournaments = tournaments
+    .map(t => enrichTournamentWithDates(t))
+    .filter(t => t.startDate)
+    .sort((a, b) => a.startDate - b.startDate);
+
+  if (enrichedTournaments.length === 0) {
+    console.error('[TOURNAMENT] No tournaments with valid dates');
     return null;
   }
+
+  // Strategy 1: Find tournament in progress (now between start and end dates)
+  const inProgress = enrichedTournaments.find(t => 
+    t.startDate <= now && t.endDate >= now
+  );
   
-  const sorted = validTournaments.sort((a, b) => a._startDate - b._startDate);
-  
-  // Strategy 1: Find tournament happening NOW
-  for (const tournament of sorted) {
-    if (tournament._startDate <= now && tournament._endDate >= now) {
-      console.log(`[TOURNAMENT] Found IN PROGRESS: ${tournament.event_name}`);
-      console.log(`[TOURNAMENT] Start: ${tournament._startDate.toISOString()}, End: ${tournament._endDate.toISOString()}`);
-      return tournament;
-    }
+  if (inProgress) {
+    console.log(`[TOURNAMENT] ✅ IN PROGRESS: ${inProgress.event_name}`);
+    return inProgress;
   }
 
-  // Strategy 2: Find next upcoming tournament (within next 14 days)
-  const fourteenDaysFromNow = new Date(now);
-  fourteenDaysFromNow.setDate(fourteenDaysFromNow.getDate() + 14);
+  // Strategy 2: Find upcoming tournament (within next 14 days)
+  const fourteenDaysLater = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+  const upcoming = enrichedTournaments.find(t => 
+    t.startDate > now && t.startDate <= fourteenDaysLater
+  );
   
-  for (const tournament of sorted) {
-    if (tournament._startDate > now && tournament._startDate <= fourteenDaysFromNow) {
-      console.log(`[TOURNAMENT] Found UPCOMING (within 14 days): ${tournament.event_name}`);
-      console.log(`[TOURNAMENT] Starts: ${tournament._startDate.toISOString()}, Ends: ${tournament._endDate.toISOString()}`);
-      return tournament;
-    }
+  if (upcoming) {
+    console.log(`[TOURNAMENT] ✅ UPCOMING: ${upcoming.event_name} (${upcoming.start_date})`);
+    return upcoming;
   }
 
-  // Strategy 3: Find tournament that ended recently (within last 7 days)
-  const sevenDaysAgo = new Date(now);
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  // Strategy 3: Find recently ended tournament (within last 7 days)
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const recentlyEnded = enrichedTournaments
+    .reverse()
+    .find(t => t.endDate >= sevenDaysAgo && t.endDate < now);
   
-  for (let i = sorted.length - 1; i >= 0; i--) {
-    const tournament = sorted[i];
-    if (tournament._endDate >= sevenDaysAgo && tournament._endDate < now) {
-      console.log(`[TOURNAMENT] Found RECENTLY ENDED: ${tournament.event_name}`);
-      console.log(`[TOURNAMENT] Ended: ${tournament._endDate.toISOString()}`);
-      return tournament;
-    }
+  if (recentlyEnded) {
+    console.log(`[TOURNAMENT] ✅ RECENTLY ENDED: ${recentlyEnded.event_name}`);
+    return recentlyEnded;
   }
 
-  // Strategy 4: Just get the next tournament in the future
-  const nextTournament = sorted.find(t => t._startDate > now);
+  // Strategy 4: Next future tournament
+  const nextFuture = enrichedTournaments.find(t => t.startDate > now);
   
-  if (nextTournament) {
-    console.log(`[TOURNAMENT] Found NEXT FUTURE: ${nextTournament.event_name}`);
-    console.log(`[TOURNAMENT] Starts: ${nextTournament._startDate.toISOString()}, Ends: ${nextTournament._endDate.toISOString()}`);
-    return nextTournament;
+  if (nextFuture) {
+    console.log(`[TOURNAMENT] ✅ NEXT FUTURE: ${nextFuture.event_name}`);
+    return nextFuture;
   }
 
-  // Strategy 5: Fallback
-  const lastTournament = sorted[sorted.length - 1];
-  console.log(`[TOURNAMENT] Using FALLBACK (most recent): ${lastTournament?.event_name || 'None'}`);
-  if (lastTournament) {
-    console.log(`[TOURNAMENT] Dates: ${lastTournament._startDate.toISOString()} - ${lastTournament._endDate.toISOString()}`);
+  // Strategy 5: Fallback to most recent
+  const mostRecent = enrichedTournaments[enrichedTournaments.length - 1];
+  console.log(`[TOURNAMENT] ⚠️ FALLBACK: ${mostRecent.event_name}`);
+  return mostRecent;
+}
+
+/**
+ * Enrich tournament with parsed dates
+ */
+function enrichTournamentWithDates(tournament) {
+  const startDate = parseDate(tournament.date || tournament.start_date);
+  
+  // Calculate end date (tournaments are typically 4 days: Thu-Sun)
+  const endDate = startDate 
+    ? new Date(startDate.getTime() + 3 * 24 * 60 * 60 * 1000) 
+    : null;
+
+  return {
+    ...tournament,
+    startDate,
+    endDate,
+    end_date: endDate ? endDate.toISOString().split('T')[0] : null
+  };
+}
+
+/**
+ * Parse date string safely
+ */
+function parseDate(dateStr) {
+  if (!dateStr) return null;
+  
+  try {
+    const parsed = new Date(dateStr);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  } catch (error) {
+    console.error(`[TOURNAMENT] Error parsing date "${dateStr}"`);
+    return null;
   }
-  return lastTournament;
+}
+
+/**
+ * Build complete tournament data object
+ */
+function buildTournamentData(tournament, field, apiTour) {
+  return {
+    name: tournament.event_name,
+    course: tournament.course_name || tournament.course || getCourseForTournament(tournament.event_name),
+    location: formatLocation(tournament),
+    dates: formatDates(tournament),
+    tour: apiTour === 'euro' ? 'dp' : apiTour,
+    fieldSize: field.length,
+    field,
+    event_id: tournament.event_id || null,
+    calendar_year: tournament.calendar_year || new Date().getFullYear()
+  };
 }
 
 /**
  * Format tournament location
  */
 function formatLocation(tournament) {
-  if (tournament.location) {
-    return tournament.location;
-  }
+  if (tournament.location) return tournament.location;
   
   const parts = [];
   if (tournament.city) parts.push(tournament.city);
-  if (tournament.country && tournament.country !== 'USA') {
+  
+  if (tournament.country !== 'USA' && tournament.country) {
     parts.push(tournament.country);
   } else if (tournament.state) {
     parts.push(tournament.state);
@@ -278,8 +243,8 @@ function formatLocation(tournament) {
  */
 function formatDates(tournament) {
   try {
-    const startDate = new Date(tournament.date || tournament.start_date || tournament._startDate);
-    const endDate = tournament.end_date ? new Date(tournament.end_date) : (tournament._endDate || null);
+    const startDate = tournament.startDate || new Date(tournament.date || tournament.start_date);
+    const endDate = tournament.endDate || (tournament.end_date ? new Date(tournament.end_date) : null);
     
     const options = { month: 'short', day: 'numeric' };
     const start = startDate.toLocaleDateString('en-US', options);
@@ -296,12 +261,12 @@ function formatDates(tournament) {
 }
 
 /**
- * Get course name for tournament
+ * Get course name for tournament (fallback mapping)
  */
 function getCourseForTournament(tournamentName) {
   const name = tournamentName.toLowerCase();
   
-  const courseMap = {
+  const COURSE_MAP = {
     'pebble beach': 'Pebble Beach Golf Links, Spyglass Hill, Monterey Peninsula',
     'farmers': 'Torrey Pines (South Course)',
     'torrey pines': 'Torrey Pines (South Course)',
@@ -312,71 +277,52 @@ function getCourseForTournament(tournamentName) {
     'sony': 'Waialae Country Club',
     'players': 'TPC Sawgrass (Stadium Course)',
     'masters': 'Augusta National Golf Club',
-    'pga championship': 'Various',
-    'us open': 'Various',
-    'open championship': 'Various',
-    'the open': 'Various',
     'memorial': 'Muirfield Village Golf Club',
     'arnold palmer': 'Bay Hill Club & Lodge',
     'heritage': 'Harbour Town Golf Links',
-    'travelers': 'TPC River Highlands',
-    'scottish open': 'Various'
+    'travelers': 'TPC River Highlands'
   };
 
-  for (const [key, course] of Object.entries(courseMap)) {
-    if (name.includes(key)) {
-      return course;
-    }
+  for (const [key, course] of Object.entries(COURSE_MAP)) {
+    if (name.includes(key)) return course;
   }
 
   return 'Course TBD';
 }
 
 /**
- * Hardcoded fallback if DataGolf API fails
+ * Get fallback tournament data
  */
-function getHardcodedFallback(tour) {
-  if (tour === 'pga') {
-    return {
+function getFallbackTournament(tour) {
+  const FALLBACKS = {
+    'pga': {
       name: 'Farmers Insurance Open',
       course: 'Torrey Pines (South Course)',
       location: 'San Diego, California',
       dates: 'Jan 29 - Feb 1, 2026',
       tour: 'pga',
       fieldSize: 156,
-      field: generateBasicField(156),
-      fallback: true
-    };
-  } else if (tour === 'euro') {
-    return {
+      field: generateBasicField(156)
+    },
+    'euro': {
       name: 'Ras Al Khaimah Championship',
       course: 'Al Hamra Golf Club',
       location: 'Ras Al Khaimah, UAE',
       dates: 'Jan 30 - Feb 2, 2026',
       tour: 'dp',
       fieldSize: 132,
-      field: generateBasicField(132),
-      fallback: true
-    };
-  }
-
-  return {
-    name: 'Farmers Insurance Open',
-    course: 'Torrey Pines (South Course)',
-    location: 'San Diego, California',
-    dates: 'Jan 29 - Feb 1, 2026',
-    tour: 'pga',
-    fieldSize: 156,
-    field: generateBasicField(156),
-    fallback: true
+      field: generateBasicField(132)
+    }
   };
+
+  return { ...FALLBACKS[tour] || FALLBACKS['pga'], fallback: true };
 }
 
 /**
  * Generate basic field for fallback
  */
 function generateBasicField(count) {
-  const topPlayers = [
+  const TOP_PLAYERS = [
     'Scottie Scheffler', 'Rory McIlroy', 'Xander Schauffele', 
     'Ludvig Aberg', 'Collin Morikawa', 'Patrick Cantlay',
     'Viktor Hovland', 'Wyndham Clark', 'Tommy Fleetwood',
@@ -388,21 +334,36 @@ function generateBasicField(count) {
     'Brian Harman', 'Sepp Straka', 'Akshay Bhatia'
   ];
 
-  const field = [];
-  
-  for (let i = 0; i < Math.min(topPlayers.length, count); i++) {
-    field.push({
-      name: topPlayers[i],
-      rank: i + 1
-    });
-  }
+  return Array.from({ length: count }, (_, i) => ({
+    name: TOP_PLAYERS[i] || `Player ${i + 1}`,
+    rank: i + 1
+  }));
+}
 
-  for (let i = topPlayers.length; i < count; i++) {
-    field.push({
-      name: `Player ${i + 1}`,
-      rank: i + 1
-    });
-  }
+/**
+ * Create success response
+ */
+function createSuccessResponse(data) {
+  return {
+    statusCode: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, max-age=3600'
+    },
+    body: JSON.stringify(data)
+  };
+}
 
-  return field;
+/**
+ * Create error response
+ */
+function createErrorResponse(message) {
+  return {
+    statusCode: 500,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      error: 'Failed to fetch tournament',
+      message
+    })
+  };
 }
