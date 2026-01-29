@@ -176,12 +176,16 @@ exports.handler = async (event, context) => {
 
     console.log(`Analyzing complete field: ${playersWithData.length} players with valid data`);
     
+    // Limit to top 80 players to avoid token limits (still covers odds up to ~300/1)
+    const topPlayers = playersWithData.slice(0, 80);
+    console.log(`Sending ${topPlayers.length} players to Claude for analysis`);
+    
     // Step 7: Call Claude API with course info
     const anthropic = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY
     });
 
-    const prompt = buildClaudePrompt(tournament, playersWithData, weatherInfo, courseInfo);
+    const prompt = buildClaudePrompt(tournament, topPlayers, weatherInfo, courseInfo);
 
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
@@ -216,6 +220,7 @@ exports.handler = async (event, context) => {
     }
 
     // ENRICH predictions with odds breakdown data from DataGolf
+    // Use the FULL playersWithData array for enrichment (not just the top 80 sent to Claude)
     if (predictions.picks && Array.isArray(predictions.picks)) {
       predictions.picks = predictions.picks.map(pick => {
         const playerData = playersWithData.find(p => 
@@ -274,6 +279,13 @@ exports.handler = async (event, context) => {
           eventId: courseInfo.eventId,
           status: courseInfo.status,
           winner: courseInfo.winner,
+          width: courseInfo.width,
+          greens: courseInfo.greens,
+          rough: courseInfo.rough,
+          keyFeatures: courseInfo.keyFeatures || [],
+          difficulty: courseInfo.difficulty,
+          rewards: courseInfo.rewards || [],
+          avgScore: courseInfo.avgScore,
           source: courseInfo.source
         },
         courseAnalysis: {
