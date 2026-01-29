@@ -68,25 +68,50 @@ exports.handler = async (event, context) => {
     }
 
     console.log(`[COURSE] Found tournament: ${tournament.event_name}`);
-    console.log(`[COURSE] Course: ${tournament.course || 'N/A'}`);
-    console.log(`[COURSE] Location: ${tournament.location || 'N/A'}`);
+    console.log(`[COURSE] Raw tournament data:`, JSON.stringify(tournament, null, 2));
 
-    // Build course info from DataGolf data
+    // Build comprehensive course info from ALL available DataGolf data
     const courseInfo = {
-      name: tournament.course || tournament.event_name,
-      courseName: tournament.course,
+      // Tournament identification
+      eventId: tournament.event_id || null,
+      eventName: tournament.event_name || null,
+      calendarYear: tournament.calendar_year || null,
+      
+      // Course information
+      courseName: tournament.course || null,
       courseKey: tournament.course_key || null,
-      location: tournament.location || 'Location not available',
+      
+      // Location data
+      location: tournament.location || null,
+      city: tournament.city || null,
+      state: tournament.state || null,
       country: tournament.country || null,
       latitude: tournament.latitude || null,
       longitude: tournament.longitude || null,
-      eventId: tournament.event_id || null,
-      // DataGolf doesn't provide detailed course characteristics like yardage, par, etc.
-      // We'll return what we have and let get-predictions handle the rest
-      source: 'DataGolf API'
+      
+      // Tournament details
+      startDate: tournament.start_date || tournament.date || null,
+      endDate: tournament.end_date || null,
+      status: tournament.status || null,
+      tour: tournament.tour || null,
+      
+      // Winner information (if available)
+      winner: tournament.winner || null,
+      
+      // Purse/Money (if available)
+      purse: tournament.purse || null,
+      
+      // Course statistics (if available)
+      par: tournament.par || null,
+      yardage: tournament.yardage || null,
+      
+      // Any other fields that might exist
+      ...tournament,
+      
+      source: 'DataGolf API (Complete)'
     };
 
-    console.log(`[COURSE] Returning course info for: ${courseInfo.name}`);
+    console.log(`[COURSE] Extracted course info:`, JSON.stringify(courseInfo, null, 2));
 
     return {
       statusCode: 200,
