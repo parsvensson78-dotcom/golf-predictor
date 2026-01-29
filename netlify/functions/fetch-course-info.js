@@ -57,11 +57,11 @@ exports.handler = async (event, context) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          name: tournamentName,
-          course: tournament?.course || 'Course information not available',
+          eventName: tournamentName,
+          courseName: 'Course information not available',
           yardage: null,
           par: null,
-          location: tournament?.location || 'Location not available',
+          location: 'Location not available',
           source: 'Generic (tournament not found)'
         })
       };
@@ -105,9 +105,6 @@ exports.handler = async (event, context) => {
       par: tournament.par || null,
       yardage: tournament.yardage || null,
       
-      // Any other fields that might exist
-      ...tournament,
-      
       source: 'DataGolf API (Complete)'
     };
 
@@ -136,9 +133,11 @@ exports.handler = async (event, context) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        name: 'Course information unavailable',
-        course: 'Unknown',
+        eventName: 'Course information unavailable',
+        courseName: 'Unknown',
         location: 'Unknown',
+        yardage: null,
+        par: null,
         source: 'Error fallback',
         error: error.message
       })
