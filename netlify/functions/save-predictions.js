@@ -1,9 +1,7 @@
-const fs = require('fs').promises;
-const path = require('path');
+const { getStore } = require('@netlify/blobs');
 
 /**
- * Save predictions for post-tournament analysis
- * Stores predictions in a JSON file with tournament metadata
+ * Save predictions using Netlify Blobs for persistent storage
  */
 exports.handler = async (event, context) => {
   try {
@@ -18,11 +16,10 @@ exports.handler = async (event, context) => {
 
     console.log(`[SAVE] Saving predictions for ${tournament.name}`);
 
-    // Create predictions directory if it doesn't exist
-    const predictionsDir = '/tmp/predictions';
-    await fs.mkdir(predictionsDir, { recursive: true });
+    // Get Netlify Blobs store
+    const store = getStore('predictions');
 
-    // Generate filename from tournament name and date
+    // Generate key from tournament name and date
     const tournamentSlug = tournament.name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
@@ -31,8 +28,7 @@ exports.handler = async (event, context) => {
     const date = new Date(generatedAt);
     const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     
-    const filename = `${tournamentSlug}-${dateStr}.json`;
-    const filepath = path.join(predictionsDir, filename);
+    const key = `${tournamentSlug}-${dateStr}`;
 
     // Prepare data to save
     const predictionData = {
@@ -41,8 +37,7 @@ exports.handler = async (event, context) => {
         course: tournament.course,
         location: tournament.location,
         dates: tournament.dates,
-        tour: tournament.tour,
-        eventId: tournament.event_id
+        tour: tournament.tour
       },
       courseInfo: {
         par: courseInfo?.par,
@@ -62,21 +57,21 @@ exports.handler = async (event, context) => {
         generatedAt,
         savedAt: new Date().toISOString(),
         pickCount: predictions.length,
-        status: 'pending' // pending, in-progress, completed
+        status: 'pending'
       }
     };
 
-    // Save to file
-    await fs.writeFile(filepath, JSON.stringify(predictionData, null, 2), 'utf8');
+    // Save to Netlify Blobs
+    await store.set(key, JSON.stringify(predictionData));
 
-    console.log(`[SAVE] ✅ Saved to ${filename}`);
+    console.log(`[SAVE] ✅ Saved to blob: ${key}`);
 
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         success: true,
-        filename,
+        key,
         message: 'Predictions saved successfully'
       })
     };
