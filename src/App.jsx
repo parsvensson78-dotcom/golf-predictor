@@ -3,7 +3,7 @@ import './App.css';
 
 function App() {
   const [tour, setTour] = useState('pga');
-  const [activeTab, setActiveTab] = useState('predictions'); // 'predictions', 'avoid', 'news', 'matchups', or 'results'
+  const [activeTab, setActiveTab] = useState('predictions');
   const [predictions, setPredictions] = useState(null);
   const [avoidPicks, setAvoidPicks] = useState(null);
   const [newsPreview, setNewsPreview] = useState(null);
@@ -15,17 +15,13 @@ function App() {
   const [requestId, setRequestId] = useState(0);
 
   const fetchPredictions = async (selectedTour) => {
-    // Increment request ID to force re-render
     const newRequestId = requestId + 1;
     setRequestId(newRequestId);
-    
-    // Clear everything immediately
     setPredictions(null);
     setError(null);
     setLoading(true);
     
     try {
-      // Add cache-busting timestamp to URL
       const timestamp = new Date().getTime();
       const response = await fetch(
         `/.netlify/functions/get-predictions?tour=${selectedTour}&_=${timestamp}`,
@@ -56,7 +52,6 @@ function App() {
   const fetchNewsPreview = async (selectedTour) => {
     const newRequestId = requestId + 1;
     setRequestId(newRequestId);
-    
     setNewsPreview(null);
     setError(null);
     setLoading(true);
@@ -92,7 +87,6 @@ function App() {
   const fetchMatchups = async (selectedTour, customPlayers = null) => {
     const newRequestId = requestId + 1;
     setRequestId(newRequestId);
-    
     setMatchups(null);
     setError(null);
     setLoading(true);
@@ -135,7 +129,6 @@ function App() {
   const fetchAvoidPicks = async (selectedTour) => {
     const newRequestId = requestId + 1;
     setRequestId(newRequestId);
-    
     setAvoidPicks(null);
     setError(null);
     setLoading(true);
@@ -177,7 +170,6 @@ function App() {
   const fetchResults = async () => {
     const newRequestId = requestId + 1;
     setRequestId(newRequestId);
-    
     setResults(null);
     setError(null);
     setLoading(true);
@@ -370,7 +362,7 @@ function App() {
         </div>
       )}
 
-      {predictions && !loading && !error && activeTab === 'predictions' && (
+      {predictions && !loading && !error && (
         <div className="predictions-container" key={`predictions-${requestId}-${predictions.generatedAt}`}>
           <div className="tournament-info">
             <h2>{predictions.tournament.name}</h2>
@@ -379,7 +371,6 @@ function App() {
               <span>📅 {predictions.tournament.dates}</span>
             </div>
 
-            {/* DAILY WEATHER FORECAST */}
             {predictions.dailyForecast && predictions.dailyForecast.length > 0 && (
               <div className="weather-forecast-section">
                 <h3>🌤️ Tournament Week Forecast</h3>
@@ -410,7 +401,6 @@ function App() {
             )}
           </div>
 
-          {/* ENHANCED COURSE INFORMATION SECTION */}
           {predictions.courseInfo && (
             <div className="course-details-card">
               <div className="course-header-section">
@@ -482,7 +472,6 @@ function App() {
                 </div>
               </div>
 
-              {/* COURSE NOTES SECTION */}
               {predictions.courseAnalysis && predictions.courseAnalysis.notes && (
                 <div className="course-notes-section">
                   <h4>📝 Course Setup & Betting Insights</h4>
@@ -523,7 +512,6 @@ function App() {
             </div>
           )}
 
-          {/* COURSE ANALYSIS SECTION */}
           {predictions.courseAnalysis && (
             <div className="course-analysis">
               <h3>📊 Course Analysis</h3>
@@ -546,7 +534,6 @@ function App() {
             </div>
           )}
 
-          {/* VALUE PICKS SECTION */}
           <div className="picks-section">
             <h3>💎 Value Picks</h3>
             <div className="picks-grid">
@@ -578,7 +565,6 @@ function App() {
                   </div>
                   <h3 className="pick-name">{pick.player}</h3>
 
-                  {/* Odds Breakdown */}
                   {pick.minOdds && pick.maxOdds && (
                     <div className="odds-breakdown">
                       <div className="odds-breakdown-item">
@@ -632,7 +618,6 @@ function App() {
         </div>
       )}
 
-      {/* AVOID PICKS TAB */}
       {avoidPicks && !loading && !error && activeTab === 'avoid' && (
         <div className="avoid-picks-container" key={`avoid-${requestId}-${avoidPicks.generatedAt}`}>
           <div className="tournament-info">
@@ -688,7 +673,6 @@ function App() {
         </div>
       )}
 
-      {/* NEWS & PREVIEW TAB */}
       {newsPreview && !loading && !error && activeTab === 'news' && (
         <div className="news-preview-container" key={`news-${requestId}-${newsPreview.generatedAt}`}>
           <div className="tournament-info">
@@ -699,7 +683,6 @@ function App() {
             </div>
           </div>
 
-          {/* AI PREVIEW SECTION */}
           {newsPreview.preview && (
             <div className="ai-preview-section">
               <h3>🤖 AI Tournament Preview</h3>
@@ -761,7 +744,6 @@ function App() {
             </div>
           )}
 
-          {/* NEWS ARTICLES SECTION */}
           {newsPreview.news && newsPreview.news.length > 0 && (
             <div className="news-articles-section">
               <h3>📰 Latest Golf News</h3>
@@ -814,7 +796,6 @@ function App() {
         </div>
       )}
 
-      {/* MATCHUP PREDICTOR TAB */}
       {matchups && !loading && !error && activeTab === 'matchups' && (
         <div className="matchup-container" key={`matchup-${requestId}-${matchups.generatedAt}`}>
           <div className="tournament-info">
@@ -825,7 +806,6 @@ function App() {
             </div>
           </div>
 
-          {/* SUGGESTED MATCHUPS */}
           {matchups.suggestedMatchups && matchups.suggestedMatchups.length > 0 && (
             <div className="suggested-matchups-section">
               <h3>🆚 AI-Suggested Matchups</h3>
@@ -935,35 +915,39 @@ function App() {
         </div>
       )}
 
-      {/* RESULTS TAB */}
       {results && !loading && !error && activeTab === 'results' && (
-        <div className="results-container" key={`results-${requestId}-${Date.now()}`}>
-          <div className="results-header">
+        <div className="results-container">
+          <div style={{textAlign: 'center', marginBottom: '2rem'}}>
             <h2>🏆 Prediction Results History</h2>
-            <div className="results-stats">
-              <span className="stat-badge">📊 {results.totalPredictions || 0} Total Picks</span>
-              <span className="stat-badge">✅ {results.completedTournaments || 0} Completed</span>
-              <span className="stat-badge">⏳ {(results.tournaments?.length || 0) - (results.completedTournaments || 0)} Pending</span>
-            </div>
+            {results.tournaments && results.tournaments.length > 0 && (
+              <div style={{display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '1rem', flexWrap: 'wrap'}}>
+                <span style={{background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', padding: '0.5rem 1rem', borderRadius: '20px', fontWeight: 600}}>
+                  📊 {results.totalPredictions || 0} Total Picks
+                </span>
+                <span style={{background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', padding: '0.5rem 1rem', borderRadius: '20px', fontWeight: 600}}>
+                  ✅ {results.completedTournaments || 0} Completed
+                </span>
+              </div>
+            )}
           </div>
 
           {(!results.tournaments || results.tournaments.length === 0) ? (
-            <div className="empty-state">
+            <div style={{textAlign: 'center', padding: '4rem 2rem', background: 'white', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)'}}>
               <h3>No Predictions Saved Yet</h3>
               <p>Generate some predictions first, and they'll automatically be saved for results tracking!</p>
             </div>
           ) : (
-            <div className="tournaments-results">
+            <div>
               {results.tournaments.map((tournament, index) => (
-                <div key={index} className={`tournament-result-card status-${tournament.status}`}>
-                  <div className="tournament-result-header">
-                    <div className="tournament-result-title">
-                      <h3>{tournament.tournament.name}</h3>
-                      <span className={`status-badge status-${tournament.status}`}>
+                <div key={index} style={{background: 'white', borderRadius: '12px', padding: '2rem', marginBottom: '2rem', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', border: tournament.status === 'completed' ? '2px solid #4caf50' : '2px solid #ff9800'}}>
+                  <div style={{borderBottom: '2px solid #f0f0f0', paddingBottom: '1rem', marginBottom: '1.5rem'}}>
+                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem'}}>
+                      <h3 style={{margin: 0}}>{tournament.tournament.name}</h3>
+                      <span style={{padding: '0.4rem 1rem', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600, background: tournament.status === 'completed' ? '#e8f5e9' : '#fff3e0', color: tournament.status === 'completed' ? '#2e7d32' : '#e65100'}}>
                         {tournament.status === 'completed' ? '✅ Completed' : '⏳ Pending'}
                       </span>
                     </div>
-                    <div className="tournament-result-meta">
+                    <div style={{display: 'flex', gap: '1.5rem', color: '#666', fontSize: '0.9rem', flexWrap: 'wrap'}}>
                       <span>📍 {tournament.tournament.course}</span>
                       <span>📅 {tournament.tournament.dates}</span>
                       <span>🔮 {new Date(tournament.generatedAt).toLocaleDateString()}</span>
@@ -971,55 +955,41 @@ function App() {
                   </div>
 
                   {tournament.status === 'completed' && tournament.analysis ? (
-                    <>
-                      {/* Performance Summary */}
-                      <div className="performance-summary">
-                        <h4>📈 Performance</h4>
-                        <div className="performance-stats">
-                          <div className="perf-stat"><span className="perf-label">Wins</span><span className="perf-value">{tournament.analysis.wins}/{tournament.analysis.totalPicks}</span></div>
-                          <div className="perf-stat"><span className="perf-label">Top 5</span><span className="perf-value">{tournament.analysis.top5s}/{tournament.analysis.totalPicks}</span></div>
-                          <div className="perf-stat"><span className="perf-label">Top 10</span><span className="perf-value">{tournament.analysis.top10s}/{tournament.analysis.totalPicks}</span></div>
-                          <div className="perf-stat"><span className="perf-label">Made Cut</span><span className="perf-value">{tournament.analysis.madeCut}/{tournament.analysis.totalPicks}</span></div>
+                    <div>
+                      <h4>📈 Performance</h4>
+                      <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '1rem', marginBottom: '1.5rem'}}>
+                        <div style={{background: '#f8f9fa', padding: '1rem', borderRadius: '8px', textAlign: 'center', border: '2px solid #e0e0e0'}}>
+                          <div style={{fontSize: '0.85rem', color: '#666', marginBottom: '0.3rem'}}>Wins</div>
+                          <div style={{fontSize: '2rem', fontWeight: 'bold'}}>{tournament.analysis.wins}/{tournament.analysis.totalPicks}</div>
                         </div>
-                        <div className="roi-summary">
-                          <div className="roi-stat">
-                            <span className="roi-label">Total ROI ($100/pick)</span>
-                            <span className={`roi-value ${tournament.analysis.totalROI >= 0 ? 'positive' : 'negative'}`}>
-                              {tournament.analysis.totalROI >= 0 ? '+' : ''}${tournament.analysis.totalROI.toFixed(2)}
-                            </span>
-                          </div>
+                        <div style={{background: '#f8f9fa', padding: '1rem', borderRadius: '8px', textAlign: 'center', border: '2px solid #e0e0e0'}}>
+                          <div style={{fontSize: '0.85rem', color: '#666', marginBottom: '0.3rem'}}>Top 5</div>
+                          <div style={{fontSize: '2rem', fontWeight: 'bold'}}>{tournament.analysis.top5s}/{tournament.analysis.totalPicks}</div>
+                        </div>
+                        <div style={{background: '#f8f9fa', padding: '1rem', borderRadius: '8px', textAlign: 'center', border: '2px solid #e0e0e0'}}>
+                          <div style={{fontSize: '0.85rem', color: '#666', marginBottom: '0.3rem'}}>Top 10</div>
+                          <div style={{fontSize: '2rem', fontWeight: 'bold'}}>{tournament.analysis.top10s}/{tournament.analysis.totalPicks}</div>
+                        </div>
+                        <div style={{background: '#f8f9fa', padding: '1rem', borderRadius: '8px', textAlign: 'center', border: '2px solid #e0e0e0'}}>
+                          <div style={{fontSize: '0.85rem', color: '#666', marginBottom: '0.3rem'}}>Made Cut</div>
+                          <div style={{fontSize: '2rem', fontWeight: 'bold'}}>{tournament.analysis.madeCut}/{tournament.analysis.totalPicks}</div>
                         </div>
                       </div>
-
-                      {/* Picks Results */}
-                      <div className="picks-results-grid">
-                        {tournament.analysis.detailedPicks.map((pick, idx) => (
-                          <div key={idx} className={`pick-result-card performance-${pick.performance}`}>
-                            <div className="pick-result-header">
-                              <h5>{pick.player}</h5>
-                              <span className={`performance-badge ${pick.performance}`}>
-                                {pick.performance === 'win' ? '🏆' :
-                                 pick.performance === 'top-5' ? '⭐' :
-                                 pick.performance === 'top-10' ? '👍' : '✓'}
-                              </span>
-                            </div>
-                            <div className="pick-result-details">
-                              <div className="detail-row"><span>Odds:</span><span>{Math.round(pick.odds)}/1</span></div>
-                              <div className="detail-row"><span>Position:</span><span>{pick.position}</span></div>
-                              <div className="detail-row"><span>ROI:</span><span className={pick.roi >= 0 ? 'positive' : 'negative'}>{pick.roi >= 0 ? '+' : ''}${pick.roi.toFixed(2)}</span></div>
-                            </div>
-                          </div>
-                        ))}
+                      <div style={{background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '1.5rem', borderRadius: '8px', color: 'white', textAlign: 'center'}}>
+                        <div style={{fontSize: '0.9rem', marginBottom: '0.5rem', opacity: 0.9}}>Total ROI ($100/pick)</div>
+                        <div style={{fontSize: '2.5rem', fontWeight: 'bold', color: tournament.analysis.totalROI >= 0 ? '#4caf50' : '#f44336', background: 'white', padding: '0.5rem', borderRadius: '8px'}}>
+                          {tournament.analysis.totalROI >= 0 ? '+' : ''}${tournament.analysis.totalROI.toFixed(2)}
+                        </div>
                       </div>
-                    </>
+                    </div>
                   ) : (
-                    <div className="pending-predictions">
-                      <p>Waiting for tournament to complete...</p>
-                      <div className="pending-picks-grid">
+                    <div>
+                      <p style={{color: '#666'}}>Waiting for tournament to complete...</p>
+                      <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem', marginTop: '1rem'}}>
                         {tournament.predictions.map((pick, idx) => (
-                          <div key={idx} className="pending-pick-card">
-                            <h5>{pick.player}</h5>
-                            <div className="pending-pick-odds">{Math.round(pick.odds)}/1</div>
+                          <div key={idx} style={{background: '#f8f9fa', border: '2px solid #ff9800', borderRadius: '8px', padding: '1rem'}}>
+                            <h5 style={{margin: '0 0 0.5rem 0'}}>{pick.player}</h5>
+                            <div style={{fontSize: '1.3rem', fontWeight: 'bold', color: '#667eea'}}>{Math.round(pick.odds)}/1</div>
                           </div>
                         ))}
                       </div>
