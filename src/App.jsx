@@ -16,7 +16,8 @@ function App() {
     predictions: null,
     avoidPicks: null,
     newsPreview: null,
-    matchups: null
+    matchups: null,
+    results: null
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -78,9 +79,12 @@ function App() {
   const handleGetMatchups = () => 
     fetchData(`/.netlify/functions/get-matchup-predictions`, 'POST', { tour }, 'matchups');
 
+  const handleGetResults = () => 
+    fetchData(`/.netlify/functions/get-prediction-results`, 'GET', null, 'results');
+
   const handleTourChange = (newTour) => {
     setTour(newTour);
-    setData({ predictions: null, avoidPicks: null, newsPreview: null, matchups: null });
+    setData({ predictions: null, avoidPicks: null, newsPreview: null, matchups: null, results: null });
     setError(null);
     setRequestId(prev => prev + 1);
   };
@@ -88,7 +92,8 @@ function App() {
   const currentData = data[
     activeTab === 'predictions' ? 'predictions' :
     activeTab === 'avoid' ? 'avoidPicks' :
-    activeTab === 'news' ? 'newsPreview' : 'matchups'
+    activeTab === 'news' ? 'newsPreview' : 
+    activeTab === 'results' ? 'results' : 'matchups'
   ];
 
   return (
@@ -106,6 +111,7 @@ function App() {
         onGetAvoidPicks={handleGetAvoidPicks}
         onGetNews={handleGetNews}
         onGetMatchups={handleGetMatchups}
+        onGetResults={handleGetResults}
       />
 
       {loading && <LoadingState requestId={requestId} />}
@@ -118,6 +124,7 @@ function App() {
           {activeTab === 'avoid' && <AvoidPicksView data={currentData} requestId={requestId} />}
           {activeTab === 'news' && <NewsPreviewView data={currentData} requestId={requestId} />}
           {activeTab === 'matchups' && <MatchupsView data={currentData} requestId={requestId} />}
+          {activeTab === 'results' && <ResultsView data={currentData} requestId={requestId} />}
         </>
       )}
     </div>
@@ -159,7 +166,8 @@ const TabSelector = ({ activeTab, onTabChange, disabled }) => (
       { id: 'predictions', icon: '📊', label: 'Value Predictions' },
       { id: 'avoid', icon: '❌', label: 'Avoid Picks' },
       { id: 'news', icon: '📰', label: 'News & Preview' },
-      { id: 'matchups', icon: '🆚', label: 'Matchup Predictor' }
+      { id: 'matchups', icon: '🆚', label: 'Matchup Predictor' },
+      { id: 'results', icon: '🏆', label: 'Results' }
     ].map(tab => (
       <button 
         key={tab.id}
@@ -174,12 +182,13 @@ const TabSelector = ({ activeTab, onTabChange, disabled }) => (
 );
 
 // ==================== ACTION BUTTON ====================
-const ActionButton = ({ activeTab, loading, onGetPredictions, onGetAvoidPicks, onGetNews, onGetMatchups }) => {
+const ActionButton = ({ activeTab, loading, onGetPredictions, onGetAvoidPicks, onGetNews, onGetMatchups, onGetResults }) => {
   const buttonConfig = {
     predictions: { text: 'Get Predictions', handler: onGetPredictions },
     avoid: { text: 'Get Avoid Picks', handler: onGetAvoidPicks },
     news: { text: 'Get News & Preview', handler: onGetNews },
-    matchups: { text: 'Get Matchup Predictions', handler: onGetMatchups }
+    matchups: { text: 'Get Matchup Predictions', handler: onGetMatchups },
+    results: { text: 'View Results History', handler: onGetResults }
   };
 
   const config = buttonConfig[activeTab];
@@ -595,5 +604,177 @@ const PlayerBox = ({ player, isPick }) => (
     {isPick && <div className="winner-badge">✓ PICK</div>}
   </div>
 );
+
+// ==================== RESULTS VIEW ====================
+const ResultsView = ({ data, requestId }) => {
+  if (!data.tournaments || data.tournaments.length === 0) {
+    return (
+      <div className="results-container" key={`results-${requestId}`}>
+        <div className="empty-state">
+          <h3>No Predictions Saved Yet</h3>
+          <p>Generate some predictions first, and they'll automatically be saved for results tracking!</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="results-container" key={`results-${requestId}`}>
+      <div className="results-header">
+        <h2>🏆 Prediction Results History</h2>
+        <div className="results-stats">
+          <span className="stat-badge">📊 {data.totalPredictions} Total Picks</span>
+          <span className="stat-badge">✅ {data.completedTournaments} Completed</span>
+          <span className="stat-badge">⏳ {data.tournaments.length - data.completedTournaments} Pending</span>
+        </div>
+      </div>
+
+      <div className="tournaments-results">
+        {data.tournaments.map((tournament, index) => (
+          <TournamentResultCard key={index} tournament={tournament} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const TournamentResultCard = ({ tournament }) => {
+  const { tournament: info, predictions, results, analysis, status, generatedAt } = tournament;
+
+  return (
+    <div className={`tournament-result-card status-${status}`}>
+      <div className="tournament-result-header">
+        <div className="tournament-result-title">
+          <h3>{info.name}</h3>
+          <span className={`status-badge status-${status}`}>
+            {status === 'completed' ? '✅ Completed' : '⏳ In Progress'}
+          </span>
+        </div>
+        <div className="tournament-result-meta">
+          <span>📍 {info.course}</span>
+          <span>📅 {info.dates}</span>
+          <span>🔮 Predicted: {new Date(generatedAt).toLocaleDateString()}</span>
+        </div>
+      </div>
+
+      {status === 'completed' && analysis ? (
+        <>
+          {/* Performance Summary */}
+          <div className="performance-summary">
+            <h4>📈 Performance Summary</h4>
+            <div className="performance-stats">
+              <div className="perf-stat highlight">
+                <span className="perf-label">Wins</span>
+                <span className="perf-value">{analysis.wins}</span>
+                <span className="perf-count">/ {analysis.totalPicks}</span>
+              </div>
+              <div className="perf-stat good">
+                <span className="perf-label">Top 5</span>
+                <span className="perf-value">{analysis.top5s}</span>
+                <span className="perf-count">/ {analysis.totalPicks}</span>
+              </div>
+              <div className="perf-stat">
+                <span className="perf-label">Top 10</span>
+                <span className="perf-value">{analysis.top10s}</span>
+                <span className="perf-count">/ {analysis.totalPicks}</span>
+              </div>
+              <div className="perf-stat">
+                <span className="perf-label">Top 20</span>
+                <span className="perf-value">{analysis.top20s}</span>
+                <span className="perf-count">/ {analysis.totalPicks}</span>
+              </div>
+              <div className="perf-stat">
+                <span className="perf-label">Made Cut</span>
+                <span className="perf-value">{analysis.madeCut}</span>
+                <span className="perf-count">/ {analysis.totalPicks}</span>
+              </div>
+              <div className="perf-stat bad">
+                <span className="perf-label">Missed Cut</span>
+                <span className="perf-value">{analysis.missedCut}</span>
+                <span className="perf-count">/ {analysis.totalPicks}</span>
+              </div>
+            </div>
+            
+            <div className="roi-summary">
+              <div className="roi-stat">
+                <span className="roi-label">Total ROI ($100/pick)</span>
+                <span className={`roi-value ${analysis.totalROI >= 0 ? 'positive' : 'negative'}`}>
+                  {analysis.totalROI >= 0 ? '+' : ''}${analysis.totalROI.toFixed(2)}
+                </span>
+              </div>
+              <div className="roi-stat">
+                <span className="roi-label">Avg ROI per pick</span>
+                <span className={`roi-value ${analysis.avgROI >= 0 ? 'positive' : 'negative'}`}>
+                  {analysis.avgROI >= 0 ? '+' : ''}${analysis.avgROI.toFixed(2)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Detailed Picks */}
+          <div className="detailed-picks">
+            <h4>🎯 Pick-by-Pick Results</h4>
+            <div className="picks-results-grid">
+              {analysis.detailedPicks.map((pick, idx) => (
+                <div key={idx} className={`pick-result-card performance-${pick.performance}`}>
+                  <div className="pick-result-header">
+                    <h5>{pick.player}</h5>
+                    <span className={`performance-badge ${pick.performance}`}>
+                      {pick.performance === 'win' ? '🏆 WIN' :
+                       pick.performance === 'top-5' ? '⭐ Top 5' :
+                       pick.performance === 'top-10' ? '👍 Top 10' :
+                       pick.performance === 'top-20' ? '✓ Top 20' :
+                       pick.performance === 'made-cut' ? '✓ Made Cut' :
+                       pick.performance === 'missed-cut' ? '❌ MC' : '❓'}
+                    </span>
+                  </div>
+                  <div className="pick-result-details">
+                    <div className="detail-row">
+                      <span>Predicted Odds:</span>
+                      <span className="detail-value">{Math.round(pick.odds)}/1</span>
+                    </div>
+                    <div className="detail-row">
+                      <span>Final Position:</span>
+                      <span className="detail-value">{pick.position}</span>
+                    </div>
+                    <div className="detail-row">
+                      <span>Score:</span>
+                      <span className="detail-value">{pick.toPar}</span>
+                    </div>
+                    {pick.roi !== undefined && (
+                      <div className="detail-row roi-row">
+                        <span>ROI ($100 bet):</span>
+                        <span className={`detail-value ${pick.roi >= 0 ? 'positive' : 'negative'}`}>
+                          {pick.roi >= 0 ? '+' : ''}${pick.roi.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Pending Predictions */}
+          <div className="pending-predictions">
+            <h4>🔮 Predictions ({predictions.length} picks)</h4>
+            <div className="pending-picks-grid">
+              {predictions.map((pick, idx) => (
+                <div key={idx} className="pending-pick-card">
+                  <h5>{pick.player}</h5>
+                  <div className="pending-pick-odds">{Math.round(pick.odds)}/1</div>
+                  <p className="pending-pick-reasoning">{pick.reasoning}</p>
+                </div>
+              ))}
+            </div>
+            <p className="pending-note">Results will appear here once the tournament is completed.</p>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 
 export default App;
