@@ -79,8 +79,11 @@ function App() {
   const handleGetMatchups = () => 
     fetchData(`/.netlify/functions/get-matchup-predictions`, 'POST', { tour }, 'matchups');
 
-  const handleGetResults = () => 
-    fetchData(`/.netlify/functions/get-prediction-results`, 'GET', null, 'results');
+  const handleGetResults = () => {
+    // Don't call API yet - just set a flag to show the setup message
+    setData(prev => ({ ...prev, results: { setupRequired: true } }));
+    setRequestId(prev => prev + 1);
+  };
 
   const handleTourChange = (newTour) => {
     setTour(newTour);
