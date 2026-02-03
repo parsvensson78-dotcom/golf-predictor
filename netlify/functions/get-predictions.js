@@ -60,12 +60,17 @@ exports.handler = async (event, context) => {
 
     console.log(`[MERGE] ${playersWithData.length} players with complete data`);
 
-    // Step 6: Prepare data for Claude (all players)
-    console.log(`[CLAUDE] Analyzing all ${playersWithData.length} players in the field`);
+    // Step 6: Select top 80 players by odds (lower odds = higher ranked)
+    // This reduces prompt size and speeds up Claude analysis significantly
+    const topPlayers = playersWithData
+      .sort((a, b) => a.odds - b.odds)
+      .slice(0, 80);
+    
+    console.log(`[CLAUDE] Analyzing top ${topPlayers.length} players (reduced from ${playersWithData.length} for speed)`);
 
     // Step 7: Call Claude API
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const prompt = buildClaudePrompt(tournament, playersWithData, weatherData.summary, courseInfo);
+    const prompt = buildClaudePrompt(tournament, topPlayers, weatherData.summary, courseInfo);
 
     let message, predictions;
     try {
@@ -73,8 +78,8 @@ exports.handler = async (event, context) => {
       console.log(`[CLAUDE] Sending request to Claude API...`);
       message = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 4000,
-        temperature: 0.3,
+        max_tokens: 2500,  // Reduced from 4000 - predictions don't need that many tokens
+        temperature: 0.4,  // Slightly higher for faster generation (was 0.3)
         messages: [{ role: 'user', content: prompt }]
       });
       const claudeDuration = ((Date.now() - claudeStartTime) / 1000).toFixed(1);
@@ -135,7 +140,7 @@ exports.handler = async (event, context) => {
 
     // Step 9: Enrich predictions with odds breakdown
     try {
-      enrichPredictionsWithOdds(predictions, playersWithData);
+      enrichPredictionsWithOdds(predictions, topPlayers);
       console.log(`[ENRICH] ✅ Added odds breakdown to predictions`);
     } catch (enrichError) {
       console.error(`[ENRICH] ❌ Failed to enrich predictions:`, enrichError.message);
