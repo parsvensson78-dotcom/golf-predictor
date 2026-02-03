@@ -10,18 +10,20 @@ exports.handler = async (event, context) => {
   try {
     const tour = event.queryStringParameters?.tour || 'pga';
     const reqId = event.queryStringParameters?.reqId || 'unknown';
+    const forceRefresh = event.queryStringParameters?.refresh === 'true';
     const baseUrl = process.env.URL || 'http://localhost:8888';
 
-    console.log(`[START] Predictions for ${tour.toUpperCase()} tour - Request ID: ${reqId}`);
+    console.log(`[START] Predictions for ${tour.toUpperCase()} tour - Request ID: ${reqId}${forceRefresh ? ' (FORCE REFRESH)' : ''}`);
 
-    // Step 1: Try to get cached player data
+    // Step 1: Try to get cached player data (unless force refresh)
     const cacheKey = `player-data-${tour}`;
     let playersWithData = null;
     let tournament = null;
     let weatherData = null;
     let courseInfo = null;
     
-    try {
+    if (!forceRefresh) {
+      try {
       const { getStore } = require('@netlify/blobs');
       const siteID = process.env.SITE_ID;
       const token = process.env.NETLIFY_AUTH_TOKEN;
@@ -53,8 +55,11 @@ exports.handler = async (event, context) => {
           console.log(`[CACHE] No cache found, fetching fresh data`);
         }
       }
-    } catch (cacheError) {
-      console.log(`[CACHE] Error reading cache: ${cacheError.message}`);
+      } catch (cacheError) {
+        console.log(`[CACHE] Error reading cache: ${cacheError.message}`);
+      }
+    } else {
+      console.log(`[CACHE] Force refresh requested - bypassing cache`);
     }
 
     // Step 2: If no valid cache, fetch all data
