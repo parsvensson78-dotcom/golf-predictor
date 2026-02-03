@@ -60,13 +60,13 @@ exports.handler = async (event, context) => {
 
     console.log(`[MERGE] ${playersWithData.length} players with complete data`);
 
-    // Step 6: Select top 80 players by odds (lower odds = higher ranked)
-    // This reduces prompt size and speeds up Claude analysis significantly
+    // Step 6: Select top 60 players by odds (lower odds = higher ranked)
+    // Optimized for speed - must complete under 25 seconds to avoid Netlify timeout
     const topPlayers = playersWithData
       .sort((a, b) => a.odds - b.odds)
-      .slice(0, 80);
+      .slice(0, 60);
     
-    console.log(`[CLAUDE] Analyzing top ${topPlayers.length} players (reduced from ${playersWithData.length} for speed)`);
+    console.log(`[CLAUDE] Analyzing top ${topPlayers.length} players (optimized from ${playersWithData.length})`);
 
     // Step 7: Call Claude API
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -78,8 +78,8 @@ exports.handler = async (event, context) => {
       console.log(`[CLAUDE] Sending request to Claude API...`);
       message = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 2500,  // Reduced from 4000 - predictions don't need that many tokens
-        temperature: 0.4,  // Slightly higher for faster generation (was 0.3)
+        max_tokens: 2000,  // Reduced from 2500 - need to finish under 25s
+        temperature: 0.5,  // Higher for faster generation
         messages: [{ role: 'user', content: prompt }]
       });
       const claudeDuration = ((Date.now() - claudeStartTime) / 1000).toFixed(1);
@@ -325,13 +325,26 @@ async function fetchRecentFormAndHistory(playerNames, courseName, tour) {
       }));
     }
 
-    // Get last 10 completed tournaments
+    const now = new Date();
+    const today = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    
+    // Get completed tournaments (where end_date or start_date is in the past)
     const completedTournaments = tournaments
       .filter(t => {
-        const isCompleted = t.event_completed === true;
-        if (!isCompleted && tournaments.indexOf(t) < 5) {
-          console.log(`[FORM] Tournament "${t.event_name}" - event_completed: ${t.event_completed}`);
+        // Try different date fields
+        const endDate = t.end_date || t.date || t.start_date;
+        if (!endDate) return false;
+        
+        // Parse date and check if it's in the past (tournament finished at least 3 days ago)
+        const tourneyDate = new Date(endDate);
+        const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+        
+        const isCompleted = tourneyDate < threeDaysAgo;
+        
+        if (tournaments.indexOf(t) < 5) {
+          console.log(`[FORM] Tournament "${t.event_name}" - date: ${endDate}, completed: ${isCompleted}`);
         }
+        
         return isCompleted;
       })
       .sort((a, b) => new Date(b.date) - new Date(a.date))
