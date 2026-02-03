@@ -76,6 +76,24 @@ exports.handler = async (event, context) => {
     // Step 8: Parse Claude response
     const predictions = parseClaudeResponse(message.content[0].text);
     console.log(`[CLAUDE] Generated ${predictions.picks?.length || 0} picks`);
+    
+    // Step 8.5: Validate pick distribution (1 favorite + 5 value)
+    if (predictions.picks && predictions.picks.length === 6) {
+      const firstPickOdds = predictions.picks[0].odds;
+      const remainingOdds = predictions.picks.slice(1).map(p => p.odds);
+      
+      console.log(`[VALIDATION] Pick #1 odds: ${firstPickOdds} (should be < 20)`);
+      console.log(`[VALIDATION] Picks #2-6 odds: ${remainingOdds.join(', ')} (should all be >= 20)`);
+      
+      if (firstPickOdds >= 20) {
+        console.warn(`[VALIDATION] ⚠️  Pick #1 odds (${firstPickOdds}) is NOT under 20/1! Claude ignored instructions.`);
+      }
+      
+      const invalidValuePicks = remainingOdds.filter(o => o < 20);
+      if (invalidValuePicks.length > 0) {
+        console.warn(`[VALIDATION] ⚠️  ${invalidValuePicks.length} value picks have odds under 20/1! Should be >= 20/1.`);
+      }
+    }
 
     // Step 9: Enrich predictions with odds breakdown
     enrichPredictionsWithOdds(predictions, playersWithData);
@@ -563,11 +581,15 @@ ${formatPlayerList(midTier)}
 ${formatPlayerList(longshots)}
 
 YOUR TASK - MULTI-FACTOR ANALYSIS:
-**CRITICAL: Select EXACTLY 6 picks with this MANDATORY distribution:**
+**🚨 CRITICAL: Select EXACTLY 6 picks with this MANDATORY distribution: 🚨**
 - **Pick #1: ONE FAVORITE (odds UNDER 20/1)** - The BEST favorite from entire field
 - **Picks #2-6: FIVE VALUE PICKS (odds 20/1 OR HIGHER)** - Best value from entire field
 
-This is NON-NEGOTIABLE: You MUST include exactly 1 favorite and 5 value picks.
+**⚠️  THIS IS ABSOLUTELY NON-NEGOTIABLE:**
+- First pick MUST have odds < 20.0 (e.g., 3.2, 8.5, 12.0, 18.5)
+- Remaining 5 picks MUST have odds >= 20.0 (e.g., 25.0, 45.0, 65.0, 85.0)
+- If you cannot find a favorite with good value, pick the BEST available under 20/1
+- DO NOT make all 6 picks from value zone (20/1+)
 
 Use this decision framework:
 
@@ -661,6 +683,11 @@ For each pick, explain IN THIS ORDER:
 4. **WEATHER (${WEIGHTS.weather}%)** - How conditions favor this player's game
 5. **VALUE (${WEIGHTS.statisticalQuality}%)** - Why odds are too high given all factors above
 Keep to 3-4 sentences max.
+
+🚨 FINAL REMINDER BEFORE YOU OUTPUT JSON:
+- Pick #1 MUST be odds < 20.0 (a favorite)
+- Picks #2-6 MUST be odds >= 20.0 (value picks)
+- Double-check your picks array before returning!
 
 Return ONLY valid JSON (no markdown):
 {
