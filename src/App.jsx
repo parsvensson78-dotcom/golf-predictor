@@ -404,12 +404,6 @@ const CourseAnalysis = ({ courseAnalysis }) => {
   );
 };
 
-// Helper function to format American odds (defined here for component scope)
-const formatAmericanOdds = (odds) => {
-  if (!odds || odds === 0) return 'N/A';
-  return odds > 0 ? `+${odds}` : `${odds}`;
-};
-
 const OddsBreakdown = ({ pick }) => {
   if (!pick.minOdds || !pick.maxOdds) return null;
 
