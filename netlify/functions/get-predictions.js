@@ -126,15 +126,14 @@ exports.handler = async (event, context) => {
       estimatedCost: cost
     };
 
-    // Step 11: Save predictions to Netlify Blobs for results tracking (optional)
-    if (process.env.NETLIFY) {
-      try {
-        await savePredictionsToBlobs(responseData);
-        console.log('[SAVE] ✅ Predictions saved for results tracking');
-      } catch (saveError) {
-        console.error('[SAVE] Failed to save predictions:', saveError.message);
-        // Don't fail the request if save fails
-      }
+    // Step 11: Save predictions to Netlify Blobs for results tracking
+    try {
+      await savePredictionsToBlobs(responseData);
+      console.log('[SAVE] ✅ Predictions saved for results tracking');
+    } catch (saveError) {
+      console.error('[SAVE] Failed to save predictions:', saveError.message);
+      console.log('[SAVE] This is not critical - predictions still returned successfully');
+      // Don't fail the request if save fails
     }
 
     // Step 12: Return response
