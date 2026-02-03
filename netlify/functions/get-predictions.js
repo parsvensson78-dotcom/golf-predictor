@@ -898,7 +898,7 @@ async function savePredictionsToBlobs(responseData) {
     consistency: 'strong'
   });
 
-  // Generate key from tournament name and date
+  // Generate key from tournament name and date + timestamp for uniqueness
   const tournamentSlug = responseData.tournament.name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -906,12 +906,19 @@ async function savePredictionsToBlobs(responseData) {
   
   const date = new Date(responseData.generatedAt);
   const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const timeStr = `${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}`;
+  
+  const key = `${tournamentSlug}-${dateStr}-${timeStr}`;
   
   const key = `${tournamentSlug}-${dateStr}`;
 
   // Prepare data to save (simplified version for tracking)
   const predictionData = {
-    tournament: responseData.tournament,
+    tournament: {
+      ...responseData.tournament,
+      eventId: responseData.tournament.eventId,
+      tour: responseData.tournament.tour
+    },
     courseInfo: {
       par: responseData.courseInfo?.par,
       yardage: responseData.courseInfo?.yardage,
