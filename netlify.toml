@@ -10,3 +10,13 @@
 [functions]
   node_bundler = "esbuild"
   external_node_modules = ["@netlify/blobs"]
+
+# Increase function timeout to 60 seconds (max for free tier, 26 seconds default)
+[functions."get-predictions"]
+  timeout = 60
+
+[functions."get-prediction-results"]
+  timeout = 30
+
+[functions."fetch-tournament-results"]
+  timeout = 30
