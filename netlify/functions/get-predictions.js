@@ -77,7 +77,7 @@ exports.handler = async (event, context) => {
     const predictions = parseClaudeResponse(message.content[0].text);
     console.log(`[CLAUDE] Generated ${predictions.picks?.length || 0} picks`);
     
-    // Step 8.5: Validate pick distribution (1 favorite + 5 value)
+    // Step 8.5: Validate and FIX pick distribution (1 favorite + 5 value)
     if (predictions.picks && predictions.picks.length === 6) {
       const firstPickOdds = predictions.picks[0].odds;
       const remainingOdds = predictions.picks.slice(1).map(p => p.odds);
@@ -86,7 +86,26 @@ exports.handler = async (event, context) => {
       console.log(`[VALIDATION] Picks #2-6 odds: ${remainingOdds.join(', ')} (should all be >= 20)`);
       
       if (firstPickOdds >= 20) {
-        console.warn(`[VALIDATION] ⚠️  Pick #1 odds (${firstPickOdds}) is NOT under 20/1! Claude ignored instructions.`);
+        console.warn(`[VALIDATION] ⚠️  Pick #1 odds (${firstPickOdds}) is NOT under 20/1! Auto-fixing by reordering...`);
+        
+        // Find the pick with lowest odds
+        let lowestOddsIndex = 0;
+        let lowestOdds = predictions.picks[0].odds;
+        
+        for (let i = 1; i < predictions.picks.length; i++) {
+          if (predictions.picks[i].odds < lowestOdds) {
+            lowestOdds = predictions.picks[i].odds;
+            lowestOddsIndex = i;
+          }
+        }
+        
+        // Move the lowest odds pick to position 0
+        if (lowestOddsIndex !== 0) {
+          const lowestPick = predictions.picks[lowestOddsIndex];
+          predictions.picks.splice(lowestOddsIndex, 1);
+          predictions.picks.unshift(lowestPick);
+          console.log(`[VALIDATION] ✅ Fixed! Moved ${lowestPick.player} (${lowestPick.odds}) to Pick #1`);
+        }
       }
       
       const invalidValuePicks = remainingOdds.filter(o => o < 20);
