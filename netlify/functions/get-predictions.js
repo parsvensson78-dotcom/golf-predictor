@@ -364,28 +364,43 @@ async function fetchRecentFormAndHistory(playerNames, courseName, tour) {
     }
 
     const now = new Date();
-    const today = now.toISOString().split('T')[0]; // YYYY-MM-DD
     
-    // Get completed tournaments (where end_date or start_date is in the past)
+    // Get completed tournaments (where tournament finished at least 2 days ago)
     const completedTournaments = tournaments
       .filter(t => {
-        // Try different date fields
-        const endDate = t.end_date || t.date || t.start_date;
-        if (!endDate) return false;
+        // Try to find tournament end date
+        let tourneyEndDate;
         
-        // Parse date and check if it's in the past (tournament finished at least 3 days ago)
-        const tourneyDate = new Date(endDate);
-        const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+        if (t.end_date) {
+          tourneyEndDate = new Date(t.end_date);
+        } else if (t.start_date) {
+          // If only start_date, assume 4-day tournament
+          tourneyEndDate = new Date(t.start_date);
+          tourneyEndDate.setDate(tourneyEndDate.getDate() + 4);
+        } else if (t.date) {
+          // If generic date, assume it's start date + 4 days
+          tourneyEndDate = new Date(t.date);
+          tourneyEndDate.setDate(tourneyEndDate.getDate() + 4);
+        } else {
+          return false;
+        }
         
-        const isCompleted = tourneyDate < threeDaysAgo;
+        // Tournament is completed if it ended at least 2 days ago
+        const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+        const isCompleted = tourneyEndDate < twoDaysAgo;
         
         if (tournaments.indexOf(t) < 5) {
-          console.log(`[FORM] Tournament "${t.event_name}" - date: ${endDate}, completed: ${isCompleted}`);
+          const dateSource = t.end_date ? 'end_date' : t.start_date ? 'start_date+4' : 'date+4';
+          console.log(`[FORM] "${t.event_name}" - ${dateSource}: ${tourneyEndDate.toISOString().split('T')[0]}, completed: ${isCompleted}`);
         }
         
         return isCompleted;
       })
-      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .sort((a, b) => {
+        const aDate = new Date(a.end_date || a.start_date || a.date);
+        const bDate = new Date(b.end_date || b.start_date || b.date);
+        return bDate - aDate;
+      })
       .slice(0, 10);
 
     console.log(`[FORM] Found ${completedTournaments.length} recent completed tournaments`);
@@ -678,28 +693,51 @@ function buildClaudePrompt(tournament, players, weatherSummary, courseInfo) {
     })
     .join('\n');
 
-  return `Golf analyst: Pick 6 best VALUE players from the 60 below.
+  return `Golf analyst: Find 6 VALUE picks (1 favorite <+1900, 5 value picks +1900+).
 
 TOURNAMENT: ${tournament.name}
 Course: ${courseInfo.courseName || courseInfo.eventName} | ${courseInfo.yardage || '?'}y Par ${courseInfo.par || '?'}
 Demands: ${courseDemands}
 Weather: ${weatherAnalysis}
 
-PLAYERS (sorted by odds):
+PLAYERS (all 60 by odds):
 ${formatPlayerList(players)}
 
-WEIGHTS: Course Fit 40%, History 20%, Form 15%, Weather 15%, Quality 10%
+ANALYSIS FRAMEWORK:
+1. Course Fit (40%): Match SG stats to demands - BE SPECIFIC about which stats
+2. Course History (20%): ThisCourse results - if empty, explain why stats overcome this
+3. Recent Form (15%): Last5 results + momentum - mention specific finishes
+4. Weather (15%): How conditions help/hurt this player's style
+5. Statistical Quality (10%): Overall SG + standout strengths
 
-Pick 6 players with best value (performance potential vs odds). Mix odds ranges for diversification.
+PICK REQUIREMENTS:
+- Pick #1: MUST be <+1900 (best VALUE favorite, NOT lowest odds)
+- Picks #2-6: MUST be +1900+ (at least 3 picks +4000+)
 
-Return ONLY JSON:
+EXAMPLE OF DETAILED REASONING (FOLLOW THIS):
+"Course fit: Elite SG:APP (0.59) perfectly matches TPC Scottsdale's precision demands. Course history: Won here in 2021, T4 in 2023 proves comfort level. Form: Hot with T3, T8, 2nd in Last5. Weather: Light winds favor accurate ball-striking. Value: At +1400, market undervalues proven track record - better value than Scheffler at +220."
+
+REASONING MUST BE 4-5 SENTENCES covering:
+1. Course Fit: SPECIFIC SG stats with values. "SG:APP (0.59)" NOT "good approach"
+2. History: SPECIFIC results "Won 2021, T4 2023" OR "No history BUT SG matches winners"  
+3. Form: SPECIFIC Last5 "T3, T8, 2nd" + momentum "📈 Hot"
+4. Weather: HOW it impacts "Winds favor accurate strikers" NOT "weather good"
+5. Value: WHY odds wrong "Market ignores track record, should be +3000"
+
+🚨 CHECK BEFORE RETURNING:
+- Pick #1 < +1900?
+- Picks #2-6 all +1900+?
+- 3+ picks +4000+?
+- Each reasoning 4-5 sentences with SPECIFIC details?
+
+Return JSON:
 {
-  "courseType": "Brief course analysis (2-3 sentences)",
-  "weatherImpact": "How weather affects play (2 sentences)",
+  "courseType": "Course analysis 2-3 sentences",
+  "weatherImpact": "Weather impact 2 sentences",
   "keyFactors": ["Factor 1", "Factor 2", "Factor 3", "Factor 4"],
-  "courseNotes": "Betting insights: which player types over/underpriced (2-3 sentences)",
+  "courseNotes": "Betting insights 2-3 sentences",
   "picks": [
-    {"player": "Name", "odds": 1400, "reasoning": "Course fit + history + form + weather + value"}
+    {"player": "Name", "odds": 1400, "reasoning": "4-5 sentences with specific stats/results/reasoning"}
   ]
 }`;
 }
