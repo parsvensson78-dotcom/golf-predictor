@@ -729,193 +729,52 @@ function buildClaudePrompt(tournament, players, weatherSummary, courseInfo) {
     })
     .join('\n');
 
-  return `You are a professional golf analyst specializing in finding VALUE picks based on course fit and conditions, NOT favorites.
+  return `Golf analyst: Find 6 VALUE picks (1 favorite <+1900, 5 value picks +1900+).
 
 TOURNAMENT: ${tournament.name}
-Course: ${courseInfo.courseName || courseInfo.eventName}
-Location: ${courseInfo.location}${courseInfo.city ? ` (${courseInfo.city}${courseInfo.state ? ', ' + courseInfo.state : ''})` : ''}
+Course: ${courseInfo.courseName || courseInfo.eventName} | ${courseInfo.yardage || '?'}y Par ${courseInfo.par || '?'}
+Demands: ${courseDemands}
+Weather: ${weatherAnalysis}
 
-COURSE PROFILE:
-${courseInfo.par ? `Par: ${courseInfo.par}` : 'Par: Unknown'}
-${courseInfo.yardage ? `Yardage: ${courseInfo.yardage} yards (${courseInfo.yardage > 7400 ? 'LONG - Distance critical' : courseInfo.yardage > 7200 ? 'Above Average Length' : 'Standard Length'})` : 'Yardage: Unknown'}
-${courseInfo.avgScore && courseInfo.par ? `Scoring: ${courseInfo.avgScore} avg (${(courseInfo.avgScore - courseInfo.par) > 0 ? '+' : ''}${(courseInfo.avgScore - courseInfo.par).toFixed(1)} vs par) - ${courseInfo.avgScore - courseInfo.par > 1 ? 'DIFFICULT' : courseInfo.avgScore - courseInfo.par > 0.5 ? 'Challenging' : 'Scorable'}` : ''}
-Fairways: ${courseInfo.width || 'Unknown'}
-Greens: ${courseInfo.greens || 'Unknown'}
-Rough: ${courseInfo.rough || 'Unknown'}
-${courseInfo.difficulty ? `Difficulty Rating: ${courseInfo.difficulty}` : ''}
-${courseInfo.keyFeatures?.length ? `Key Features: ${courseInfo.keyFeatures.join(', ')}` : ''}
+PLAYERS (all 60 by odds):
+${formatPlayerList(players)}
 
-PRIMARY SKILL DEMANDS (prioritize these SG categories):
-${courseDemands}
+ANALYSIS FRAMEWORK:
+1. Course Fit (40%): Match SG stats to demands above
+2. Course History (20%): Past results here (or explain why no history OK if empty)
+3. Recent Form (15%): Last5 finishes + momentum (📈 Hot / 📉 Cold)
+4. Weather (15%): How conditions favor their game
+5. Statistical Quality (10%): Overall SG quality check
 
-WEATHER CONDITIONS & IMPACT:
-${weatherAnalysis}
-
-COMPLETE FIELD (${players.length} players analyzed):
-
-🚫 TOP FAVORITES (odds 5-20) - SKIP THESE - NO VALUE:
-${formatPlayerList(favorites)}
-
-💎 VALUE ZONE (odds 20-100) - PRIMARY FOCUS - MOST PICKS HERE:
-${formatPlayerList(midTier)}
-
-🎯 LONGSHOTS (odds 100+) - SELECT 1-2 ONLY IF EXCEPTIONAL COURSE FIT:
-${formatPlayerList(longshots)}
-
-YOUR TASK - MULTI-FACTOR ANALYSIS:
-**🚨 CRITICAL: Select EXACTLY 6 picks with this MANDATORY distribution: 🚨**
-- **Pick #1: ONE FAVORITE (odds UNDER +1900)** - The BEST favorite from entire field
-- **Picks #2-6: FIVE VALUE PICKS (odds +1900 OR HIGHER)** - Best value from entire field
-
-**⚠️  THIS IS ABSOLUTELY NON-NEGOTIABLE:**
-- First pick MUST have odds under +1900 (e.g., +200, +500, +1200, +1800)
-- Remaining 5 picks MUST have odds +1900 or higher (e.g., +2500, +4500, +6500, +8500)
-- If you cannot find a favorite with good value, pick the BEST available under +1900
-- DO NOT make all 6 picks from value zone (+1900 and up)
-
-Use this decision framework:
-
-1. COURSE FIT (Most Important - ${WEIGHTS.courseFit}% weight):
-   - Match SG stats to PRIMARY SKILL DEMANDS listed above
-   - Players MUST show strength in the course's key statistical categories
-   - Example: Long course → prioritize high SG:OTT players
-   - Example: Tight course → prioritize SG:APP and SG:ARG over SG:OTT
-
-2. RECENT FORM & MOMENTUM (Important - ${WEIGHTS.recentForm}% weight):
-   - "Last5" shows last 5 tournament finishes (lower = better, MC = missed cut)
-   - Look for players with Top 20 finishes in recent events
-   - Prioritize players with 📈 Hot (improving) momentum
-   - AVOID players with 📉 Cold (declining) momentum
-   - Recent good form (T5, T10, T15) indicates confidence and sharp game
-   
-3. COURSE HISTORY (Important - ${WEIGHTS.courseHistory}% weight):
-   - "ThisCourse" shows past results at THIS specific venue
-   - Players with Top 10 finishes at this course have PROVEN track record
-   - **IMPORTANT: Many players have NO course history (empty "ThisCourse")**
-   - **If ThisCourse is empty: Redistribute weight → ${WEIGHTS_NO_HISTORY.courseFit}% Course Fit, ${WEIGHTS_NO_HISTORY.recentForm}% Recent Form, ${WEIGHTS_NO_HISTORY.weather}% Weather**
-   - **Players WITHOUT history CAN still be great picks if:**
-     - Their SG stats are PERFECT match for course demands (strong course fit)
-     - They have excellent recent form (multiple Top 20s in Last5)
-     - Similar course types where they've succeeded
-   - **With good history: Major bonus - prioritize these players**
-   - **With bad history (MC, T65+): Requires exceptional odds to overcome**
-
-4. WEATHER ADAPTATION (Important - ${WEIGHTS.weather}% weight):
-   - Apply weather impact analysis from above
-   - Wind → favor SG:OTT (ball flight control)
-   - Wet conditions → favor length (SG:OTT) and wedge play (SG:APP)
-   - Calm conditions → favor putting (SG:Putt becomes critical)
-
-5. ODDS DISTRIBUTION (MANDATORY):
-   **PICK #1 - THE FAVORITE:**
-   - MUST be UNDER +1900 (from the FAVORITES section)
-   - **CRITICAL: Choose the favorite with BEST VALUE, NOT just lowest odds!**
-   - A favorite at +1200 with perfect fit is better than +200 with weak fit
-   - Evaluate favorites using THE SAME criteria as value picks:
-     * Course fit (40%) - Do their SG stats PERFECTLY match course demands?
-     * Course history (20%) - Have they won/finished Top 5 here before?
-     * Recent form (15%) - Are they playing well NOW (not just ranked #1)?
-     * Weather (15%) - Do conditions favor their game?
-   - **Example:** Scheffler at +200 with mediocre course fit = SKIP
-   - **Example:** Morikawa at +1400 with elite APP stats on precision course = PICK
-   
-   **PICKS #2-6 - VALUE ZONE:**
-   - ALL 5 must be +1900 OR HIGHER
-   - At least 3 picks MUST be +4000 or higher
-   - Target distribution: 2 picks at +1900 to +4000, 2-3 picks at +4000 to +8000, 0-1 pick at +8000 to +15000
-
-6. STATISTICAL QUALITY (${WEIGHTS.statisticalQuality}% - Quality Check):
-   - Prefer positive SG:Total (indicates above-average player)
-   - Look for "unbalanced" players (one great SG stat that matches course needs)
-   - Example: Player with +1.2 SG:OTT but only +0.2 SG:Putt might be undervalued on long course
+PICK REQUIREMENTS:
+- Pick #1: MUST be <+1900 (choose best VALUE favorite, NOT just lowest odds)
+- Picks #2-6: MUST be +1900+ (at least 3 picks should be +4000+)
 
 EXAMPLES:
+✅ GOOD FAVORITE: "Morikawa [+1400] - Elite APP matches precision course + won here before"
+❌ BAD FAVORITE: "Scheffler [+220] - Yes he's #1 but poor course history + weak fit = no value"
 
-✅ PICK #1 - THE FAVORITE (UNDER +1900) - VALUE-BASED SELECTION:
+✅ VALUE WITH HISTORY: "Player X [+4500] - Strong fit + T5/T12 history here + hot form"
+✅ VALUE NO HISTORY: "Player Z [+5500] - PERFECT SG match for demands + consistent Top 15s"
 
-GOOD FAVORITE (Not lowest odds, but BEST VALUE):
-"Collin Morikawa [+1400] - R5 | SG:2.45 (OTT:0.45 APP:1.65 ARG:0.25 P:0.10) | Last5: T3,T8,2,T12,T5 | ThisCourse: 1,T4 | 📈 Hot"
-→ At +1400, elite APP stats PERFECTLY match this precision course + won here before + hot form = BEST VALUE FAVORITE
+REASONING FORMAT (2-3 sentences each):
+"Course fit: [specific SG match]. History: [results or why OK without]. Form: [Last5 + momentum]. Weather: [impact]. Value: [why odds too high]."
 
-BAD FAVORITE (Lowest odds, but POOR VALUE):
-"Scottie Scheffler [+220] - R1 | SG:3.10 (OTT:0.93 APP:1.30) | Last5: 1,T2,T5 | ThisCourse: T45,MC | ➡️ Steady"
-→ At +220, yes he's #1 in world but bad course history + course doesn't suit his strengths = POOR VALUE, SKIP
+🚨 VALIDATE BEFORE RETURNING:
+- Pick #1 odds < +1900? If not, choose different favorite
+- Picks #2-6 all +1900+? If not, choose different players
+- At least 3 picks +4000+? If not, add more longshots
 
-The favorite pick should be the one where odds are MOST WRONG relative to their fit, NOT just the tournament favorite!
-
-✅ PICKS #2-6 - VALUE PICKS (+1900 and up):
-
-VALUE PICK WITH COURSE HISTORY:
-"Player X [+4500] - R12 | SG:1.85 (OTT:0.95 APP:0.72) | Last5: T8,T15,T22,MC,T18 | ThisCourse: T5,T12 | 📈 Hot"
-→ Perfect: Strong course fit + hot form + proven course success
-
-VALUE PICK WITHOUT COURSE HISTORY:
-"Player Z [+5500] - R18 | SG:1.92 (OTT:1.15 APP:0.68) | Last5: T5,T12,T8,T15,T10 | ThisCourse: | ➡️ Steady"
-→ Excellent pick despite no history: Elite course fit stats + consistent Top 15 form + good value odds
-
-❌ BAD PICK:
-"Player Y [+6500] - R45 | SG:0.45 (OTT:-0.15 APP:0.25) | Last5: MC,T45,MC,T52,MC | ThisCourse: MC,T65 | 📉 Cold"
-→ Poor course fit + terrible form + bad course history = avoid
-
-REASONING REQUIREMENTS:
-For each pick, explain IN THIS ORDER:
-1. **COURSE FIT (${WEIGHTS.courseFit}%)** - Which PRIMARY SKILL DEMANDS they satisfy (specific SG stats)
-2. **COURSE HISTORY (${WEIGHTS.courseHistory}%)** - Past results here OR explain why no history doesn't matter
-3. **RECENT FORM (${WEIGHTS.recentForm}%)** - Mention specific finishes and momentum trend
-4. **WEATHER (${WEIGHTS.weather}%)** - How conditions favor this player's game
-5. **VALUE (${WEIGHTS.statisticalQuality}%)** - Why odds are too high given all factors above
-Keep to 3-4 sentences max.
-
-🚨 FINAL REMINDER BEFORE YOU OUTPUT JSON:
-- Pick #1 MUST be odds under +1900 (a favorite)
-- Picks #2-6 MUST be odds +1900 or higher (value picks)
-- Double-check your picks array before returning!
-
-Return ONLY valid JSON (no markdown):
+Return ONLY JSON:
 {
-  "courseType": "Comprehensive description of ${courseInfo.courseName || courseInfo.eventName}${courseInfo.yardage && courseInfo.par ? ` (${courseInfo.yardage} yards, Par ${courseInfo.par})` : ''}. Explain the course setup, primary challenge, what type of player succeeds here, and why this creates betting opportunities.",
-  "weatherImpact": "Specific analysis of how the weather conditions will affect scoring and strategy. Which skills become more/less important? How does this create value opportunities?",
-  "keyFactors": ["Factor 1: Course characteristic + required skill", "Factor 2: Weather impact + skill adaptation", "Factor 3: Scoring pattern + betting angle", "Factor 4: Historical pattern or course setup insight"],
-  "courseNotes": "3-4 sentences analyzing: (1) The course's defining characteristic at ${courseInfo.yardage || 'this'} yards, (2) How weather amplifies or reduces certain demands, (3) What creates betting value - which player types are overpriced vs underpriced, (4) Specific stat ranges that correlate with success here.",
+  "courseType": "Brief course analysis (2-3 sentences)",
+  "weatherImpact": "How weather affects play (2 sentences)",
+  "keyFactors": ["Factor 1", "Factor 2", "Factor 3", "Factor 4"],
+  "courseNotes": "Betting insights: which player types over/underpriced (2-3 sentences)",
   "picks": [
-    {
-      "player": "THE FAVORITE - Player Name",
-      "odds": 1400,
-      "reasoning": "Pick #1 FAVORITE (UNDER +1900): Course fit: [Specific SG stats]. Course history: [Past results]. Form: [Recent finishes]. Weather: [How conditions help]. Value: [Why this favorite is better value than lower-odds favorites]."
-    },
-    {
-      "player": "VALUE PICK - Player Name",
-      "odds": 3500,
-      "reasoning": "Pick #2 VALUE (+1900 and up): Course fit: [SG match]. History: [Results or why no history OK]. Form: [Finishes]. Weather: [Impact]. Value: [Market inefficiency]."
-    },
-    {
-      "player": "VALUE PICK - Player Name", 
-      "odds": 4500,
-      "reasoning": "Pick #3 VALUE (+1900 and up): [Same structure as above]"
-    },
-    {
-      "player": "VALUE PICK - Player Name",
-      "odds": 5500,
-      "reasoning": "Pick #4 VALUE (+1900 and up): [Same structure]"
-    },
-    {
-      "player": "VALUE PICK - Player Name",
-      "odds": 6500,
-      "reasoning": "Pick #5 VALUE (+4000 and up): [Same structure]"
-    },
-    {
-      "player": "VALUE PICK - Player Name",
-      "odds": 8000,
-      "reasoning": "Pick #6 VALUE (+4000 and up): [Same structure]"
-    }
+    {"player": "Name", "odds": 1400, "reasoning": "Course fit + history + form + weather + value"}
   ]
-}
-
-CRITICAL VALIDATION BEFORE RETURNING:
-- Check Pick #1 odds under +1900 (if not, REJECT and choose different favorite)
-- Check Picks #2-6 odds +1900 or higher (if not, REJECT and choose different players)
-- Check at least 3 of Picks #2-6 have odds +4000 or higher
-`;
+}`;
 }
 
 /**
