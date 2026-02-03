@@ -18,12 +18,29 @@ exports.handler = async (event, context) => {
       timeout: 15000
     });
     const tournament = tournamentResponse.data;
-    console.log(`[AVOID] Tournament: ${tournament.name}`);
+    console.log(`[AVOID] Tournament: ${tournament.name} with ${tournament.field?.length || 0} players`);
 
-    // Step 2: Fetch odds
-    console.log(`[AVOID] Fetching odds for full field...`);
+    // Step 2: Get player names from tournament field
+    const playerNames = tournament.field?.map(p => p.name) || [];
+    if (playerNames.length === 0) {
+      console.log('[AVOID] No players in tournament field');
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tournament: { name: tournament.name, course: tournament.course },
+          avoidPicks: [],
+          reasoning: 'No players found in tournament field',
+          generatedAt: new Date().toISOString()
+        })
+      };
+    }
+
+    // Step 3: Fetch odds for these players
+    console.log(`[AVOID] Fetching odds for ${playerNames.length} players...`);
     const oddsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-odds`, {
       tournamentName: tournament.name,
+      players: playerNames,
       tour: tournament.tour
     }, {
       timeout: 20000
@@ -31,18 +48,22 @@ exports.handler = async (event, context) => {
     const oddsData = oddsResponse.data;
     console.log(`[AVOID] Received odds for ${oddsData.odds.length} players`);
 
-    // Step 3: Get player names from odds data (top 80 for stats)
-    const playerNames = oddsData.odds.slice(0, 80).map(o => o.player);
-    console.log(`[AVOID] Fetching stats for ${playerNames.length} players`);
+    // Step 4: Get top 80 players by odds for detailed stats
+    const topPlayerNames = oddsData.odds
+      .sort((a, b) => a.odds - b.odds)
+      .slice(0, 80)
+      .map(o => o.player);
+    
+    console.log(`[AVOID] Fetching stats for top ${topPlayerNames.length} players by odds`);
     
     const statsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-stats`, {
-      players: playerNames
+      players: topPlayerNames
     }, {
       timeout: 25000
     });
     const statsData = statsResponse.data;
 
-    // Step 4: Get weather
+    // Step 5: Get weather
     let weatherInfo = 'Weather data not available';
     try {
       const weatherApiKey = process.env.WEATHER_API_KEY;
@@ -62,7 +83,7 @@ exports.handler = async (event, context) => {
       console.error('[AVOID] Weather fetch failed:', weatherError.message);
     }
 
-    // Step 5: Build player data - odds are already in American format
+    // Step 6: Build player data - odds are already in American format
     const playersWithOdds = statsData.players
       .map(stat => {
         const oddsEntry = oddsData.odds.find(o => 
@@ -99,10 +120,10 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // Step 6: Get course info
+    // Step 7: Get course info
     const courseInfo = getCourseBasicInfo(tournament.course);
 
-    // Step 7: Call Claude for avoid picks
+    // Step 8: Call Claude for avoid picks
     const anthropic = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY
     });
