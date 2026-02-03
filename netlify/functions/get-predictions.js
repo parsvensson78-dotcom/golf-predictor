@@ -128,10 +128,19 @@ exports.handler = async (event, context) => {
 
     // Step 11: Save predictions to Netlify Blobs for results tracking
     try {
+      console.log('[SAVE] Attempting to save to Netlify Blobs...');
+      console.log('[SAVE] Environment check:', {
+        hasDeployId: !!process.env.DEPLOY_ID,
+        hasSiteId: !!process.env.SITE_ID,
+        hasContext: !!process.env.CONTEXT,
+        nodeVersion: process.version
+      });
+      
       await savePredictionsToBlobs(responseData);
       console.log('[SAVE] ✅ Predictions saved for results tracking');
     } catch (saveError) {
       console.error('[SAVE] Failed to save predictions:', saveError.message);
+      console.error('[SAVE] Error stack:', saveError.stack);
       console.log('[SAVE] This is not critical - predictions still returned successfully');
       // Don't fail the request if save fails
     }
@@ -760,7 +769,11 @@ function analyzeCourseSkillDemands(courseInfo) {
  * Save predictions to Netlify Blobs for results tracking
  */
 async function savePredictionsToBlobs(responseData) {
-  const store = getStore('predictions');
+  // Use getStore with context - Netlify automatically provides siteID and token in the function context
+  const store = getStore({
+    name: 'predictions',
+    consistency: 'strong'
+  });
 
   // Generate key from tournament name and date
   const tournamentSlug = responseData.tournament.name
