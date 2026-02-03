@@ -11,28 +11,29 @@ exports.handler = async (event, context) => {
 
     console.log(`[ANALYSIS] Fetching saved predictions from Netlify Blobs...`);
 
-    // Check if Netlify Blobs is properly configured
-    if (!process.env.NETLIFY) {
-      console.log('[ANALYSIS] Not running on Netlify - blob storage not available');
+    // Get Netlify Blobs store - wrap in try-catch for better error handling
+    let store, blobs;
+    try {
+      store = getStore('predictions');
+      const listResult = await store.list();
+      blobs = listResult.blobs;
+    } catch (blobError) {
+      console.error('[ANALYSIS] Blob storage error:', blobError.message);
+      
+      // Return friendly message if blobs aren't configured
       return createSuccessResponse({
         tournaments: [],
-        message: 'Results tracking only available when deployed on Netlify',
+        message: 'Blob storage not yet configured. Predictions will be saved automatically once Netlify Blobs is enabled in your site settings.',
         totalPredictions: 0,
         completedTournaments: 0
       });
     }
 
-    // Get Netlify Blobs store
-    const store = getStore('predictions');
-
-    // List all saved predictions
-    const { blobs } = await store.list();
-
     if (!blobs || blobs.length === 0) {
       console.log('[ANALYSIS] No predictions found in blob storage');
       return createSuccessResponse({
         tournaments: [],
-        message: 'No predictions saved yet',
+        message: 'No predictions saved yet. Generate some predictions and they will automatically be saved for results tracking!',
         totalPredictions: 0,
         completedTournaments: 0
       });
