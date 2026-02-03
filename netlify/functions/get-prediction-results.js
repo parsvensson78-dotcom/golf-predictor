@@ -14,7 +14,10 @@ exports.handler = async (event, context) => {
     // Get Netlify Blobs store - wrap in try-catch for better error handling
     let store, blobs;
     try {
-      store = getStore('predictions');
+      store = getStore({
+        name: 'predictions',
+        consistency: 'strong'
+      });
       const listResult = await store.list();
       blobs = listResult.blobs;
     } catch (blobError) {
