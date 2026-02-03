@@ -1,57 +1,54 @@
-const fs = require('fs').promises;
-const path = require('path');
+const { getStore } = require('@netlify/blobs');
 const axios = require('axios');
 
 /**
  * Analyze prediction performance by comparing picks with actual results
+ * Reads saved predictions from Netlify Blobs
  */
 exports.handler = async (event, context) => {
   try {
     const baseUrl = process.env.URL || 'http://localhost:8888';
 
-    console.log(`[ANALYSIS] Fetching saved predictions...`);
+    console.log(`[ANALYSIS] Fetching saved predictions from Netlify Blobs...`);
 
-    // Get all saved predictions
-    const predictionsDir = '/tmp/predictions';
-    let predictionFiles = [];
-    
-    try {
-      predictionFiles = await fs.readdir(predictionsDir);
-    } catch (error) {
-      console.log('[ANALYSIS] No predictions directory found');
+    // Get Netlify Blobs store
+    const store = getStore('predictions');
+
+    // List all saved predictions
+    const { blobs } = await store.list();
+
+    if (!blobs || blobs.length === 0) {
+      console.log('[ANALYSIS] No predictions found in blob storage');
       return createSuccessResponse({
         tournaments: [],
-        message: 'No predictions saved yet'
+        message: 'No predictions saved yet',
+        totalPredictions: 0,
+        completedTournaments: 0
       });
     }
 
-    if (predictionFiles.length === 0) {
-      return createSuccessResponse({
-        tournaments: [],
-        message: 'No predictions saved yet'
-      });
-    }
+    console.log(`[ANALYSIS] Found ${blobs.length} saved prediction blobs`);
 
-    console.log(`[ANALYSIS] Found ${predictionFiles.length} saved prediction files`);
-
-    // Process each prediction file
+    // Process each prediction
     const tournaments = [];
 
-    for (const filename of predictionFiles) {
-      if (!filename.endsWith('.json')) continue;
-
+    for (const blob of blobs) {
       try {
-        const filepath = path.join(predictionsDir, filename);
-        const fileContent = await fs.readFile(filepath, 'utf8');
-        const predictionData = JSON.parse(fileContent);
+        // Get the prediction data
+        const predictionJson = await store.get(blob.key, { type: 'json' });
+        
+        if (!predictionJson) {
+          console.log(`[ANALYSIS] Skipping empty blob: ${blob.key}`);
+          continue;
+        }
 
-        console.log(`[ANALYSIS] Processing: ${predictionData.tournament.name}`);
+        console.log(`[ANALYSIS] Processing: ${predictionJson.tournament.name}`);
 
         // Fetch tournament results
         const resultsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-tournament-results`, {
-          tournamentName: predictionData.tournament.name,
-          tour: predictionData.tournament.tour,
-          eventId: predictionData.tournament.eventId
+          tournamentName: predictionJson.tournament.name,
+          tour: predictionJson.tournament.tour,
+          eventId: predictionJson.tournament.eventId
         }, {
           timeout: 15000
         });
@@ -61,21 +58,21 @@ exports.handler = async (event, context) => {
         // Analyze performance if results are available
         let analysis = null;
         if (resultsData.status === 'completed' && resultsData.results.length > 0) {
-          analysis = analyzePredictionPerformance(predictionData.predictions, resultsData.results);
+          analysis = analyzePredictionPerformance(predictionJson.predictions, resultsData.results);
         }
 
         tournaments.push({
-          tournament: predictionData.tournament,
-          predictions: predictionData.predictions,
+          tournament: predictionJson.tournament,
+          predictions: predictionJson.predictions,
           results: resultsData.results || [],
           analysis,
           status: resultsData.status || 'unknown',
-          generatedAt: predictionData.metadata.generatedAt,
-          filename
+          generatedAt: predictionJson.metadata.generatedAt,
+          blobKey: blob.key
         });
 
       } catch (error) {
-        console.error(`[ANALYSIS] Error processing ${filename}:`, error.message);
+        console.error(`[ANALYSIS] Error processing ${blob.key}:`, error.message);
       }
     }
 
