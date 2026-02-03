@@ -4,7 +4,7 @@ const { getStore } = require('@netlify/blobs');
 
 /**
  * Main prediction endpoint - OPTIMIZED VERSION
- * Fetches data in parallel where possible and automatically saves predictions
+ * Fetches data in parallel where possible and reduces logging overhead
  */
 exports.handler = async (event, context) => {
   try {
@@ -83,15 +83,57 @@ exports.handler = async (event, context) => {
     const cost = calculateCost(message.usage);
 
     const generatedAt = new Date().toISOString();
+    const responseData = {
+      tournament: {
+        name: tournament.name,
+        course: tournament.course,
+        location: tournament.location,
+        dates: tournament.dates,
+        tour: tournament.tour,
+        eventId: tournament.eventId
+      },
+      weather: weatherData.summary,
+      dailyForecast: weatherData.daily,
+      courseInfo: {
+        name: courseInfo.courseName || courseInfo.eventName,
+        courseName: courseInfo.courseName,
+        location: courseInfo.location,
+        par: courseInfo.par,
+        yardage: courseInfo.yardage,
+        width: courseInfo.width,
+        greens: courseInfo.greens,
+        rough: courseInfo.rough,
+        keyFeatures: courseInfo.keyFeatures || [],
+        difficulty: courseInfo.difficulty,
+        rewards: courseInfo.rewards || [],
+        avgScore: courseInfo.avgScore,
+        source: courseInfo.source
+      },
+      courseAnalysis: {
+        type: predictions.courseType || 'Analysis not available',
+        weatherImpact: predictions.weatherImpact || 'No significant impact expected',
+        keyFactors: predictions.keyFactors || [],
+        notes: predictions.courseNotes || ''
+      },
+      predictions: predictions.picks || predictions,
+      generatedAt,
+      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
+      tokenBreakdown: {
+        input: message.usage.input_tokens,
+        output: message.usage.output_tokens
+      },
+      estimatedCost: cost
+    };
 
-    // Step 11: Save predictions to Netlify Blobs for results tracking
-    try {
-      await savePredictionsToBlobs(tournament, predictions, courseInfo, weatherData, generatedAt);
-      console.log('[SAVE] ✅ Predictions saved for results tracking');
-    } catch (saveError) {
-      console.error('[SAVE] Failed to save predictions:', saveError.message);
-      console.log('[SAVE] This is not critical - predictions will still be returned to user');
-      // Don't fail the entire request if save fails
+    // Step 11: Save predictions to Netlify Blobs for results tracking (optional)
+    if (process.env.NETLIFY) {
+      try {
+        await savePredictionsToBlobs(responseData);
+        console.log('[SAVE] ✅ Predictions saved for results tracking');
+      } catch (saveError) {
+        console.error('[SAVE] Failed to save predictions:', saveError.message);
+        // Don't fail the request if save fails
+      }
     }
 
     // Step 12: Return response
@@ -101,47 +143,7 @@ exports.handler = async (event, context) => {
         'Content-Type': 'application/json',
         'Cache-Control': 'no-cache, no-store, must-revalidate'
       },
-      body: JSON.stringify({
-        tournament: {
-          name: tournament.name,
-          course: tournament.course,
-          location: tournament.location,
-          dates: tournament.dates,
-          tour: tournament.tour,
-          eventId: tournament.eventId
-        },
-        weather: weatherData.summary,
-        dailyForecast: weatherData.daily,
-        courseInfo: {
-          name: courseInfo.courseName || courseInfo.eventName,
-          courseName: courseInfo.courseName,
-          location: courseInfo.location,
-          par: courseInfo.par,
-          yardage: courseInfo.yardage,
-          width: courseInfo.width,
-          greens: courseInfo.greens,
-          rough: courseInfo.rough,
-          keyFeatures: courseInfo.keyFeatures || [],
-          difficulty: courseInfo.difficulty,
-          rewards: courseInfo.rewards || [],
-          avgScore: courseInfo.avgScore,
-          source: courseInfo.source
-        },
-        courseAnalysis: {
-          type: predictions.courseType || 'Analysis not available',
-          weatherImpact: predictions.weatherImpact || 'No significant impact expected',
-          keyFactors: predictions.keyFactors || [],
-          notes: predictions.courseNotes || ''
-        },
-        predictions: predictions.picks || predictions,
-        generatedAt,
-        tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
-        tokenBreakdown: {
-          input: message.usage.input_tokens,
-          output: message.usage.output_tokens
-        },
-        estimatedCost: cost
-      })
+      body: JSON.stringify(responseData)
     };
 
   } catch (error) {
@@ -155,70 +157,6 @@ exports.handler = async (event, context) => {
     };
   }
 };
-
-/**
- * Save predictions to Netlify Blobs for results tracking
- */
-async function savePredictionsToBlobs(tournament, predictions, courseInfo, weatherData, generatedAt) {
-  // Check if Netlify Blobs is properly configured
-  if (!process.env.NETLIFY) {
-    console.log('[SAVE] Not running on Netlify - skipping blob storage');
-    return;
-  }
-  
-  try {
-    const store = getStore('predictions');
-
-    // Generate key from tournament name and date
-    const tournamentSlug = tournament.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
-    
-    const date = new Date(generatedAt);
-    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    
-    const key = `${tournamentSlug}-${dateStr}`;
-
-    // Prepare data to save
-    const predictionData = {
-      tournament: {
-        name: tournament.name,
-        course: tournament.course,
-        location: tournament.location,
-        dates: tournament.dates,
-        tour: tournament.tour,
-        eventId: tournament.eventId
-      },
-      courseInfo: {
-        par: courseInfo?.par,
-        yardage: courseInfo?.yardage,
-        difficulty: courseInfo?.difficulty
-      },
-      weather: weatherData?.summary || 'Not available',
-      predictions: (predictions.picks || predictions).map(pick => ({
-        player: pick.player,
-        odds: pick.odds,
-        minOdds: pick.minOdds,
-        maxOdds: pick.maxOdds,
-        bestBookmaker: pick.bestBookmaker,
-        reasoning: pick.reasoning
-      })),
-      metadata: {
-        generatedAt,
-        savedAt: new Date().toISOString(),
-        pickCount: (predictions.picks || predictions).length,
-        status: 'pending'
-      }
-    };
-
-    await store.set(key, JSON.stringify(predictionData));
-    console.log(`[SAVE] Saved to blob: ${key}`);
-  } catch (error) {
-    console.error('[SAVE] Blob storage error:', error.message);
-    throw error;
-  }
-}
 
 /**
  * Fetch weather data with error handling
@@ -277,190 +215,157 @@ async function fetchWeather(location) {
  * Merge stats and odds data for all players
  */
 function mergePlayerData(statsPlayers, oddsPlayers) {
-  console.log(`[MERGE] Starting merge: ${statsPlayers.length} stats players, ${oddsPlayers.length} odds players`);
-  
-  // Log a few examples for debugging
-  if (statsPlayers.length > 0) {
-    console.log(`[MERGE] Sample stats player: ${JSON.stringify(statsPlayers[0])}`);
-  }
-  if (oddsPlayers.length > 0) {
-    console.log(`[MERGE] Sample odds player: ${JSON.stringify(oddsPlayers[0])}`);
-  }
-  
-  let matchCount = 0;
-  let noMatchCount = 0;
-  
-  const merged = statsPlayers
-    .map(statPlayer => {
-      // Stats data has nested structure: { player: "...", stats: { name: "...", sgOTT: ... } }
-      const playerName = statPlayer.stats?.name || statPlayer.name;
-      const playerStats = statPlayer.stats || statPlayer;
-      
-      const oddsPlayer = oddsPlayers.find(op => 
-        normalizePlayerName(op.player) === normalizePlayerName(playerName)
+  return statsPlayers
+    .map(stat => {
+      const oddsEntry = oddsPlayers.find(o => 
+        normalizePlayerName(o.player) === normalizePlayerName(stat.player)
       );
+      
+      if (!oddsEntry) return null;
 
-      if (!oddsPlayer) {
-        noMatchCount++;
-        if (noMatchCount <= 3) {
-          console.log(`[MERGE] No odds match for: "${playerName}" (normalized: "${normalizePlayerName(playerName)}")`);
-        }
-        return null;
-      }
-
-      matchCount++;
+      const decimalOdds = americanToDecimal(oddsEntry.odds);
+      
       return {
-        name: playerName,
-        stats: {
-          sgOTT: playerStats.sgOTT || 0,
-          sgAPP: playerStats.sgAPP || 0,
-          sgARG: playerStats.sgARG || 0,
-          sgPutt: playerStats.sgPutt || 0,
-          sgTotal: playerStats.sgTotal || 0,
-          drivingDist: playerStats.drivingDistance,
-          drivingAcc: playerStats.drivingAccuracy,
-          gir: playerStats.gir
-        },
-        odds: oddsPlayer.odds,
-        minOdds: oddsPlayer.minOdds,
-        maxOdds: oddsPlayer.maxOdds,
-        bestBookmaker: oddsPlayer.bestBookmaker,
-        bookmakers: oddsPlayer.bookmakers || []
+        name: stat.player,
+        rank: stat.stats.rank,
+        odds: decimalOdds,
+        minOdds: oddsEntry.minOdds,
+        maxOdds: oddsEntry.maxOdds,
+        bestBookmaker: oddsEntry.bestBookmaker,
+        worstBookmaker: oddsEntry.worstBookmaker,
+        bookmakerCount: oddsEntry.bookmakerCount,
+        sgTotal: stat.stats.sgTotal,
+        sgOTT: stat.stats.sgOTT,
+        sgAPP: stat.stats.sgAPP,
+        sgARG: stat.stats.sgARG,
+        sgPutt: stat.stats.sgPutt
       };
     })
     .filter(p => p !== null)
     .sort((a, b) => a.odds - b.odds);
+}
+
+/**
+ * Parse Claude's JSON response with error handling
+ */
+function parseClaudeResponse(responseText) {
+  try {
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON found in AI response');
+    }
+    return JSON.parse(jsonMatch[0]);
+  } catch (error) {
+    console.error('[PARSE ERROR]', error.message);
+    console.error('[RESPONSE]', responseText.substring(0, 500));
+    throw new Error('Invalid response format from AI');
+  }
+}
+
+/**
+ * Enrich predictions with odds breakdown from full player dataset
+ */
+function enrichPredictionsWithOdds(predictions, playersWithData) {
+  if (!predictions.picks?.length) return;
+
+  predictions.picks = predictions.picks.map(pick => {
+    const playerData = playersWithData.find(p => 
+      normalizePlayerName(p.name) === normalizePlayerName(pick.player)
+    );
     
-  console.log(`[MERGE] Results: ${matchCount} matches, ${noMatchCount} no match`);
+    return playerData ? {
+      ...pick,
+      minOdds: playerData.minOdds,
+      maxOdds: playerData.maxOdds,
+      bestBookmaker: playerData.bestBookmaker,
+      worstBookmaker: playerData.worstBookmaker
+    } : pick;
+  });
+}
+
+/**
+ * Calculate API costs
+ */
+function calculateCost(usage) {
+  const inputCost = (usage.input_tokens / 1000000) * 3.00;
+  const outputCost = (usage.output_tokens / 1000000) * 15.00;
+  const totalCost = inputCost + outputCost;
   
-  return merged;
+  return {
+    inputCost,
+    outputCost,
+    totalCost,
+    formatted: `$${totalCost.toFixed(4)}`
+  };
+}
+
+/**
+ * Convert American odds to decimal
+ */
+function americanToDecimal(americanOdds) {
+  if (!americanOdds || americanOdds === 0) return null;
+  return americanOdds > 0 
+    ? (americanOdds / 100) + 1 
+    : (100 / Math.abs(americanOdds)) + 1;
 }
 
 /**
  * Normalize player name for matching
  */
 function normalizePlayerName(name) {
-  if (!name) return '';
-  return name
+  const normalized = name
     .toLowerCase()
     .replace(/[^a-z\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-/**
- * Enrich predictions with detailed odds breakdown
- */
-function enrichPredictionsWithOdds(predictions, playersWithData) {
-  const picks = predictions.picks || predictions;
   
-  picks.forEach(pick => {
-    const playerData = playersWithData.find(p => 
-      normalizePlayerName(p.name) === normalizePlayerName(pick.player)
-    );
-
-    if (playerData) {
-      // Add odds breakdown if available
-      if (playerData.minOdds) pick.minOdds = playerData.minOdds;
-      if (playerData.maxOdds) pick.maxOdds = playerData.maxOdds;
-      if (playerData.bestBookmaker) pick.bestBookmaker = playerData.bestBookmaker;
-      
-      // Also check for bookmakers array as backup
-      if (playerData.bookmakers?.length > 0) {
-        const bookmakerOdds = playerData.bookmakers.map(b => b.odds).filter(o => o > 0);
-        
-        if (bookmakerOdds.length > 0) {
-          pick.minOdds = pick.minOdds || Math.min(...bookmakerOdds);
-          pick.maxOdds = pick.maxOdds || Math.max(...bookmakerOdds);
-          
-          if (!pick.bestBookmaker) {
-            const bestBookmaker = playerData.bookmakers.reduce((best, current) => 
-              current.odds > best.odds ? current : best
-            );
-            pick.bestBookmaker = bestBookmaker.bookmaker;
-          }
-        }
-      }
-    }
-  });
+  return normalized.split(' ').sort().join(' ');
 }
 
 /**
- * Parse Claude's JSON response
- */
-function parseClaudeResponse(text) {
-  try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('No JSON found in response');
-    }
-    return JSON.parse(jsonMatch[0]);
-  } catch (error) {
-    console.error('[PARSE] Failed to parse Claude response:', error.message);
-    return { picks: [], error: 'Failed to parse predictions' };
-  }
-}
-
-/**
- * Calculate API cost
- */
-function calculateCost(usage) {
-  const inputCost = (usage.input_tokens / 1000000) * 3.00;
-  const outputCost = (usage.output_tokens / 1000000) * 15.00;
-  return `$${(inputCost + outputCost).toFixed(4)}`;
-}
-
-/**
- * Format player list for prompt
- */
-function formatPlayerList(players) {
-  return players
-    .map(p => `${p.name} (${Math.round(p.odds)}/1) | SG: OTT=${p.stats.sgOTT} APP=${p.stats.sgAPP} ARG=${p.stats.sgARG} Putt=${p.stats.sgPutt} Total=${p.stats.sgTotal}`)
-    .join('\n');
-}
-
-/**
- * Build comprehensive Claude prompt
+ * Build enhanced prompt for Claude with weather analysis
  */
 function buildClaudePrompt(tournament, players, weatherSummary, courseInfo) {
-  const favorites = players.filter(p => p.odds < 20);
-  const midTier = players.filter(p => p.odds >= 20 && p.odds < 100);
-  const longshots = players.filter(p => p.odds >= 100);
+  const favorites = players.slice(0, 15);
+  const midTier = players.slice(15, 50);
+  const longshots = players.slice(50);
 
+  // Analyze weather conditions
   const weatherAnalysis = analyzeWeatherConditions(weatherSummary);
-  const courseSkillDemands = analyzeCourseSkillDemands(courseInfo);
 
-  return `You are an expert golf analyst specializing in course-fit value betting. Your task is to identify 6 VALUE picks for ${tournament.name}.
+  // Determine primary course demands based on characteristics
+  const courseDemands = analyzeCourseSkillDemands(courseInfo);
+
+  // Format player lists
+  const formatPlayerList = (playerList) => playerList
+    .map(p => `${p.name} [${p.odds?.toFixed(1)}] - R${p.rank||'?'} | SG:${p.sgTotal?.toFixed(2)} (OTT:${p.sgOTT?.toFixed(2)} APP:${p.sgAPP?.toFixed(2)} ARG:${p.sgARG?.toFixed(2)} P:${p.sgPutt?.toFixed(2)})`)
+    .join('\n');
+
+  return `You are a professional golf analyst specializing in finding VALUE picks based on course fit and conditions, NOT favorites.
 
 TOURNAMENT: ${tournament.name}
-COURSE: ${courseInfo.courseName || courseInfo.eventName} (${courseInfo.yardage || 'Unknown'} yards, Par ${courseInfo.par || 'Unknown'})
-LOCATION: ${tournament.location}
-DATES: ${tournament.dates}
+Course: ${courseInfo.courseName || courseInfo.eventName}
+Location: ${courseInfo.location}${courseInfo.city ? ` (${courseInfo.city}${courseInfo.state ? ', ' + courseInfo.state : ''})` : ''}
 
-COURSE CHARACTERISTICS:
-${courseInfo.width ? `Width: ${courseInfo.width}` : ''}
-${courseInfo.greens ? `Greens: ${courseInfo.greens}` : ''}
-${courseInfo.rough ? `Rough: ${courseInfo.rough}` : ''}
-${courseInfo.difficulty ? `Difficulty: ${courseInfo.difficulty}` : ''}
-${courseInfo.keyFeatures?.length > 0 ? `Key Features: ${courseInfo.keyFeatures.join(', ')}` : ''}
+COURSE PROFILE:
+${courseInfo.par ? `Par: ${courseInfo.par}` : 'Par: Unknown'}
+${courseInfo.yardage ? `Yardage: ${courseInfo.yardage} yards (${courseInfo.yardage > 7400 ? 'LONG - Distance critical' : courseInfo.yardage > 7200 ? 'Above Average Length' : 'Standard Length'})` : 'Yardage: Unknown'}
+${courseInfo.avgScore && courseInfo.par ? `Scoring: ${courseInfo.avgScore} avg (${(courseInfo.avgScore - courseInfo.par) > 0 ? '+' : ''}${(courseInfo.avgScore - courseInfo.par).toFixed(1)} vs par) - ${courseInfo.avgScore - courseInfo.par > 1 ? 'DIFFICULT' : courseInfo.avgScore - courseInfo.par > 0.5 ? 'Challenging' : 'Scorable'}` : ''}
+Fairways: ${courseInfo.width || 'Unknown'}
+Greens: ${courseInfo.greens || 'Unknown'}
+Rough: ${courseInfo.rough || 'Unknown'}
+${courseInfo.difficulty ? `Difficulty Rating: ${courseInfo.difficulty}` : ''}
+${courseInfo.keyFeatures?.length ? `Key Features: ${courseInfo.keyFeatures.join(', ')}` : ''}
 
-PRIMARY SKILL DEMANDS (Course Analysis):
-${courseSkillDemands}
+PRIMARY SKILL DEMANDS (prioritize these SG categories):
+${courseDemands}
 
 WEATHER CONDITIONS & IMPACT:
 ${weatherAnalysis}
 
-STROKES GAINED (SG) STATS EXPLAINED:
-- SG:OTT (Off-The-Tee) = Driving distance + accuracy combined
-- SG:APP (Approach) = Iron play, approach shots to green
-- SG:ARG (Around-The-Green) = Short game, chipping, pitching
-- SG:Putt (Putting) = Putting performance
-- SG:Total = Overall performance (sum of all categories)
-- Positive SG = Above PGA Tour average, Negative SG = Below average
+COMPLETE FIELD (${players.length} players analyzed):
 
-PLAYER POOL (sorted by odds):
-
-🔵 FAVORITES (odds <20) - AVOID THESE:
+🚫 TOP FAVORITES (odds 5-20) - SKIP THESE - NO VALUE:
 ${formatPlayerList(favorites)}
 
 💎 VALUE ZONE (odds 20-100) - PRIMARY FOCUS - MOST PICKS HERE:
@@ -661,4 +566,50 @@ function analyzeCourseSkillDemands(courseInfo) {
   }
 
   return demands.join('\n');
+}
+
+/**
+ * Save predictions to Netlify Blobs for results tracking
+ */
+async function savePredictionsToBlobs(responseData) {
+  const store = getStore('predictions');
+
+  // Generate key from tournament name and date
+  const tournamentSlug = responseData.tournament.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  
+  const date = new Date(responseData.generatedAt);
+  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  
+  const key = `${tournamentSlug}-${dateStr}`;
+
+  // Prepare data to save (simplified version for tracking)
+  const predictionData = {
+    tournament: responseData.tournament,
+    courseInfo: {
+      par: responseData.courseInfo?.par,
+      yardage: responseData.courseInfo?.yardage,
+      difficulty: responseData.courseInfo?.difficulty
+    },
+    weather: responseData.weather,
+    predictions: responseData.predictions.map(pick => ({
+      player: pick.player,
+      odds: pick.odds,
+      minOdds: pick.minOdds,
+      maxOdds: pick.maxOdds,
+      bestBookmaker: pick.bestBookmaker,
+      reasoning: pick.reasoning
+    })),
+    metadata: {
+      generatedAt: responseData.generatedAt,
+      savedAt: new Date().toISOString(),
+      pickCount: responseData.predictions.length,
+      status: 'pending'
+    }
+  };
+
+  await store.set(key, JSON.stringify(predictionData));
+  console.log(`[SAVE] Saved to blob: ${key}`);
 }
