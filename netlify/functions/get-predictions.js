@@ -90,6 +90,7 @@ exports.handler = async (event, context) => {
       console.log('[SAVE] ✅ Predictions saved for results tracking');
     } catch (saveError) {
       console.error('[SAVE] Failed to save predictions:', saveError.message);
+      console.log('[SAVE] This is not critical - predictions will still be returned to user');
       // Don't fail the entire request if save fails
     }
 
@@ -159,53 +160,64 @@ exports.handler = async (event, context) => {
  * Save predictions to Netlify Blobs for results tracking
  */
 async function savePredictionsToBlobs(tournament, predictions, courseInfo, weatherData, generatedAt) {
-  const store = getStore('predictions');
-
-  // Generate key from tournament name and date
-  const tournamentSlug = tournament.name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
+  // Check if Netlify Blobs is properly configured
+  if (!process.env.NETLIFY) {
+    console.log('[SAVE] Not running on Netlify - skipping blob storage');
+    return;
+  }
   
-  const date = new Date(generatedAt);
-  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  
-  const key = `${tournamentSlug}-${dateStr}`;
+  try {
+    const store = getStore('predictions');
 
-  // Prepare data to save
-  const predictionData = {
-    tournament: {
-      name: tournament.name,
-      course: tournament.course,
-      location: tournament.location,
-      dates: tournament.dates,
-      tour: tournament.tour,
-      eventId: tournament.eventId
-    },
-    courseInfo: {
-      par: courseInfo?.par,
-      yardage: courseInfo?.yardage,
-      difficulty: courseInfo?.difficulty
-    },
-    weather: weatherData?.summary || 'Not available',
-    predictions: (predictions.picks || predictions).map(pick => ({
-      player: pick.player,
-      odds: pick.odds,
-      minOdds: pick.minOdds,
-      maxOdds: pick.maxOdds,
-      bestBookmaker: pick.bestBookmaker,
-      reasoning: pick.reasoning
-    })),
-    metadata: {
-      generatedAt,
-      savedAt: new Date().toISOString(),
-      pickCount: (predictions.picks || predictions).length,
-      status: 'pending'
-    }
-  };
+    // Generate key from tournament name and date
+    const tournamentSlug = tournament.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    
+    const date = new Date(generatedAt);
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    
+    const key = `${tournamentSlug}-${dateStr}`;
 
-  await store.set(key, JSON.stringify(predictionData));
-  console.log(`[SAVE] Saved to blob: ${key}`);
+    // Prepare data to save
+    const predictionData = {
+      tournament: {
+        name: tournament.name,
+        course: tournament.course,
+        location: tournament.location,
+        dates: tournament.dates,
+        tour: tournament.tour,
+        eventId: tournament.eventId
+      },
+      courseInfo: {
+        par: courseInfo?.par,
+        yardage: courseInfo?.yardage,
+        difficulty: courseInfo?.difficulty
+      },
+      weather: weatherData?.summary || 'Not available',
+      predictions: (predictions.picks || predictions).map(pick => ({
+        player: pick.player,
+        odds: pick.odds,
+        minOdds: pick.minOdds,
+        maxOdds: pick.maxOdds,
+        bestBookmaker: pick.bestBookmaker,
+        reasoning: pick.reasoning
+      })),
+      metadata: {
+        generatedAt,
+        savedAt: new Date().toISOString(),
+        pickCount: (predictions.picks || predictions).length,
+        status: 'pending'
+      }
+    };
+
+    await store.set(key, JSON.stringify(predictionData));
+    console.log(`[SAVE] Saved to blob: ${key}`);
+  } catch (error) {
+    console.error('[SAVE] Blob storage error:', error.message);
+    throw error;
+  }
 }
 
 /**
@@ -265,14 +277,34 @@ async function fetchWeather(location) {
  * Merge stats and odds data for all players
  */
 function mergePlayerData(statsPlayers, oddsPlayers) {
-  return statsPlayers
+  console.log(`[MERGE] Starting merge: ${statsPlayers.length} stats players, ${oddsPlayers.length} odds players`);
+  
+  // Log a few examples for debugging
+  if (statsPlayers.length > 0) {
+    console.log(`[MERGE] Sample stats player: ${JSON.stringify(statsPlayers[0])}`);
+  }
+  if (oddsPlayers.length > 0) {
+    console.log(`[MERGE] Sample odds player: ${JSON.stringify(oddsPlayers[0])}`);
+  }
+  
+  let matchCount = 0;
+  let noMatchCount = 0;
+  
+  const merged = statsPlayers
     .map(statPlayer => {
       const oddsPlayer = oddsPlayers.find(op => 
         normalizePlayerName(op.player) === normalizePlayerName(statPlayer.name)
       );
 
-      if (!oddsPlayer) return null;
+      if (!oddsPlayer) {
+        noMatchCount++;
+        if (noMatchCount <= 3) {
+          console.log(`[MERGE] No odds match for: "${statPlayer.name}" (normalized: "${normalizePlayerName(statPlayer.name)}")`);
+        }
+        return null;
+      }
 
+      matchCount++;
       return {
         name: statPlayer.name,
         stats: {
@@ -291,6 +323,10 @@ function mergePlayerData(statsPlayers, oddsPlayers) {
     })
     .filter(p => p !== null)
     .sort((a, b) => a.odds - b.odds);
+    
+  console.log(`[MERGE] Results: ${matchCount} matches, ${noMatchCount} no match`);
+  
+  return merged;
 }
 
 /**
