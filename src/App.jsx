@@ -9,12 +9,6 @@ import './App.css';
  * - Cleaner structure
  */
 
-// Helper function to format American odds
-const formatAmericanOdds = (odds) => {
-  if (!odds || odds === 0) return 'N/A';
-  return odds > 0 ? `+${odds}` : `${odds}`;
-};
-
 function App() {
   const [tour, setTour] = useState('pga');
   const [activeTab, setActiveTab] = useState('predictions');
@@ -36,8 +30,6 @@ function App() {
     setError(null);
     setLoading(true);
     
-    console.log(`[FETCH] Starting request #${newRequestId} to ${endpoint}`);
-    
     try {
       const timestamp = Date.now();
       const options = {
@@ -54,51 +46,29 @@ function App() {
       }
       
       const url = method === 'GET' 
-        ? `${endpoint}${endpoint.includes('?') ? '&' : '?'}_=${timestamp}`
+        ? `${endpoint}&_=${timestamp}`
         : endpoint;
       
-      console.log(`[FETCH] Calling: ${url}`);
       const response = await fetch(url, options);
-      console.log(`[FETCH] Response status: ${response.status}`);
       
       if (!response.ok) {
-        let errorData;
-        try {
-          errorData = await response.json();
-        } catch {
-          throw new Error(`Request failed with status ${response.status}`);
-        }
+        const errorData = await response.json();
         throw new Error(errorData.message || 'Request failed');
       }
       
       const responseData = await response.json();
-      console.log(`[FETCH] Request #${newRequestId} completed successfully`);
       setData(prev => ({ ...prev, [dataKey]: responseData }));
       
     } catch (err) {
-      console.error(`[FETCH] Request #${newRequestId} failed:`, err);
-      // Handle JSON parse errors (often due to timeout)
-      if (err.message?.includes('JSON')) {
-        setError('Request timed out or server error. Please try again.');
-      } else {
-        setError(err.message);
-      }
+      setError(err.message);
       console.error('Fetch error:', err);
     } finally {
       setLoading(false);
-      console.log(`[FETCH] Request #${newRequestId} finished (loading set to false)`);
     }
   }, [requestId]);
 
-  const handleGetPredictions = () => {
-    const uniqueId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    console.log(`[BUTTON] Get Predictions button clicked - Request ID: ${uniqueId}`);
-    
-    setError(null);
-    setLoading(true);
-    
-    fetchData(`/.netlify/functions/get-predictions?tour=${tour}&reqId=${uniqueId}`, 'GET', null, 'predictions');
-  };
+  const handleGetPredictions = () => 
+    fetchData(`/.netlify/functions/get-predictions?tour=${tour}`, 'GET', null, 'predictions');
   
   const handleGetAvoidPicks = () => 
     fetchData(`/.netlify/functions/get-avoid-picks`, 'POST', { tour }, 'avoidPicks');
@@ -242,9 +212,6 @@ const LoadingState = ({ requestId }) => (
     <div className="spinner"></div>
     <p>Analyzing complete tournament field...</p>
     <p className="loading-subtext">Evaluating 120+ players for value picks</p>
-    <p className="loading-subtext" style={{marginTop: '1rem', fontSize: '0.9rem', color: '#888'}}>
-      ⏱️ This typically takes 30-40 seconds. Please wait...
-    </p>
   </div>
 );
 
@@ -434,33 +401,20 @@ const CourseAnalysis = ({ courseAnalysis }) => {
 const OddsBreakdown = ({ pick }) => {
   if (!pick.minOdds || !pick.maxOdds) return null;
 
-  // Convert decimal odds back to American for display
-  const decimalToAmerican = (decimal) => {
-    if (!decimal) return null;
-    if (decimal >= 2) {
-      return Math.round((decimal - 1) * 100);
-    } else {
-      return Math.round(-100 / (decimal - 1));
-    }
-  };
-
-  const bestAmerican = decimalToAmerican(pick.minOdds);
-  const worstAmerican = decimalToAmerican(pick.maxOdds);
-
   return (
     <div className="odds-breakdown">
       <div className="odds-breakdown-item">
         <span className="odds-breakdown-label">Best:</span>
-        <span className="odds-breakdown-value best">{formatAmericanOdds(bestAmerican)}</span>
+        <span className="odds-breakdown-value best">{Math.round(pick.minOdds)}/1</span>
         {pick.bestBookmaker && <span className="odds-breakdown-book">({pick.bestBookmaker})</span>}
       </div>
       <div className="odds-breakdown-item">
         <span className="odds-breakdown-label">Avg:</span>
-        <span className="odds-breakdown-value avg">{formatAmericanOdds(pick.odds)}</span>
+        <span className="odds-breakdown-value avg">{Math.round(pick.odds)}/1</span>
       </div>
       <div className="odds-breakdown-item">
         <span className="odds-breakdown-label">Worst:</span>
-        <span className="odds-breakdown-value worst">{formatAmericanOdds(worstAmerican)}</span>
+        <span className="odds-breakdown-value worst">{Math.round(pick.maxOdds)}/1</span>
         {pick.worstBookmaker && <span className="odds-breakdown-book">({pick.worstBookmaker})</span>}
       </div>
     </div>
@@ -516,7 +470,13 @@ const PredictionsView = ({ data, requestId }) => (
             </div>
             <h3 className="pick-name">{pick.player}</h3>
             <OddsBreakdown pick={pick} />
-            <p className="pick-reasoning">{pick.reasoning}</p>
+            <div className="pick-reasoning-formatted">
+              {pick.reasoning.split('. ').filter(s => s.trim()).map((sentence, i) => (
+                <p key={i} style={{marginBottom: '0.5rem', lineHeight: '1.6', fontSize: '0.95rem'}}>
+                  {sentence.trim()}{!sentence.endsWith('.') && !sentence.endsWith('!') && !sentence.endsWith('?') ? '.' : ''}
+                </p>
+              ))}
+            </div>
           </div>
         ))}
       </div>
@@ -539,7 +499,7 @@ const AvoidPicksView = ({ data, requestId }) => (
           <div key={`avoid-${requestId}-${index}`} className="avoid-card">
             <div className="avoid-header">
               <span className="avoid-icon">⚠️</span>
-              <span className="avoid-odds">{formatAmericanOdds(avoid.odds)}</span>
+              <span className="avoid-odds">{Math.round(avoid.odds)}/1</span>
             </div>
             <h4 className="avoid-name">{avoid.player}</h4>
             <p className="avoid-reasoning">{avoid.reasoning}</p>
@@ -638,7 +598,7 @@ const MatchupsView = ({ data, requestId }) => (
 const PlayerBox = ({ player, isPick }) => (
   <div className={`player-box ${isPick ? 'winner' : ''}`}>
     <h4>{player.name}</h4>
-    <div className="player-odds">{formatAmericanOdds(player.odds)}</div>
+    <div className="player-odds">{Math.round(player.odds)}/1</div>
     <div className="player-stats">
       {['OTT', 'APP', 'ARG', 'Putt'].map(stat => (
         <div key={stat} className="stat-row">
@@ -657,21 +617,8 @@ const ResultsView = ({ data, requestId }) => {
     return (
       <div className="predictions-container" key={`results-${requestId}`}>
         <div style={{textAlign: 'center', padding: '4rem 2rem'}}>
-          <h3>📊 Results Tracking</h3>
-          <p style={{fontSize: '1.1rem', marginTop: '1rem', color: '#666'}}>
-            {data.message || 'Generate some predictions first, and they will automatically be saved for results tracking!'}
-          </p>
-          {data.message?.includes('Blob storage') && (
-            <div style={{marginTop: '2rem', padding: '1.5rem', background: '#e3f2fd', borderRadius: '8px', border: '2px solid #2196F3'}}>
-              <h4 style={{color: '#1976d2', marginBottom: '1rem'}}>💡 How to Enable Results Tracking:</h4>
-              <ol style={{textAlign: 'left', display: 'inline-block', color: '#555'}}>
-                <li>Go to your Netlify site dashboard</li>
-                <li>Navigate to Site settings → Storage → Blobs</li>
-                <li>Enable Netlify Blobs</li>
-                <li>Generate predictions - they'll auto-save!</li>
-              </ol>
-            </div>
-          )}
+          <h3>No Predictions Saved Yet</h3>
+          <p>Generate some predictions first, and they'll automatically be saved for results tracking!</p>
         </div>
       </div>
     );
@@ -743,7 +690,7 @@ const ResultsView = ({ data, requestId }) => {
                   {tournament.predictions.map((pick, idx) => (
                     <div key={idx} style={{background: '#f8f9fa', border: '2px solid #ff9800', borderRadius: '8px', padding: '1rem'}}>
                       <h5 style={{margin: '0 0 0.5rem 0'}}>{pick.player}</h5>
-                      <div style={{fontSize: '1.3rem', fontWeight: 'bold', color: '#667eea'}}>{formatAmericanOdds(pick.odds)}</div>
+                      <div style={{fontSize: '1.3rem', fontWeight: 'bold', color: '#667eea'}}>{Math.round(pick.odds)}/1</div>
                     </div>
                   ))}
                 </div>
