@@ -769,9 +769,18 @@ function analyzeCourseSkillDemands(courseInfo) {
  * Save predictions to Netlify Blobs for results tracking
  */
 async function savePredictionsToBlobs(responseData) {
-  // Use getStore with context - Netlify automatically provides siteID and token in the function context
+  // Manually configure store with siteID and token from environment
+  const siteID = process.env.SITE_ID;
+  const token = process.env.NETLIFY_AUTH_TOKEN;
+  
+  if (!siteID || !token) {
+    throw new Error('SITE_ID or NETLIFY_AUTH_TOKEN not configured. Please add NETLIFY_AUTH_TOKEN to your environment variables.');
+  }
+  
   const store = getStore({
     name: 'predictions',
+    siteID: siteID,
+    token: token,
     consistency: 'strong'
   });
 
