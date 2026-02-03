@@ -67,54 +67,78 @@ exports.handler = async (event, context) => {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const prompt = buildClaudePrompt(tournament, playersWithData, weatherData.summary, courseInfo);
 
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4000,
-      temperature: 0.3,
-      messages: [{ role: 'user', content: prompt }]
-    });
+    let message, predictions;
+    try {
+      console.log(`[CLAUDE] Sending request to Claude API...`);
+      message = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4000,
+        temperature: 0.3,
+        messages: [{ role: 'user', content: prompt }]
+      });
+      console.log(`[CLAUDE] ✅ Received response from Claude API`);
+    } catch (claudeError) {
+      console.error(`[CLAUDE] ❌ API call failed:`, claudeError.message);
+      throw new Error(`Claude API error: ${claudeError.message}`);
+    }
 
     // Step 8: Parse Claude response
-    const predictions = parseClaudeResponse(message.content[0].text);
-    console.log(`[CLAUDE] Generated ${predictions.picks?.length || 0} picks`);
+    try {
+      predictions = parseClaudeResponse(message.content[0].text);
+      console.log(`[CLAUDE] Generated ${predictions.picks?.length || 0} picks`);
+    } catch (parseError) {
+      console.error(`[CLAUDE] ❌ Failed to parse response:`, parseError.message);
+      throw new Error(`Failed to parse Claude response: ${parseError.message}`);
+    }
     
     // Step 8.5: Validate and FIX pick distribution (1 favorite + 5 value)
-    if (predictions.picks && predictions.picks.length === 6) {
-      const firstPickOdds = predictions.picks[0].odds;
-      const remainingOdds = predictions.picks.slice(1).map(p => p.odds);
-      
-      console.log(`[VALIDATION] Pick #1 odds: ${firstPickOdds} (should be < 20)`);
-      console.log(`[VALIDATION] Picks #2-6 odds: ${remainingOdds.join(', ')} (should all be >= 20)`);
-      
-      // Find the pick with lowest odds
-      let lowestOddsIndex = 0;
-      let lowestOdds = predictions.picks[0].odds;
-      
-      for (let i = 1; i < predictions.picks.length; i++) {
-        if (predictions.picks[i].odds < lowestOdds) {
-          lowestOdds = predictions.picks[i].odds;
-          lowestOddsIndex = i;
+    try {
+      if (predictions.picks && predictions.picks.length === 6) {
+        const firstPickOdds = predictions.picks[0].odds;
+        const remainingOdds = predictions.picks.slice(1).map(p => p.odds);
+        
+        console.log(`[VALIDATION] Pick #1 odds: ${firstPickOdds} (should be < 20)`);
+        console.log(`[VALIDATION] Picks #2-6 odds: ${remainingOdds.join(', ')} (should all be >= 20)`);
+        
+        // Find the pick with lowest odds
+        let lowestOddsIndex = 0;
+        let lowestOdds = predictions.picks[0].odds;
+        
+        for (let i = 1; i < predictions.picks.length; i++) {
+          if (predictions.picks[i].odds < lowestOdds) {
+            lowestOdds = predictions.picks[i].odds;
+            lowestOddsIndex = i;
+          }
+        }
+        
+        // If first pick is not the lowest, reorder
+        if (lowestOddsIndex !== 0) {
+          console.warn(`[VALIDATION] ⚠️  Pick #1 odds (${firstPickOdds}) is NOT lowest! Auto-fixing by reordering...`);
+          const lowestPick = predictions.picks[lowestOddsIndex];
+          predictions.picks.splice(lowestOddsIndex, 1);
+          predictions.picks.unshift(lowestPick);
+          console.log(`[VALIDATION] ✅ Fixed! Moved ${lowestPick.player} (${lowestPick.odds}) to Pick #1`);
+        }
+        
+        // Check if we even have any favorites (odds < 20)
+        if (lowestOdds >= 20) {
+          console.warn(`[VALIDATION] ⚠️  NO players with odds < 20 in this field! Lowest is ${lowestOdds}`);
+          console.log(`[VALIDATION] Using ${predictions.picks[0].player} at ${predictions.picks[0].odds} as "favorite" (best available)`);
         }
       }
-      
-      // If first pick is not the lowest, reorder
-      if (lowestOddsIndex !== 0) {
-        console.warn(`[VALIDATION] ⚠️  Pick #1 odds (${firstPickOdds}) is NOT lowest! Auto-fixing by reordering...`);
-        const lowestPick = predictions.picks[lowestOddsIndex];
-        predictions.picks.splice(lowestOddsIndex, 1);
-        predictions.picks.unshift(lowestPick);
-        console.log(`[VALIDATION] ✅ Fixed! Moved ${lowestPick.player} (${lowestPick.odds}) to Pick #1`);
-      }
-      
-      // Check if we even have any favorites (odds < 20)
-      if (lowestOdds >= 20) {
-        console.warn(`[VALIDATION] ⚠️  NO players with odds < 20 in this field! Lowest is ${lowestOdds}`);
-        console.log(`[VALIDATION] Using ${predictions.picks[0].player} at ${predictions.picks[0].odds} as "favorite" (best available)`);
-      }
+    } catch (validationError) {
+      console.error(`[VALIDATION] ❌ Error during validation:`, validationError.message);
+      // Continue anyway - validation is not critical
     }
 
     // Step 9: Enrich predictions with odds breakdown
-    enrichPredictionsWithOdds(predictions, playersWithData);
+    try {
+      enrichPredictionsWithOdds(predictions, playersWithData);
+      console.log(`[ENRICH] ✅ Added odds breakdown to predictions`);
+    } catch (enrichError) {
+      console.error(`[ENRICH] ❌ Failed to enrich predictions:`, enrichError.message);
+      // Continue anyway - enrichment is not critical
+    }
 
     // Step 10: Calculate costs
     const cost = calculateCost(message.usage);
