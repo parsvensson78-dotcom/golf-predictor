@@ -85,8 +85,9 @@ function App() {
   }, [requestId]);
 
   const handleGetPredictions = () => {
-    console.log('[BUTTON] Get Predictions button clicked');
-    fetchData(`/.netlify/functions/get-predictions?tour=${tour}`, 'GET', null, 'predictions');
+    const uniqueId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    console.log(`[BUTTON] Get Predictions button clicked - Request ID: ${uniqueId}`);
+    fetchData(`/.netlify/functions/get-predictions?tour=${tour}&reqId=${uniqueId}`, 'GET', null, 'predictions');
   };
   
   const handleGetAvoidPicks = () => 
