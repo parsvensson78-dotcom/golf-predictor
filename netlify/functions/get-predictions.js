@@ -103,17 +103,6 @@ exports.handler = async (event, context) => {
       courseInfo = courseInfoResponse;
 
       console.log(`[DATA] Stats: ${statsData.players.length}, Odds: ${oddsData.odds.length}, Course: ${courseInfo.courseName || courseInfo.eventName}, Form data: ${recentFormData.players.length}`);
-      
-      // Check odds distribution to see if we have favorites
-      if (oddsData.odds.length > 0) {
-        const oddsValues = oddsData.odds.map(p => p.odds).sort((a, b) => a - b);
-        const lowestOdds = oddsValues.slice(0, 5);
-        console.log(`[ODDS] Top 5 lowest odds (American): ${lowestOdds.map(o => formatAmericanOdds(o)).join(', ')}`);
-        
-        // Count favorites: American odds under +1900 (equivalent to 20.0 decimal)
-        const favoritesCount = oddsValues.filter(o => o < 1900).length;
-        console.log(`[ODDS] Players with odds under +1900 (favorites): ${favoritesCount}`);
-      }
 
       // Step 2f: Merge player data (stats + odds + form)
       playersWithData = mergePlayerData(statsData.players, oddsData.odds, recentFormData.players);
@@ -187,47 +176,7 @@ exports.handler = async (event, context) => {
       throw new Error(`Failed to parse Claude response: ${parseError.message}`);
     }
     
-    // Step 6: Validate and FIX pick distribution (1 favorite + 5 value)
-    try {
-      if (predictions.picks && predictions.picks.length === 6) {
-        const firstPickOdds = predictions.picks[0].odds;
-        const remainingOdds = predictions.picks.slice(1).map(p => p.odds);
-        
-        console.log(`[VALIDATION] Pick #1 odds: ${formatAmericanOdds(firstPickOdds)} (should be under +1900)`);
-        console.log(`[VALIDATION] Picks #2-6 odds: ${remainingOdds.map(o => formatAmericanOdds(o)).join(', ')} (should all be +1900 or higher)`);
-        
-        // Find the pick with lowest odds
-        let lowestOddsIndex = 0;
-        let lowestOdds = predictions.picks[0].odds;
-        
-        for (let i = 1; i < predictions.picks.length; i++) {
-          if (predictions.picks[i].odds < lowestOdds) {
-            lowestOdds = predictions.picks[i].odds;
-            lowestOddsIndex = i;
-          }
-        }
-        
-        // If first pick is not the lowest, reorder
-        if (lowestOddsIndex !== 0) {
-          console.warn(`[VALIDATION] ⚠️  Pick #1 odds (${formatAmericanOdds(firstPickOdds)}) is NOT lowest! Auto-fixing by reordering...`);
-          const lowestPick = predictions.picks[lowestOddsIndex];
-          predictions.picks.splice(lowestOddsIndex, 1);
-          predictions.picks.unshift(lowestPick);
-          console.log(`[VALIDATION] ✅ Fixed! Moved ${lowestPick.player} (${formatAmericanOdds(lowestPick.odds)}) to Pick #1`);
-        }
-        
-        // Check if we even have any favorites (odds under +1900)
-        if (lowestOdds >= 1900) {
-          console.warn(`[VALIDATION] ⚠️  NO players with odds under +1900 in this field! Lowest is ${formatAmericanOdds(lowestOdds)}`);
-          console.log(`[VALIDATION] Using ${predictions.picks[0].player} at ${formatAmericanOdds(predictions.picks[0].odds)} as "favorite" (best available)`);
-        }
-      }
-    } catch (validationError) {
-      console.error(`[VALIDATION] ❌ Error during validation:`, validationError.message);
-      // Continue anyway - validation is not critical
-    }
-
-    // Step 7: Enrich predictions with odds breakdown
+    // Step 6: Enrich predictions with odds breakdown
     try {
       enrichPredictionsWithOdds(predictions, topPlayers);
       console.log(`[ENRICH] ✅ Added odds breakdown to predictions`);
@@ -729,52 +678,21 @@ function buildClaudePrompt(tournament, players, weatherSummary, courseInfo) {
     })
     .join('\n');
 
-  return `Golf analyst: Find 6 VALUE picks (1 favorite <+1900, 5 value picks +1900+).
+  return `Golf analyst: Pick 6 best VALUE players from the 60 below.
 
 TOURNAMENT: ${tournament.name}
 Course: ${courseInfo.courseName || courseInfo.eventName} | ${courseInfo.yardage || '?'}y Par ${courseInfo.par || '?'}
 Demands: ${courseDemands}
 Weather: ${weatherAnalysis}
 
-PLAYERS (all 60 by odds):
+PLAYERS (sorted by odds):
 ${formatPlayerList(players)}
 
-ANALYSIS FRAMEWORK:
-1. Course Fit (40%): Match SG stats to demands above
-2. Course History (20%): Past results here (or explain why no history OK if empty)
-3. Recent Form (15%): Last5 finishes + momentum (📈 Hot / 📉 Cold)
-4. Weather (15%): How conditions favor their game
-5. Statistical Quality (10%): Overall SG quality check
+WEIGHTS: Course Fit 40%, History 20%, Form 15%, Weather 15%, Quality 10%
 
-PICK REQUIREMENTS:
-- Pick #1: MUST be <+1900 (choose best VALUE favorite, NOT just lowest odds)
-- Picks #2-6: MUST be +1900+ (at least 3 picks should be +4000+)
+Pick 6 players with best value (performance potential vs odds). Mix odds ranges for diversification.
 
-EXAMPLES:
-✅ GOOD FAVORITE: "Morikawa [+1400] - Elite APP matches precision course + won here before"
-❌ BAD FAVORITE: "Scheffler [+220] - Yes he's #1 but poor course history + weak fit = no value"
-
-✅ VALUE WITH HISTORY: "Player X [+4500] - Strong fit + T5/T12 history here + hot form"
-✅ VALUE NO HISTORY: "Player Z [+5500] - PERFECT SG match for demands + consistent Top 15s"
-
-REASONING FORMAT (2-3 sentences each):
-"Course fit: [specific SG match]. History: [results or why OK without]. Form: [Last5 + momentum]. Weather: [impact]. Value: [why odds too high]."
-
-🚨 VALIDATE BEFORE RETURNING:
-- Pick #1 odds < +1900? If not, choose different favorite
-- Picks #2-6 all +1900+? If not, choose different players
-- At least 3 picks +4000+? If not, add more longshots
-
-Return ONLY JSON:
-{
-  "courseType": "Brief course analysis (2-3 sentences)",
-  "weatherImpact": "How weather affects play (2 sentences)",
-  "keyFactors": ["Factor 1", "Factor 2", "Factor 3", "Factor 4"],
-  "courseNotes": "Betting insights: which player types over/underpriced (2-3 sentences)",
-  "picks": [
-    {"player": "Name", "odds": 1400, "reasoning": "Course fit + history + form + weather + value"}
-  ]
-}`;
+Return JSON with picks array (player, odds, reasoning).
 }
 
 /**
