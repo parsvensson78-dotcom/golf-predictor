@@ -292,30 +292,34 @@ function mergePlayerData(statsPlayers, oddsPlayers) {
   
   const merged = statsPlayers
     .map(statPlayer => {
+      // Stats data has nested structure: { player: "...", stats: { name: "...", sgOTT: ... } }
+      const playerName = statPlayer.stats?.name || statPlayer.name;
+      const playerStats = statPlayer.stats || statPlayer;
+      
       const oddsPlayer = oddsPlayers.find(op => 
-        normalizePlayerName(op.player) === normalizePlayerName(statPlayer.name)
+        normalizePlayerName(op.player) === normalizePlayerName(playerName)
       );
 
       if (!oddsPlayer) {
         noMatchCount++;
         if (noMatchCount <= 3) {
-          console.log(`[MERGE] No odds match for: "${statPlayer.name}" (normalized: "${normalizePlayerName(statPlayer.name)}")`);
+          console.log(`[MERGE] No odds match for: "${playerName}" (normalized: "${normalizePlayerName(playerName)}")`);
         }
         return null;
       }
 
       matchCount++;
       return {
-        name: statPlayer.name,
+        name: playerName,
         stats: {
-          sgOTT: statPlayer.sgOTT || 0,
-          sgAPP: statPlayer.sgAPP || 0,
-          sgARG: statPlayer.sgARG || 0,
-          sgPutt: statPlayer.sgPutt || 0,
-          sgTotal: statPlayer.sgTotal || 0,
-          drivingDist: statPlayer.drivingDistance,
-          drivingAcc: statPlayer.drivingAccuracy,
-          gir: statPlayer.gir
+          sgOTT: playerStats.sgOTT || 0,
+          sgAPP: playerStats.sgAPP || 0,
+          sgARG: playerStats.sgARG || 0,
+          sgPutt: playerStats.sgPutt || 0,
+          sgTotal: playerStats.sgTotal || 0,
+          drivingDist: playerStats.drivingDistance,
+          drivingAcc: playerStats.drivingAccuracy,
+          gir: playerStats.gir
         },
         odds: oddsPlayer.odds,
         bookmakers: oddsPlayer.bookmakers || []
