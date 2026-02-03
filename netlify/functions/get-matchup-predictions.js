@@ -70,9 +70,11 @@ exports.handler = async (event, context) => {
       }
     } catch (weatherError) {
       console.error('[MATCHUP] Weather fetch failed:', weatherError.message);
+      console.log('[MATCHUP] Continuing with weather unavailable - not critical');
     }
 
     const weatherSummary = weatherData?.summary || 'Weather data not available';
+    console.log(`[MATCHUP] Weather: ${weatherSummary.substring(0, 100)}...`);
 
     // Step 6: Get course info
     let courseInfo;
