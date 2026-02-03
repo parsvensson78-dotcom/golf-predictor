@@ -20,11 +20,11 @@ exports.handler = async (event, context) => {
     const tournament = tournamentResponse.data;
     console.log(`[AVOID] Tournament: ${tournament.name}`);
 
-    // Step 2: Fetch odds (this now returns ALL players in the field automatically)
+    // Step 2: Fetch odds
     console.log(`[AVOID] Fetching odds for full field...`);
     const oddsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-odds`, {
       tournamentName: tournament.name,
-      players: [] // Not needed anymore, but keeping for backwards compatibility
+      tour: tournament.tour
     }, {
       timeout: 20000
     });
@@ -62,42 +62,31 @@ exports.handler = async (event, context) => {
       console.error('[AVOID] Weather fetch failed:', weatherError.message);
     }
 
-    // Step 5: Build player data with PROPER odds conversion
+    // Step 5: Build player data - odds are already in American format
     const playersWithOdds = statsData.players
       .map(stat => {
         const oddsEntry = oddsData.odds.find(o => 
           normalizePlayerName(o.player) === normalizePlayerName(stat.player)
         );
         
-        // Convert American odds to decimal
-        let decimalOdds = null;
-        let decimalMinOdds = null;
-        let decimalMaxOdds = null;
-        
-        if (oddsEntry?.odds) {
-          decimalOdds = americanToDecimal(oddsEntry.odds);
-          decimalMinOdds = oddsEntry.minOdds ? americanToDecimal(oddsEntry.minOdds) : null;
-          decimalMaxOdds = oddsEntry.maxOdds ? americanToDecimal(oddsEntry.maxOdds) : null;
-          console.log(`[AVOID] ${stat.player}: Avg ${decimalOdds.toFixed(1)} | Best ${decimalMinOdds?.toFixed(1)} | Worst ${decimalMaxOdds?.toFixed(1)}`);
-        }
+        if (!oddsEntry) return null;
         
         return {
           player: stat.player,
-          odds: decimalOdds, // Average odds in decimal format
-          minOdds: decimalMinOdds, // Best odds for bettor
-          maxOdds: decimalMaxOdds, // Worst odds for bettor
-          americanOdds: oddsEntry?.americanOdds || null,
-          bookmakerCount: oddsEntry?.bookmakerCount || 0,
+          odds: oddsEntry.odds, // American odds
+          minOdds: oddsEntry.minOdds, // Already in decimal
+          maxOdds: oddsEntry.maxOdds, // Already in decimal
+          bookmakerCount: oddsEntry.bookmakerCount || 0,
           stats: stat.stats
         };
       })
-      .filter(p => p.odds !== null && p.odds < 30) // Now correctly filters decimal odds under 30
+      .filter(p => p !== null && p.odds < 2000) // Under +2000 = short odds
       .sort((a, b) => a.odds - b.odds);
 
-    console.log(`[AVOID] ${playersWithOdds.length} players with short odds (under 30/1) for analysis`);
+    console.log(`[AVOID] ${playersWithOdds.length} players with short odds (under +2000) for analysis`);
 
     if (playersWithOdds.length === 0) {
-      console.log('[AVOID] No players with odds under 30/1 found');
+      console.log('[AVOID] No players with odds under +2000 found');
       return {
         statusCode: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -128,7 +117,7 @@ exports.handler = async (event, context) => {
     console.log(`[AVOID] Calling Claude API...`);
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
+      max_tokens: 1500,
       temperature: 0.4,
       messages: [{
         role: 'user',
@@ -193,6 +182,7 @@ exports.handler = async (event, context) => {
     console.error('[AVOID] Error:', error);
     return {
       statusCode: 500,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         error: 'Failed to generate avoid picks',
         message: error.message
@@ -200,21 +190,6 @@ exports.handler = async (event, context) => {
     };
   }
 };
-
-/**
- * Convert American odds to decimal odds
- */
-function americanToDecimal(americanOdds) {
-  if (!americanOdds || americanOdds === 0) return null;
-  
-  if (americanOdds > 0) {
-    // Positive American odds: +1800 = 19.0 decimal
-    return (americanOdds / 100) + 1;
-  } else {
-    // Negative American odds: -200 = 1.5 decimal
-    return (100 / Math.abs(americanOdds)) + 1;
-  }
-}
 
 /**
  * Normalize player name for matching
@@ -241,11 +216,13 @@ function getCourseBasicInfo(courseName) {
 }
 
 /**
- * Build prompt for avoid picks
+ * Build prompt for avoid picks - using American odds
  */
 function buildAvoidPicksPrompt(tournament, players, weather, courseInfo) {
+  const formatAmericanOdds = (odds) => odds > 0 ? `+${odds}` : `${odds}`;
+  
   const playerList = players.slice(0, 30).map(p => 
-    `${p.player} [${p.odds.toFixed(1)}] - Rank:${p.stats.rank} SG:Total:${p.stats.sgTotal} OTT:${p.stats.sgOTT} APP:${p.stats.sgAPP} ARG:${p.stats.sgARG} Putt:${p.stats.sgPutt}`
+    `${p.player} [${formatAmericanOdds(p.odds)}] - Rank:${p.stats.rank} SG:Total:${p.stats.sgTotal} OTT:${p.stats.sgOTT} APP:${p.stats.sgAPP} ARG:${p.stats.sgARG} Putt:${p.stats.sgPutt}`
   ).join('\n');
 
   return `You are a professional golf analyst identifying players to AVOID betting on this week.
@@ -256,39 +233,27 @@ Course: ${tournament.course}
 Location: ${tournament.location}
 Weather: ${weather}
 
-FAVORITES & SHORT ODDS PLAYERS (decimal odds shown):
+SHORT ODDS PLAYERS (American odds shown):
 ${playerList}
 
 YOUR TASK:
-Identify exactly 3 players with SHORT ODDS (under 30.0 decimal) who have POOR course fit and should be avoided.
+Identify exactly 3 players with SHORT ODDS (under +2000) who have POOR course fit and should be avoided.
 
-CRITERIA FOR AVOID PICKS:
-- Players with SHORT odds (market backing them)
-- But their stats DON'T match this course demands
-- Identify specific statistical weaknesses
-- Explain why odds are too short given course fit
+CRITERIA:
+- Short odds (market backing them)
+- Stats DON'T match course demands
+- Specific statistical weaknesses
+- Why odds are too short
 
-Return ONLY valid JSON (no markdown):
+Return JSON:
 {
-  "reasoning": "1-2 sentences explaining what this course demands and why certain player types will struggle",
+  "reasoning": "What this course demands and why certain players will struggle (2 sentences)",
   "avoid": [
     {
       "player": "Player Name",
-      "odds": 18.0,
-      "reasoning": "SPECIFIC mismatch: Explain why their stats are WRONG for this course. Include stat rankings showing poor fit. What weakness will hurt them? 2-3 sentences with numbers."
-    },
-    {
-      "player": "Player Name",
-      "odds": 22.0,
-      "reasoning": "Another specific mismatch with stats"
-    },
-    {
-      "player": "Player Name",
-      "odds": 25.0,
-      "reasoning": "Third mismatch"
+      "odds": 800,
+      "reasoning": "Specific stat mismatch with numbers showing poor fit (2-3 sentences)"
     }
   ]
-}
-
-Focus on SPECIFIC stat mismatches. Example: "Ranks #89 in SG:APP (-0.4) on a course with tiny bentgrass greens demanding elite approach play. His #102 SG:Putt on poa annua (-0.6) creates double penalty. At 15.0 decimal odds, market ignoring course history stats."`;
+}`;
 }
