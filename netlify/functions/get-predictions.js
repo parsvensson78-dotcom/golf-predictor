@@ -705,44 +705,31 @@ Course: ${courseInfo.courseName || courseInfo.eventName} | ${courseInfo.yardage 
 Demands: ${courseDemands}
 Weather: ${weatherAnalysis}
 
-PLAYERS (all 60 by odds):
+PLAYERS (top 50 by odds):
 ${formatPlayerList(players)}
 
-ANALYSIS FRAMEWORK:
-1. Course Fit (40%): Match SG stats to demands - BE SPECIFIC about which stats
-2. Course History (20%): ThisCourse results - if empty, explain why stats overcome this
-3. Recent Form (15%): Last5 results + momentum - mention specific finishes
-4. Weather (15%): How conditions help/hurt this player's style
-5. Statistical Quality (10%): Overall SG + standout strengths
+WEIGHTS: Course Fit 40%, History 20%, Form 15%, Weather 15%, Quality 10%
 
 PICK REQUIREMENTS:
-- Pick #1: MUST be <+1900 (best VALUE favorite, NOT lowest odds)
-- Picks #2-6: MUST be +1900+ (at least 3 picks +4000+)
+- Pick #1: <+1900 (best VALUE favorite, NOT lowest odds)
+- Picks #2-6: +1900+ (at least 3 picks +4000+)
 
-EXAMPLE OF DETAILED REASONING (FOLLOW THIS):
-"Course fit: Elite SG:APP (0.59) perfectly matches TPC Scottsdale's precision demands. Course history: Won here in 2021, T4 in 2023 proves comfort level. Form: Hot with T3, T8, 2nd in Last5. Weather: Light winds favor accurate ball-striking. Value: At +1400, market undervalues proven track record - better value than Scheffler at +220."
+REASONING FORMAT (2-3 sentences):
+"Course fit: [Specific SG stat]. History: [Result or why OK without]. Form: [Last5]. Weather: [Impact]. Value: [Why underpriced]."
 
-REASONING MUST BE 4-5 SENTENCES covering:
-1. Course Fit: SPECIFIC SG stats with values. "SG:APP (0.59)" NOT "good approach"
-2. History: SPECIFIC results "Won 2021, T4 2023" OR "No history BUT SG matches winners"  
-3. Form: SPECIFIC Last5 "T3, T8, 2nd" + momentum "📈 Hot"
-4. Weather: HOW it impacts "Winds favor accurate strikers" NOT "weather good"
-5. Value: WHY odds wrong "Market ignores track record, should be +3000"
+Example: "Elite SG:APP (0.59) matches precision course. Won here 2021, T4 in 2023. Hot form with T3, T8, 2nd in Last5. Light winds suit accurate striking. At +1400, market undervalues track record."
 
-🚨 CHECK BEFORE RETURNING:
-- Pick #1 < +1900?
-- Picks #2-6 all +1900+?
-- 3+ picks +4000+?
-- Each reasoning 4-5 sentences with SPECIFIC details?
+CHECK BEFORE RETURNING:
+- Pick #1 < +1900? Picks #2-6 all +1900+? 3+ picks +4000+?
 
 Return JSON:
 {
-  "courseType": "Course analysis 2-3 sentences",
-  "weatherImpact": "Weather impact 2 sentences",
-  "keyFactors": ["Factor 1", "Factor 2", "Factor 3", "Factor 4"],
-  "courseNotes": "Betting insights 2-3 sentences",
+  "courseType": "Brief analysis (2 sentences)",
+  "weatherImpact": "Impact (1-2 sentences)",
+  "keyFactors": ["Factor 1", "Factor 2", "Factor 3"],
+  "courseNotes": "Betting insights (2 sentences)",
   "picks": [
-    {"player": "Name", "odds": 1400, "reasoning": "4-5 sentences with specific stats/results/reasoning"}
+    {"player": "Name", "odds": 1400, "reasoning": "2-3 sentences covering fit/history/form/weather/value"}
   ]
 }`;
 }
