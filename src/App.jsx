@@ -9,6 +9,12 @@ import './App.css';
  * - Cleaner structure
  */
 
+// Helper function to format American odds
+const formatAmericanOdds = (odds) => {
+  if (!odds || odds === 0) return 'N/A';
+  return odds > 0 ? `+${odds}` : `${odds}`;
+};
+
 function App() {
   const [tour, setTour] = useState('pga');
   const [activeTab, setActiveTab] = useState('predictions');
@@ -429,20 +435,33 @@ const CourseAnalysis = ({ courseAnalysis }) => {
 const OddsBreakdown = ({ pick }) => {
   if (!pick.minOdds || !pick.maxOdds) return null;
 
+  // Convert decimal odds back to American for display
+  const decimalToAmerican = (decimal) => {
+    if (!decimal) return null;
+    if (decimal >= 2) {
+      return Math.round((decimal - 1) * 100);
+    } else {
+      return Math.round(-100 / (decimal - 1));
+    }
+  };
+
+  const bestAmerican = decimalToAmerican(pick.minOdds);
+  const worstAmerican = decimalToAmerican(pick.maxOdds);
+
   return (
     <div className="odds-breakdown">
       <div className="odds-breakdown-item">
         <span className="odds-breakdown-label">Best:</span>
-        <span className="odds-breakdown-value best">{Math.round(pick.minOdds)}/1</span>
+        <span className="odds-breakdown-value best">{formatAmericanOdds(bestAmerican)}</span>
         {pick.bestBookmaker && <span className="odds-breakdown-book">({pick.bestBookmaker})</span>}
       </div>
       <div className="odds-breakdown-item">
         <span className="odds-breakdown-label">Avg:</span>
-        <span className="odds-breakdown-value avg">{Math.round(pick.odds)}/1</span>
+        <span className="odds-breakdown-value avg">{formatAmericanOdds(pick.odds)}</span>
       </div>
       <div className="odds-breakdown-item">
         <span className="odds-breakdown-label">Worst:</span>
-        <span className="odds-breakdown-value worst">{Math.round(pick.maxOdds)}/1</span>
+        <span className="odds-breakdown-value worst">{formatAmericanOdds(worstAmerican)}</span>
         {pick.worstBookmaker && <span className="odds-breakdown-book">({pick.worstBookmaker})</span>}
       </div>
     </div>
@@ -493,7 +512,7 @@ const PredictionsView = ({ data, requestId }) => (
             <div className="pick-header">
               <span className="pick-number">#{index + 1}</span>
               <div className="odds-container">
-                <span className="pick-odds">{Math.round(pick.odds)}/1</span>
+                <span className="pick-odds">{formatAmericanOdds(pick.odds)}</span>
               </div>
             </div>
             <h3 className="pick-name">{pick.player}</h3>
@@ -521,7 +540,7 @@ const AvoidPicksView = ({ data, requestId }) => (
           <div key={`avoid-${requestId}-${index}`} className="avoid-card">
             <div className="avoid-header">
               <span className="avoid-icon">⚠️</span>
-              <span className="avoid-odds">{Math.round(avoid.odds)}/1</span>
+              <span className="avoid-odds">{formatAmericanOdds(avoid.odds)}</span>
             </div>
             <h4 className="avoid-name">{avoid.player}</h4>
             <p className="avoid-reasoning">{avoid.reasoning}</p>
@@ -620,7 +639,7 @@ const MatchupsView = ({ data, requestId }) => (
 const PlayerBox = ({ player, isPick }) => (
   <div className={`player-box ${isPick ? 'winner' : ''}`}>
     <h4>{player.name}</h4>
-    <div className="player-odds">{Math.round(player.odds)}/1</div>
+    <div className="player-odds">{formatAmericanOdds(player.odds)}</div>
     <div className="player-stats">
       {['OTT', 'APP', 'ARG', 'Putt'].map(stat => (
         <div key={stat} className="stat-row">
@@ -725,7 +744,7 @@ const ResultsView = ({ data, requestId }) => {
                   {tournament.predictions.map((pick, idx) => (
                     <div key={idx} style={{background: '#f8f9fa', border: '2px solid #ff9800', borderRadius: '8px', padding: '1rem'}}>
                       <h5 style={{margin: '0 0 0.5rem 0'}}>{pick.player}</h5>
-                      <div style={{fontSize: '1.3rem', fontWeight: 'bold', color: '#667eea'}}>{Math.round(pick.odds)}/1</div>
+                      <div style={{fontSize: '1.3rem', fontWeight: 'bold', color: '#667eea'}}>{formatAmericanOdds(pick.odds)}</div>
                     </div>
                   ))}
                 </div>
