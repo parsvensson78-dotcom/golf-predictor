@@ -909,8 +909,6 @@ async function savePredictionsToBlobs(responseData) {
   const timeStr = `${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}`;
   
   const key = `${tournamentSlug}-${dateStr}-${timeStr}`;
-  
-  const key = `${tournamentSlug}-${dateStr}`;
 
   // Prepare data to save (simplified version for tracking)
   const predictionData = {
