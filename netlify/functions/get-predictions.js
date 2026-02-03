@@ -28,7 +28,7 @@ exports.handler = async (event, context) => {
     const playerNames = tournament.field.map(p => p.name);
 
     // Step 2-4: Fetch stats, odds, weather, and course info IN PARALLEL
-    const [statsResponse, oddsResponse, weatherData, courseInfo] = await Promise.all([
+    const [statsResponse, oddsResponse, weatherData, courseInfo, recentFormData] = await Promise.all([
       // Stats
       axios.post(`${baseUrl}/.netlify/functions/fetch-stats`, 
         { players: playerNames }, 
@@ -44,26 +44,27 @@ exports.handler = async (event, context) => {
       // Course info
       axios.get(`${baseUrl}/.netlify/functions/fetch-course-info?tour=${tour}&tournament=${encodeURIComponent(tournament.name)}`, 
         { timeout: 10000 }
-      ).then(r => r.data)
+      ).then(r => r.data),
+      // Recent form and course history
+      fetchRecentFormAndHistory(playerNames, tournament.course, tour)
     ]);
 
     const statsData = statsResponse.data;
     const oddsData = oddsResponse.data;
 
-    console.log(`[DATA] Stats: ${statsData.players.length}, Odds: ${oddsData.odds.length}, Course: ${courseInfo.courseName || courseInfo.eventName}`);
+    console.log(`[DATA] Stats: ${statsData.players.length}, Odds: ${oddsData.odds.length}, Course: ${courseInfo.courseName || courseInfo.eventName}, Form data: ${recentFormData.players.length}`);
 
-    // Step 5: Merge player data (stats + odds)
-    const playersWithData = mergePlayerData(statsData.players, oddsData.odds);
+    // Step 5: Merge player data (stats + odds + form)
+    const playersWithData = mergePlayerData(statsData.players, oddsData.odds, recentFormData.players);
 
     console.log(`[MERGE] ${playersWithData.length} players with complete data`);
 
-    // Step 6: Prepare data for Claude (top 80 players to avoid token limits)
-    const topPlayers = playersWithData.slice(0, 80);
-    console.log(`[CLAUDE] Analyzing top ${topPlayers.length} players`);
+    // Step 6: Prepare data for Claude (all players)
+    console.log(`[CLAUDE] Analyzing all ${playersWithData.length} players in the field`);
 
     // Step 7: Call Claude API
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const prompt = buildClaudePrompt(tournament, topPlayers, weatherData.summary, courseInfo);
+    const prompt = buildClaudePrompt(tournament, playersWithData, weatherData.summary, courseInfo);
 
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
@@ -212,9 +213,134 @@ async function fetchWeather(location) {
 }
 
 /**
+ * Fetch recent form and course history for players
+ */
+async function fetchRecentFormAndHistory(playerNames, courseName, tour) {
+  const apiKey = process.env.DATAGOLF_API_KEY || '07b56aee1a02854e9513b06af5cd';
+  const apiTour = tour === 'dp' ? 'euro' : (tour || 'pga');
+  
+  try {
+    console.log(`[FORM] Fetching recent tournament results...`);
+    
+    // Fetch schedule to get recent tournaments
+    const scheduleUrl = `https://feeds.datagolf.com/get-schedule?tour=${apiTour}&file_format=json&key=${apiKey}`;
+    const scheduleResponse = await axios.get(scheduleUrl, {
+      timeout: 15000,
+      headers: {
+        'User-Agent': 'Golf-Predictor-App/1.0',
+        'Accept': 'application/json'
+      }
+    });
+
+    const tournaments = Array.isArray(scheduleResponse.data.schedule) 
+      ? scheduleResponse.data.schedule 
+      : Object.values(scheduleResponse.data.schedule);
+
+    // Get last 10 completed tournaments
+    const completedTournaments = tournaments
+      .filter(t => t.event_completed)
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 10);
+
+    console.log(`[FORM] Found ${completedTournaments.length} recent completed tournaments`);
+
+    // For each player, compile their recent results
+    const playerFormData = {};
+    
+    for (const player of playerNames) {
+      playerFormData[normalizePlayerName(player)] = {
+        recentResults: [],
+        courseHistory: [],
+        momentum: 'unknown'
+      };
+    }
+
+    // Fetch results for recent tournaments
+    for (const tournament of completedTournaments.slice(0, 5)) {
+      try {
+        const fieldUrl = `https://feeds.datagolf.com/field-updates?tour=${apiTour}&file_format=json&key=${apiKey}`;
+        const fieldResponse = await axios.get(fieldUrl, {
+          timeout: 10000,
+          headers: {
+            'User-Agent': 'Golf-Predictor-App/1.0',
+            'Accept': 'application/json'
+          }
+        });
+
+        if (fieldResponse.data?.field) {
+          const isCourseMatch = tournament.course?.toLowerCase().includes(courseName?.toLowerCase().split(' ')[0]) ||
+                                courseName?.toLowerCase().includes(tournament.course?.toLowerCase().split(' ')[0]);
+
+          for (const playerResult of fieldResponse.data.field) {
+            if (!playerResult.player_name) continue;
+            
+            const normalizedName = normalizePlayerName(playerResult.player_name);
+            if (playerFormData[normalizedName]) {
+              const result = {
+                tournament: tournament.event_name,
+                date: tournament.date,
+                position: playerResult.finish_position || playerResult.position,
+                score: playerResult.total_to_par,
+                madeCut: playerResult.made_cut !== false
+              };
+
+              // Add to recent results
+              playerFormData[normalizedName].recentResults.push(result);
+
+              // If this is the same course, add to course history
+              if (isCourseMatch) {
+                playerFormData[normalizedName].courseHistory.push(result);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.log(`[FORM] Failed to fetch results for ${tournament.event_name}:`, error.message);
+      }
+    }
+
+    // Calculate momentum for each player
+    for (const normalizedName in playerFormData) {
+      const recent = playerFormData[normalizedName].recentResults;
+      if (recent.length >= 3) {
+        // Get average position from first 3 vs last 3 results
+        const recentPositions = recent.slice(0, 3).map(r => parseInt(r.position) || 999);
+        const olderPositions = recent.slice(3, 6).map(r => parseInt(r.position) || 999);
+        
+        if (recentPositions.length > 0 && olderPositions.length > 0) {
+          const recentAvg = recentPositions.reduce((a, b) => a + b, 0) / recentPositions.length;
+          const olderAvg = olderPositions.reduce((a, b) => a + b, 0) / olderPositions.length;
+          
+          if (recentAvg < olderAvg - 10) {
+            playerFormData[normalizedName].momentum = '📈 Hot (improving)';
+          } else if (recentAvg > olderAvg + 10) {
+            playerFormData[normalizedName].momentum = '📉 Cold (declining)';
+          } else {
+            playerFormData[normalizedName].momentum = '➡️ Steady';
+          }
+        }
+      }
+    }
+
+    console.log(`[FORM] ✅ Compiled form data for ${Object.keys(playerFormData).length} players`);
+
+    return {
+      players: Object.keys(playerFormData).map(normalizedName => ({
+        normalizedName,
+        ...playerFormData[normalizedName]
+      }))
+    };
+
+  } catch (error) {
+    console.error('[FORM] Failed to fetch form data:', error.message);
+    return { players: [] };
+  }
+}
+
+/**
  * Merge stats and odds data for all players
  */
-function mergePlayerData(statsPlayers, oddsPlayers) {
+function mergePlayerData(statsPlayers, oddsPlayers, formPlayers = []) {
   return statsPlayers
     .map(stat => {
       const oddsEntry = oddsPlayers.find(o => 
@@ -224,6 +350,11 @@ function mergePlayerData(statsPlayers, oddsPlayers) {
       if (!oddsEntry) return null;
 
       const decimalOdds = americanToDecimal(oddsEntry.odds);
+      
+      // Find form data for this player
+      const formData = formPlayers.find(f => 
+        f.normalizedName === normalizePlayerName(stat.player)
+      );
       
       return {
         name: stat.player,
@@ -238,7 +369,11 @@ function mergePlayerData(statsPlayers, oddsPlayers) {
         sgOTT: stat.stats.sgOTT,
         sgAPP: stat.stats.sgAPP,
         sgARG: stat.stats.sgARG,
-        sgPutt: stat.stats.sgPutt
+        sgPutt: stat.stats.sgPutt,
+        // Recent form
+        recentResults: formData?.recentResults || [],
+        courseHistory: formData?.courseHistory || [],
+        momentum: formData?.momentum || 'Unknown'
       };
     })
     .filter(p => p !== null)
@@ -338,7 +473,32 @@ function buildClaudePrompt(tournament, players, weatherSummary, courseInfo) {
 
   // Format player lists
   const formatPlayerList = (playerList) => playerList
-    .map(p => `${p.name} [${p.odds?.toFixed(1)}] - R${p.rank||'?'} | SG:${p.sgTotal?.toFixed(2)} (OTT:${p.sgOTT?.toFixed(2)} APP:${p.sgAPP?.toFixed(2)} ARG:${p.sgARG?.toFixed(2)} P:${p.sgPutt?.toFixed(2)})`)
+    .map(p => {
+      let formStr = '';
+      
+      // Recent results (last 5)
+      if (p.recentResults?.length > 0) {
+        const results = p.recentResults.slice(0, 5).map(r => 
+          `${r.position || 'MC'}${r.madeCut ? '' : '(MC)'}`
+        ).join(',');
+        formStr += ` | Last5: ${results}`;
+      }
+      
+      // Course history
+      if (p.courseHistory?.length > 0) {
+        const courseResults = p.courseHistory.map(r => 
+          `${r.position || 'MC'}${r.madeCut ? '' : '(MC)'}`
+        ).join(',');
+        formStr += ` | ThisCourse: ${courseResults}`;
+      }
+      
+      // Momentum
+      if (p.momentum && p.momentum !== 'Unknown') {
+        formStr += ` | ${p.momentum}`;
+      }
+      
+      return `${p.name} [${p.odds?.toFixed(1)}] - R${p.rank||'?'} | SG:${p.sgTotal?.toFixed(2)} (OTT:${p.sgOTT?.toFixed(2)} APP:${p.sgAPP?.toFixed(2)} ARG:${p.sgARG?.toFixed(2)} P:${p.sgPutt?.toFixed(2)})${formStr}`;
+    })
     .join('\n');
 
   return `You are a professional golf analyst specializing in finding VALUE picks based on course fit and conditions, NOT favorites.
@@ -377,11 +537,44 @@ ${formatPlayerList(longshots)}
 YOUR TASK - MULTI-FACTOR ANALYSIS:
 Select exactly 6 VALUE picks using this decision framework:
 
-1. COURSE FIT (Most Important - 50% weight):
+1. COURSE FIT (Most Important - 40% weight):
    - Match SG stats to PRIMARY SKILL DEMANDS listed above
    - Players MUST show strength in the course's key statistical categories
    - Example: Long course → prioritize high SG:OTT players
    - Example: Tight course → prioritize SG:APP and SG:ARG over SG:OTT
+
+2. RECENT FORM & MOMENTUM (Critical - 30% weight):
+   - "Last5" shows last 5 tournament finishes (lower = better, MC = missed cut)
+   - Look for players with Top 20 finishes in recent events
+   - Prioritize players with 📈 Hot (improving) momentum
+   - AVOID players with 📉 Cold (declining) momentum
+   - Recent good form (T5, T10, T15) indicates confidence and sharp game
+   
+3. COURSE HISTORY (Important - 20% weight):
+   - "ThisCourse" shows past results at THIS specific venue
+   - Players with Top 10 finishes at this course have proven they can score here
+   - Course familiarity is a HUGE advantage - prioritize players with good history
+   - If a player has never played well here, odds must be exceptional to pick them
+
+4. WEATHER ADAPTATION (10% weight):
+   - Apply weather impact analysis from above
+   - Wind → favor SG:OTT (ball flight control)
+   - Wet conditions → favor length (SG:OTT) and wedge play (SG:APP)
+   - Calm conditions → favor putting (SG:Putt becomes critical)
+
+5. ODDS VALUE (Selection Criteria):
+   - ALL picks MUST be 20/1 or higher
+   - At least 4 picks MUST be 40/1 or higher
+   - Target distribution: 2 picks at 20-40/1, 2-3 picks at 40-80/1, 1-2 picks at 80-150/1
+   - Avoid favorites under 20/1 regardless of course fit
+
+EXAMPLE GOOD PICK:
+"Player X [45.0] - R12 | SG:1.85 (OTT:0.95 APP:0.72 ARG:0.08 P:0.10) | Last5: T8,T15,T22,MC,T18 | ThisCourse: T5,T12 | 📈 Hot"
+→ Good course fit (high OTT/APP for long course), hot form, excellent course history
+
+EXAMPLE BAD PICK:
+"Player Y [65.0] - R45 | SG:0.45 (OTT:-0.15 APP:0.25 ARG:0.20 P:0.15) | Last5: MC,T45,MC,T52,MC | ThisCourse: MC,T65 | 📉 Cold"
+→ Poor course fit, terrible recent form, no course success, declining momentum
 
 2. WEATHER ADAPTATION (Important - 25% weight):
    - Apply weather impact analysis from above
@@ -389,23 +582,19 @@ Select exactly 6 VALUE picks using this decision framework:
    - Wet conditions → favor length (SG:OTT) and wedge play (SG:APP)
    - Calm conditions → favor putting (SG:Putt becomes critical)
 
-3. ODDS VALUE (Important - 25% weight):
-   - ALL picks MUST be 20/1 or higher
-   - At least 4 picks MUST be 40/1 or higher
-   - Target distribution: 2 picks at 20-40/1, 2-3 picks at 40-80/1, 1-2 picks at 80-150/1
-   - Avoid favorites under 20/1 regardless of course fit
-
-4. STATISTICAL QUALITY:
+6. STATISTICAL QUALITY:
    - Prefer positive SG:Total (indicates above-average player)
    - Look for "unbalanced" players (one great SG stat that matches course needs)
    - Example: Player with +1.2 SG:OTT but only +0.2 SG:Putt might be undervalued on long course
 
 REASONING REQUIREMENTS:
 For each pick, explain:
-- Which PRIMARY SKILL DEMAND they satisfy (specific SG stat)
-- How WEATHER impacts their performance
-- Why their ODDS represent value (market inefficiency)
-- Keep to 2-3 sentences max
+- PRIMARY SKILL match (specific SG stat + course demand)
+- RECENT FORM (mention specific finishes and momentum)
+- COURSE HISTORY (if applicable - big advantage!)
+- WEATHER impact (how conditions favor this player)
+- VALUE case (why odds are too high given the above factors)
+- Keep to 3-4 sentences max
 
 Return ONLY valid JSON (no markdown):
 {
