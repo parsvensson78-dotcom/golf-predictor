@@ -9,9 +9,10 @@ const { getStore } = require('@netlify/blobs');
 exports.handler = async (event, context) => {
   try {
     const tour = event.queryStringParameters?.tour || 'pga';
+    const reqId = event.queryStringParameters?.reqId || 'unknown';
     const baseUrl = process.env.URL || 'http://localhost:8888';
 
-    console.log(`[START] Predictions for ${tour.toUpperCase()} tour`);
+    console.log(`[START] Predictions for ${tour.toUpperCase()} tour - Request ID: ${reqId}`);
 
     // Step 1: Fetch tournament data
     const tournamentResponse = await axios.get(`${baseUrl}/.netlify/functions/fetch-tournament?tour=${tour}`, {
@@ -85,32 +86,30 @@ exports.handler = async (event, context) => {
       console.log(`[VALIDATION] Pick #1 odds: ${firstPickOdds} (should be < 20)`);
       console.log(`[VALIDATION] Picks #2-6 odds: ${remainingOdds.join(', ')} (should all be >= 20)`);
       
-      if (firstPickOdds >= 20) {
-        console.warn(`[VALIDATION] ⚠️  Pick #1 odds (${firstPickOdds}) is NOT under 20/1! Auto-fixing by reordering...`);
-        
-        // Find the pick with lowest odds
-        let lowestOddsIndex = 0;
-        let lowestOdds = predictions.picks[0].odds;
-        
-        for (let i = 1; i < predictions.picks.length; i++) {
-          if (predictions.picks[i].odds < lowestOdds) {
-            lowestOdds = predictions.picks[i].odds;
-            lowestOddsIndex = i;
-          }
-        }
-        
-        // Move the lowest odds pick to position 0
-        if (lowestOddsIndex !== 0) {
-          const lowestPick = predictions.picks[lowestOddsIndex];
-          predictions.picks.splice(lowestOddsIndex, 1);
-          predictions.picks.unshift(lowestPick);
-          console.log(`[VALIDATION] ✅ Fixed! Moved ${lowestPick.player} (${lowestPick.odds}) to Pick #1`);
+      // Find the pick with lowest odds
+      let lowestOddsIndex = 0;
+      let lowestOdds = predictions.picks[0].odds;
+      
+      for (let i = 1; i < predictions.picks.length; i++) {
+        if (predictions.picks[i].odds < lowestOdds) {
+          lowestOdds = predictions.picks[i].odds;
+          lowestOddsIndex = i;
         }
       }
       
-      const invalidValuePicks = remainingOdds.filter(o => o < 20);
-      if (invalidValuePicks.length > 0) {
-        console.warn(`[VALIDATION] ⚠️  ${invalidValuePicks.length} value picks have odds under 20/1! Should be >= 20/1.`);
+      // If first pick is not the lowest, reorder
+      if (lowestOddsIndex !== 0) {
+        console.warn(`[VALIDATION] ⚠️  Pick #1 odds (${firstPickOdds}) is NOT lowest! Auto-fixing by reordering...`);
+        const lowestPick = predictions.picks[lowestOddsIndex];
+        predictions.picks.splice(lowestOddsIndex, 1);
+        predictions.picks.unshift(lowestPick);
+        console.log(`[VALIDATION] ✅ Fixed! Moved ${lowestPick.player} (${lowestPick.odds}) to Pick #1`);
+      }
+      
+      // Check if we even have any favorites (odds < 20)
+      if (lowestOdds >= 20) {
+        console.warn(`[VALIDATION] ⚠️  NO players with odds < 20 in this field! Lowest is ${lowestOdds}`);
+        console.log(`[VALIDATION] Using ${predictions.picks[0].player} at ${predictions.picks[0].odds} as "favorite" (best available)`);
       }
     }
 
