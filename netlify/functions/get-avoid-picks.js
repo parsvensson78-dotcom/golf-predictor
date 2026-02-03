@@ -48,20 +48,26 @@ exports.handler = async (event, context) => {
     const oddsData = oddsResponse.data;
     console.log(`[AVOID] Received odds for ${oddsData.odds.length} players`);
 
-    // Step 4: Get top 80 players by odds for detailed stats
-    const topPlayerNames = oddsData.odds
+    // Step 4: Get ONLY top 10 favorites by odds (shortest odds = market favorites)
+    // These are the players we want to potentially avoid - the public favorites
+    const topFavorites = oddsData.odds
       .sort((a, b) => a.odds - b.odds)
-      .slice(0, 80)
-      .map(o => o.player);
+      .slice(0, 15); // Top 15 shortest odds
     
-    console.log(`[AVOID] Fetching stats for top ${topPlayerNames.length} players by odds`);
+    const favoriteNames = topFavorites.map(o => o.player);
+    
+    console.log(`[AVOID] Analyzing top ${favoriteNames.length} favorites (shortest odds)`);
+    console.log(`[AVOID] Odds range: ${formatAmericanOdds(topFavorites[0].odds)} to ${formatAmericanOdds(topFavorites[favoriteNames.length-1].odds)}`);
     
     const statsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-stats`, {
-      players: topPlayerNames
+      players: favoriteNames
     }, {
       timeout: 25000
     });
     const statsData = statsResponse.data;
+
+    // Helper function
+    const formatAmericanOdds = (odds) => odds > 0 ? `+${odds}` : `${odds}`;
 
     // Step 5: Get weather
     let weatherInfo = 'Weather data not available';
@@ -83,10 +89,10 @@ exports.handler = async (event, context) => {
       console.error('[AVOID] Weather fetch failed:', weatherError.message);
     }
 
-    // Step 6: Build player data - odds are already in American format
+    // Step 6: Build player data for TOP FAVORITES only
     const playersWithOdds = statsData.players
       .map(stat => {
-        const oddsEntry = oddsData.odds.find(o => 
+        const oddsEntry = topFavorites.find(o => 
           normalizePlayerName(o.player) === normalizePlayerName(stat.player)
         );
         
@@ -94,31 +100,17 @@ exports.handler = async (event, context) => {
         
         return {
           player: stat.player,
-          odds: oddsEntry.odds, // American odds
-          minOdds: oddsEntry.minOdds, // Already in decimal
-          maxOdds: oddsEntry.maxOdds, // Already in decimal
+          odds: oddsEntry.odds,
+          minOdds: oddsEntry.minOdds,
+          maxOdds: oddsEntry.maxOdds,
           bookmakerCount: oddsEntry.bookmakerCount || 0,
           stats: stat.stats
         };
       })
-      .filter(p => p !== null && p.odds < 2000) // Under +2000 = short odds
+      .filter(p => p !== null)
       .sort((a, b) => a.odds - b.odds);
 
-    console.log(`[AVOID] ${playersWithOdds.length} players with short odds (under +2000) for analysis`);
-
-    if (playersWithOdds.length === 0) {
-      console.log('[AVOID] No players with odds under +2000 found');
-      return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tournament: { name: tournament.name, course: tournament.course },
-          avoidPicks: [],
-          reasoning: 'No short odds players found in the field',
-          generatedAt: new Date().toISOString()
-        })
-      };
-    }
+    console.log(`[AVOID] ${playersWithOdds.length} top favorites ready for analysis`);
 
     // Step 7: Get course info
     const courseInfo = getCourseBasicInfo(tournament.course);
@@ -237,51 +229,52 @@ function getCourseBasicInfo(courseName) {
 }
 
 /**
- * Build prompt for avoid picks - using American odds
+ * Build prompt for avoid picks - ONLY analyzes top favorites
  */
 function buildAvoidPicksPrompt(tournament, players, weather, courseInfo) {
   const formatAmericanOdds = (odds) => odds > 0 ? `+${odds}` : `${odds}`;
   
-  const playerList = players.slice(0, 40).map(p => 
-    `${p.player} [${formatAmericanOdds(p.odds)}] - R${p.stats.rank} | SG:${p.stats.sgTotal?.toFixed(2) || 'N/A'} (OTT:${p.stats.sgOTT?.toFixed(2) || 'N/A'} APP:${p.stats.sgAPP?.toFixed(2) || 'N/A'} ARG:${p.stats.sgARG?.toFixed(2) || 'N/A'} P:${p.stats.sgPutt?.toFixed(2) || 'N/A'})`
+  const playerList = players.map((p, i) => 
+    `#${i+1}. ${p.player} [${formatAmericanOdds(p.odds)}] - R${p.stats.rank} | SG:${p.stats.sgTotal?.toFixed(2) || 'N/A'} (OTT:${p.stats.sgOTT?.toFixed(2) || 'N/A'} APP:${p.stats.sgAPP?.toFixed(2) || 'N/A'} ARG:${p.stats.sgARG?.toFixed(2) || 'N/A'} P:${p.stats.sgPutt?.toFixed(2) || 'N/A'})`
   ).join('\n');
 
-  return `You are identifying players to AVOID - players with SHORT odds but POOR course fit.
+  return `You are identifying PUBLIC FAVORITES to AVOID - the top betting favorites with poor course fit.
 
 TOURNAMENT: ${tournament.name}
 Course: ${tournament.course}
-Location: ${tournament.location}
 Weather: ${weather}
 
-SHORT ODDS PLAYERS (sorted by odds, showing top 40):
+TOP ${players.length} FAVORITES (shortest odds = most bet on):
 ${playerList}
 
-YOUR TASK - FIND POOR COURSE FITS:
-Identify exactly 3 players who should be AVOIDED because:
-1. They have SHORT odds (market backing them - under +2000)
-2. BUT their stats are WRONG for this course
-3. Specific statistical WEAKNESSES that hurt them here
+CRITICAL CONTEXT:
+- These are the PUBLIC FAVORITES (shortest odds in entire field)
+- The market is backing these players heavily
+- Your job: Find which 3 have WORST course fit despite being favorites
+- Look for OVERVALUED favorites whose stats DON'T fit this course
 
-IMPORTANT: You are looking for MISMATCHES between player strengths and course demands!
+WHAT TO LOOK FOR:
+❌ Player is top 5 favorite BUT ranks #80+ in key stat for this course
+❌ Player has short odds BUT historically struggles at this venue
+❌ Player's strength is OPPOSITE of what course demands
 
-EXAMPLES OF WHAT TO LOOK FOR:
-❌ AVOID: Player has poor SG:APP (-0.3) but course has tiny greens requiring elite approach accuracy
-❌ AVOID: Player ranks #120 in SG:OTT but course is 7,500 yards demanding elite distance
-❌ AVOID: Player has weak SG:Putt on bentgrass but course has fast bentgrass greens
+EXAMPLE OF GOOD AVOID PICK:
+"Player X [+600] - Despite being 3rd favorite, ranks #110 in SG:APP (-0.5) on a course demanding pinpoint approach play to tiny greens. His weak scrambling (#95 SG:ARG, -0.3) compounds issues when missing. Course history shows T45, MC, T52 here. At +600, public backing him on name recognition over statistical fit."
 
-DO NOT pick players with good course fit! You are finding POOR fits only.
+EXAMPLE OF BAD AVOID PICK (DO NOT DO THIS):
+"Player with +3000 odds and mediocre stats" ← NO! We only analyze TOP FAVORITES!
 
-Return JSON with exactly 3 avoid picks:
+Your task: Find 3 PUBLIC FAVORITES (from list above) with WORST course fit.
+
+Return JSON:
 {
-  "reasoning": "What this course demands and why these specific player types will struggle (2-3 sentences)",
+  "reasoning": "What this course demands that these favorites lack (2-3 sentences)",
   "avoid": [
     {
-      "player": "Player Name",
-      "odds": 800,
-      "reasoning": "SPECIFIC statistical weakness for THIS course. Example: 'Ranks #95 in SG:APP (-0.4) on a course demanding pinpoint iron play to small greens. His weak short game (#102 SG:ARG, -0.3) compounds the problem when missing greens. At +800, market ignores poor course fit.' Include actual stat rankings and values."
+      "player": "Must be from the top ${players.length} list above",
+      "odds": 600,
+      "reasoning": "Why THIS FAVORITE has poor fit. Include: stat rankings showing weakness, course history if poor, why odds too short given mismatch. 3-4 sentences with specific numbers."
     }
   ]
-}
-
-Remember: Find players whose WEAKNESSES match this course's DEMANDS. Not players with good fits!`;
+}`;
 }
