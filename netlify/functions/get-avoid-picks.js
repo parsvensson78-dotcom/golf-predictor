@@ -6,6 +6,9 @@ const axios = require('axios');
  * Identifies players to avoid based on poor course fit
  */
 exports.handler = async (event, context) => {
+  // Helper function - define at top
+  const formatAmericanOdds = (odds) => odds > 0 ? `+${odds}` : `${odds}`;
+  
   try {
     const body = JSON.parse(event.body || '{}');
     const { tour } = body;
@@ -65,9 +68,6 @@ exports.handler = async (event, context) => {
       timeout: 25000
     });
     const statsData = statsResponse.data;
-
-    // Helper function
-    const formatAmericanOdds = (odds) => odds > 0 ? `+${odds}` : `${odds}`;
 
     // Step 5: Get weather
     let weatherInfo = 'Weather data not available';
