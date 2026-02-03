@@ -87,6 +87,11 @@ function App() {
   const handleGetPredictions = () => {
     const uniqueId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     console.log(`[BUTTON] Get Predictions button clicked - Request ID: ${uniqueId}`);
+    
+    // Set a message about expected wait time
+    setError(null);
+    setLoading(true);
+    
     fetchData(`/.netlify/functions/get-predictions?tour=${tour}&reqId=${uniqueId}`, 'GET', null, 'predictions');
   };
   
@@ -232,6 +237,9 @@ const LoadingState = ({ requestId }) => (
     <div className="spinner"></div>
     <p>Analyzing complete tournament field...</p>
     <p className="loading-subtext">Evaluating 120+ players for value picks</p>
+    <p className="loading-subtext" style={{marginTop: '1rem', fontSize: '0.9rem', color: '#888'}}>
+      ⏱️ This typically takes 30-40 seconds. Please wait...
+    </p>
   </div>
 );
 
