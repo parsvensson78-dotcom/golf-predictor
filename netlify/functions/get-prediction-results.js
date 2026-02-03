@@ -11,6 +11,17 @@ exports.handler = async (event, context) => {
 
     console.log(`[ANALYSIS] Fetching saved predictions from Netlify Blobs...`);
 
+    // Check if Netlify Blobs is properly configured
+    if (!process.env.NETLIFY) {
+      console.log('[ANALYSIS] Not running on Netlify - blob storage not available');
+      return createSuccessResponse({
+        tournaments: [],
+        message: 'Results tracking only available when deployed on Netlify',
+        totalPredictions: 0,
+        completedTournaments: 0
+      });
+    }
+
     // Get Netlify Blobs store
     const store = getStore('predictions');
 
