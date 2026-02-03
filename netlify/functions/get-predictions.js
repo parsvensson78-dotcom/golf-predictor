@@ -14,53 +14,142 @@ exports.handler = async (event, context) => {
 
     console.log(`[START] Predictions for ${tour.toUpperCase()} tour - Request ID: ${reqId}`);
 
-    // Step 1: Fetch tournament data
-    const tournamentResponse = await axios.get(`${baseUrl}/.netlify/functions/fetch-tournament?tour=${tour}`, {
-      timeout: 15000
-    });
-    const tournament = tournamentResponse.data;
-
-    if (!tournament?.field?.length) {
-      throw new Error('No tournament field data available');
+    // Step 1: Try to get cached player data
+    const cacheKey = `player-data-${tour}`;
+    let playersWithData = null;
+    let tournament = null;
+    let weatherData = null;
+    let courseInfo = null;
+    
+    try {
+      const { getStore } = require('@netlify/blobs');
+      const siteID = process.env.SITE_ID;
+      const token = process.env.NETLIFY_AUTH_TOKEN;
+      
+      if (siteID && token) {
+        const store = getStore({
+          name: 'cache',
+          siteID: siteID,
+          token: token,
+          consistency: 'strong'
+        });
+        
+        const cached = await store.get(cacheKey, { type: 'json' });
+        
+        if (cached && cached.timestamp) {
+          const cacheAge = Date.now() - cached.timestamp;
+          const sixHours = 6 * 60 * 60 * 1000;
+          
+          if (cacheAge < sixHours) {
+            console.log(`[CACHE] Using cached player data (${Math.round(cacheAge / 1000 / 60)} minutes old)`);
+            playersWithData = cached.players;
+            tournament = cached.tournament;
+            weatherData = cached.weather;
+            courseInfo = cached.courseInfo;
+          } else {
+            console.log(`[CACHE] Cache expired (${Math.round(cacheAge / 1000 / 60 / 60)} hours old), fetching fresh data`);
+          }
+        } else {
+          console.log(`[CACHE] No cache found, fetching fresh data`);
+        }
+      }
+    } catch (cacheError) {
+      console.log(`[CACHE] Error reading cache: ${cacheError.message}`);
     }
 
-    console.log(`[TOURNAMENT] ${tournament.name} (${tournament.field.length} players)`);
+    // Step 2: If no valid cache, fetch all data
+    if (!playersWithData) {
+      console.log(`[FETCH] Fetching fresh player data...`);
 
-    const playerNames = tournament.field.map(p => p.name);
+      // Step 2a: Fetch tournament data
+      const tournamentResponse = await axios.get(`${baseUrl}/.netlify/functions/fetch-tournament?tour=${tour}`, {
+        timeout: 15000
+      });
+      tournament = tournamentResponse.data;
 
-    // Step 2-4: Fetch stats, odds, weather, and course info IN PARALLEL
-    const [statsResponse, oddsResponse, weatherData, courseInfo, recentFormData] = await Promise.all([
-      // Stats
-      axios.post(`${baseUrl}/.netlify/functions/fetch-stats`, 
-        { players: playerNames }, 
-        { timeout: 30000 }
-      ),
-      // Odds
-      axios.post(`${baseUrl}/.netlify/functions/fetch-odds`, 
-        { tournamentName: tournament.name, players: playerNames, tour: tournament.tour }, 
-        { timeout: 20000 }
-      ),
-      // Weather
-      fetchWeather(tournament.location),
-      // Course info
-      axios.get(`${baseUrl}/.netlify/functions/fetch-course-info?tour=${tour}&tournament=${encodeURIComponent(tournament.name)}`, 
-        { timeout: 10000 }
-      ).then(r => r.data),
-      // Recent form and course history
-      fetchRecentFormAndHistory(playerNames, tournament.course, tour)
-    ]);
+      if (!tournament?.field?.length) {
+        throw new Error('No tournament field data available');
+      }
 
-    const statsData = statsResponse.data;
-    const oddsData = oddsResponse.data;
+      console.log(`[TOURNAMENT] ${tournament.name} (${tournament.field.length} players)`);
 
-    console.log(`[DATA] Stats: ${statsData.players.length}, Odds: ${oddsData.odds.length}, Course: ${courseInfo.courseName || courseInfo.eventName}, Form data: ${recentFormData.players.length}`);
+      const playerNames = tournament.field.map(p => p.name);
 
-    // Step 5: Merge player data (stats + odds + form)
-    const playersWithData = mergePlayerData(statsData.players, oddsData.odds, recentFormData.players);
+      // Step 2b-2e: Fetch stats, odds, weather, and course info IN PARALLEL
+      const [statsResponse, oddsResponse, weatherResponse, courseInfoResponse, recentFormData] = await Promise.all([
+        // Stats
+        axios.post(`${baseUrl}/.netlify/functions/fetch-stats`, 
+          { players: playerNames }, 
+          { timeout: 30000 }
+        ),
+        // Odds
+        axios.post(`${baseUrl}/.netlify/functions/fetch-odds`, 
+          { tournamentName: tournament.name, players: playerNames, tour: tournament.tour }, 
+          { timeout: 20000 }
+        ),
+        // Weather
+        fetchWeather(tournament.location),
+        // Course info
+        axios.get(`${baseUrl}/.netlify/functions/fetch-course-info?tour=${tour}&tournament=${encodeURIComponent(tournament.name)}`, 
+          { timeout: 10000 }
+        ).then(r => r.data),
+        // Recent form and course history
+        fetchRecentFormAndHistory(playerNames, tournament.course, tour)
+      ]);
 
-    console.log(`[MERGE] ${playersWithData.length} players with complete data`);
+      const statsData = statsResponse.data;
+      const oddsData = oddsResponse.data;
+      weatherData = weatherResponse;
+      courseInfo = courseInfoResponse;
 
-    // Step 6: Select top 60 players by odds (lower odds = higher ranked)
+      console.log(`[DATA] Stats: ${statsData.players.length}, Odds: ${oddsData.odds.length}, Course: ${courseInfo.courseName || courseInfo.eventName}, Form data: ${recentFormData.players.length}`);
+      
+      // Check odds distribution to see if we have favorites
+      if (oddsData.odds.length > 0) {
+        const oddsValues = oddsData.odds.map(p => p.odds).sort((a, b) => a - b);
+        const lowestOdds = oddsValues.slice(0, 5);
+        console.log(`[ODDS] Top 5 lowest odds (American): ${lowestOdds.map(o => formatAmericanOdds(o)).join(', ')}`);
+        
+        // Count favorites: American odds under +1900 (equivalent to 20.0 decimal)
+        const favoritesCount = oddsValues.filter(o => o < 1900).length;
+        console.log(`[ODDS] Players with odds under +1900 (favorites): ${favoritesCount}`);
+      }
+
+      // Step 2f: Merge player data (stats + odds + form)
+      playersWithData = mergePlayerData(statsData.players, oddsData.odds, recentFormData.players);
+
+      console.log(`[MERGE] ${playersWithData.length} players with complete data`);
+      
+      // Step 2g: Save to cache
+      try {
+        const { getStore } = require('@netlify/blobs');
+        const siteID = process.env.SITE_ID;
+        const token = process.env.NETLIFY_AUTH_TOKEN;
+        
+        if (siteID && token) {
+          const store = getStore({
+            name: 'cache',
+            siteID: siteID,
+            token: token,
+            consistency: 'strong'
+          });
+          
+          await store.set(cacheKey, JSON.stringify({
+            timestamp: Date.now(),
+            players: playersWithData,
+            tournament: tournament,
+            weather: weatherData,
+            courseInfo: courseInfo
+          }));
+          
+          console.log(`[CACHE] ✅ Saved fresh data to cache`);
+        }
+      } catch (cacheError) {
+        console.log(`[CACHE] ⚠️  Failed to save cache: ${cacheError.message}`);
+      }
+    }
+
+    // Step 3: Select top 60 players by odds (lower odds = higher ranked)
     // Optimized for speed - must complete under 25 seconds to avoid Netlify timeout
     const topPlayers = playersWithData
       .sort((a, b) => a.odds - b.odds)
@@ -68,7 +157,7 @@ exports.handler = async (event, context) => {
     
     console.log(`[CLAUDE] Analyzing top ${topPlayers.length} players (optimized from ${playersWithData.length})`);
 
-    // Step 7: Call Claude API
+    // Step 4: Call Claude API
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const prompt = buildClaudePrompt(tournament, topPlayers, weatherData.summary, courseInfo);
 
@@ -89,7 +178,7 @@ exports.handler = async (event, context) => {
       throw new Error(`Claude API error: ${claudeError.message}`);
     }
 
-    // Step 8: Parse Claude response
+    // Step 5: Parse Claude response
     try {
       predictions = parseClaudeResponse(message.content[0].text);
       console.log(`[CLAUDE] Generated ${predictions.picks?.length || 0} picks`);
@@ -98,14 +187,14 @@ exports.handler = async (event, context) => {
       throw new Error(`Failed to parse Claude response: ${parseError.message}`);
     }
     
-    // Step 8.5: Validate and FIX pick distribution (1 favorite + 5 value)
+    // Step 6: Validate and FIX pick distribution (1 favorite + 5 value)
     try {
       if (predictions.picks && predictions.picks.length === 6) {
         const firstPickOdds = predictions.picks[0].odds;
         const remainingOdds = predictions.picks.slice(1).map(p => p.odds);
         
-        console.log(`[VALIDATION] Pick #1 odds: ${firstPickOdds} (should be < 20)`);
-        console.log(`[VALIDATION] Picks #2-6 odds: ${remainingOdds.join(', ')} (should all be >= 20)`);
+        console.log(`[VALIDATION] Pick #1 odds: ${formatAmericanOdds(firstPickOdds)} (should be under +1900)`);
+        console.log(`[VALIDATION] Picks #2-6 odds: ${remainingOdds.map(o => formatAmericanOdds(o)).join(', ')} (should all be +1900 or higher)`);
         
         // Find the pick with lowest odds
         let lowestOddsIndex = 0;
@@ -120,17 +209,17 @@ exports.handler = async (event, context) => {
         
         // If first pick is not the lowest, reorder
         if (lowestOddsIndex !== 0) {
-          console.warn(`[VALIDATION] ⚠️  Pick #1 odds (${firstPickOdds}) is NOT lowest! Auto-fixing by reordering...`);
+          console.warn(`[VALIDATION] ⚠️  Pick #1 odds (${formatAmericanOdds(firstPickOdds)}) is NOT lowest! Auto-fixing by reordering...`);
           const lowestPick = predictions.picks[lowestOddsIndex];
           predictions.picks.splice(lowestOddsIndex, 1);
           predictions.picks.unshift(lowestPick);
-          console.log(`[VALIDATION] ✅ Fixed! Moved ${lowestPick.player} (${lowestPick.odds}) to Pick #1`);
+          console.log(`[VALIDATION] ✅ Fixed! Moved ${lowestPick.player} (${formatAmericanOdds(lowestPick.odds)}) to Pick #1`);
         }
         
-        // Check if we even have any favorites (odds < 20)
-        if (lowestOdds >= 20) {
-          console.warn(`[VALIDATION] ⚠️  NO players with odds < 20 in this field! Lowest is ${lowestOdds}`);
-          console.log(`[VALIDATION] Using ${predictions.picks[0].player} at ${predictions.picks[0].odds} as "favorite" (best available)`);
+        // Check if we even have any favorites (odds under +1900)
+        if (lowestOdds >= 1900) {
+          console.warn(`[VALIDATION] ⚠️  NO players with odds under +1900 in this field! Lowest is ${formatAmericanOdds(lowestOdds)}`);
+          console.log(`[VALIDATION] Using ${predictions.picks[0].player} at ${formatAmericanOdds(predictions.picks[0].odds)} as "favorite" (best available)`);
         }
       }
     } catch (validationError) {
@@ -138,7 +227,7 @@ exports.handler = async (event, context) => {
       // Continue anyway - validation is not critical
     }
 
-    // Step 9: Enrich predictions with odds breakdown
+    // Step 7: Enrich predictions with odds breakdown
     try {
       enrichPredictionsWithOdds(predictions, topPlayers);
       console.log(`[ENRICH] ✅ Added odds breakdown to predictions`);
@@ -147,7 +236,7 @@ exports.handler = async (event, context) => {
       // Continue anyway - enrichment is not critical
     }
 
-    // Step 10: Calculate costs
+    // Step 8: Calculate costs
     const cost = calculateCost(message.usage);
 
     const generatedAt = new Date().toISOString();
@@ -193,7 +282,7 @@ exports.handler = async (event, context) => {
       estimatedCost: cost
     };
 
-    // Step 11: Save predictions to Netlify Blobs for results tracking
+    // Step 9: Save predictions to Netlify Blobs for results tracking
     try {
       console.log('[SAVE] Attempting to save to Netlify Blobs...');
       console.log('[SAVE] Environment check:', {
@@ -457,7 +546,8 @@ function mergePlayerData(statsPlayers, oddsPlayers, formPlayers = []) {
       
       if (!oddsEntry) return null;
 
-      const decimalOdds = americanToDecimal(oddsEntry.odds);
+      // Keep American odds format (e.g., +225, -110)
+      const americanOdds = oddsEntry.odds; // Already in American format from API
       
       // Find form data for this player
       const formData = formPlayers.find(f => 
@@ -467,7 +557,8 @@ function mergePlayerData(statsPlayers, oddsPlayers, formPlayers = []) {
       return {
         name: stat.player,
         rank: stat.stats.rank,
-        odds: decimalOdds,
+        odds: americanOdds,  // American odds (e.g., +225)
+        americanOdds: formatAmericanOdds(americanOdds), // Formatted string (e.g., "+225")
         minOdds: oddsEntry.minOdds,
         maxOdds: oddsEntry.maxOdds,
         bestBookmaker: oddsEntry.bestBookmaker,
@@ -485,7 +576,7 @@ function mergePlayerData(statsPlayers, oddsPlayers, formPlayers = []) {
       };
     })
     .filter(p => p !== null)
-    .sort((a, b) => a.odds - b.odds);
+    .sort((a, b) => a.odds - b.odds); // Lower American odds come first (e.g., +200 before +500)
 }
 
 /**
@@ -550,6 +641,14 @@ function americanToDecimal(americanOdds) {
   return americanOdds > 0 
     ? (americanOdds / 100) + 1 
     : (100 / Math.abs(americanOdds)) + 1;
+}
+
+/**
+ * Format American odds with + sign
+ */
+function formatAmericanOdds(odds) {
+  if (!odds || odds === 0) return 'N/A';
+  return odds > 0 ? `+${odds}` : `${odds}`;
 }
 
 /**
@@ -625,7 +724,8 @@ function buildClaudePrompt(tournament, players, weatherSummary, courseInfo) {
         formStr += ` | ${p.momentum}`;
       }
       
-      return `${p.name} [${p.odds?.toFixed(1)}] - R${p.rank||'?'} | SG:${p.sgTotal?.toFixed(2)} (OTT:${p.sgOTT?.toFixed(2)} APP:${p.sgAPP?.toFixed(2)} ARG:${p.sgARG?.toFixed(2)} P:${p.sgPutt?.toFixed(2)})${formStr}`;
+      // Use American odds format
+      return `${p.name} [${formatAmericanOdds(p.odds)}] - R${p.rank||'?'} | SG:${p.sgTotal?.toFixed(2)} (OTT:${p.sgOTT?.toFixed(2)} APP:${p.sgAPP?.toFixed(2)} ARG:${p.sgARG?.toFixed(2)} P:${p.sgPutt?.toFixed(2)})${formStr}`;
     })
     .join('\n');
 
@@ -664,14 +764,14 @@ ${formatPlayerList(longshots)}
 
 YOUR TASK - MULTI-FACTOR ANALYSIS:
 **🚨 CRITICAL: Select EXACTLY 6 picks with this MANDATORY distribution: 🚨**
-- **Pick #1: ONE FAVORITE (odds UNDER 20/1)** - The BEST favorite from entire field
-- **Picks #2-6: FIVE VALUE PICKS (odds 20/1 OR HIGHER)** - Best value from entire field
+- **Pick #1: ONE FAVORITE (odds UNDER +1900)** - The BEST favorite from entire field
+- **Picks #2-6: FIVE VALUE PICKS (odds +1900 OR HIGHER)** - Best value from entire field
 
 **⚠️  THIS IS ABSOLUTELY NON-NEGOTIABLE:**
-- First pick MUST have odds < 20.0 (e.g., 3.2, 8.5, 12.0, 18.5)
-- Remaining 5 picks MUST have odds >= 20.0 (e.g., 25.0, 45.0, 65.0, 85.0)
-- If you cannot find a favorite with good value, pick the BEST available under 20/1
-- DO NOT make all 6 picks from value zone (20/1+)
+- First pick MUST have odds under +1900 (e.g., +200, +500, +1200, +1800)
+- Remaining 5 picks MUST have odds +1900 or higher (e.g., +2500, +4500, +6500, +8500)
+- If you cannot find a favorite with good value, pick the BEST available under +1900
+- DO NOT make all 6 picks from value zone (+1900 and up)
 
 Use this decision framework:
 
@@ -708,21 +808,21 @@ Use this decision framework:
 
 5. ODDS DISTRIBUTION (MANDATORY):
    **PICK #1 - THE FAVORITE:**
-   - MUST be UNDER 20/1 (from the FAVORITES section)
+   - MUST be UNDER +1900 (from the FAVORITES section)
    - **CRITICAL: Choose the favorite with BEST VALUE, NOT just lowest odds!**
-   - A favorite at 12/1 with perfect fit is better than 3/1 with weak fit
+   - A favorite at +1200 with perfect fit is better than +200 with weak fit
    - Evaluate favorites using THE SAME criteria as value picks:
      * Course fit (40%) - Do their SG stats PERFECTLY match course demands?
      * Course history (20%) - Have they won/finished Top 5 here before?
      * Recent form (15%) - Are they playing well NOW (not just ranked #1)?
      * Weather (15%) - Do conditions favor their game?
-   - **Example:** Scheffler at 3/1 with mediocre course fit = SKIP
-   - **Example:** Morikawa at 14/1 with elite APP stats on precision course = PICK
+   - **Example:** Scheffler at +200 with mediocre course fit = SKIP
+   - **Example:** Morikawa at +1400 with elite APP stats on precision course = PICK
    
    **PICKS #2-6 - VALUE ZONE:**
-   - ALL 5 must be 20/1 OR HIGHER
-   - At least 3 picks MUST be 40/1 or higher
-   - Target distribution: 2 picks at 20-40/1, 2-3 picks at 40-80/1, 0-1 pick at 80-150/1
+   - ALL 5 must be +1900 OR HIGHER
+   - At least 3 picks MUST be +4000 or higher
+   - Target distribution: 2 picks at +1900 to +4000, 2-3 picks at +4000 to +8000, 0-1 pick at +8000 to +15000
 
 6. STATISTICAL QUALITY (${WEIGHTS.statisticalQuality}% - Quality Check):
    - Prefer positive SG:Total (indicates above-average player)
@@ -731,30 +831,30 @@ Use this decision framework:
 
 EXAMPLES:
 
-✅ PICK #1 - THE FAVORITE (UNDER 20/1) - VALUE-BASED SELECTION:
+✅ PICK #1 - THE FAVORITE (UNDER +1900) - VALUE-BASED SELECTION:
 
 GOOD FAVORITE (Not lowest odds, but BEST VALUE):
-"Collin Morikawa [14.0] - R5 | SG:2.45 (OTT:0.45 APP:1.65 ARG:0.25 P:0.10) | Last5: T3,T8,2,T12,T5 | ThisCourse: 1,T4 | 📈 Hot"
-→ At 14/1, elite APP stats PERFECTLY match this precision course + won here before + hot form = BEST VALUE FAVORITE
+"Collin Morikawa [+1400] - R5 | SG:2.45 (OTT:0.45 APP:1.65 ARG:0.25 P:0.10) | Last5: T3,T8,2,T12,T5 | ThisCourse: 1,T4 | 📈 Hot"
+→ At +1400, elite APP stats PERFECTLY match this precision course + won here before + hot form = BEST VALUE FAVORITE
 
 BAD FAVORITE (Lowest odds, but POOR VALUE):
-"Scottie Scheffler [3.2] - R1 | SG:3.10 (OTT:0.93 APP:1.30) | Last5: 1,T2,T5 | ThisCourse: T45,MC | ➡️ Steady"
-→ At 3/1, yes he's #1 in world but bad course history + course doesn't suit his strengths = POOR VALUE, SKIP
+"Scottie Scheffler [+220] - R1 | SG:3.10 (OTT:0.93 APP:1.30) | Last5: 1,T2,T5 | ThisCourse: T45,MC | ➡️ Steady"
+→ At +220, yes he's #1 in world but bad course history + course doesn't suit his strengths = POOR VALUE, SKIP
 
 The favorite pick should be the one where odds are MOST WRONG relative to their fit, NOT just the tournament favorite!
 
-✅ PICKS #2-6 - VALUE PICKS (20/1+):
+✅ PICKS #2-6 - VALUE PICKS (+1900 and up):
 
 VALUE PICK WITH COURSE HISTORY:
-"Player X [45.0] - R12 | SG:1.85 (OTT:0.95 APP:0.72) | Last5: T8,T15,T22,MC,T18 | ThisCourse: T5,T12 | 📈 Hot"
+"Player X [+4500] - R12 | SG:1.85 (OTT:0.95 APP:0.72) | Last5: T8,T15,T22,MC,T18 | ThisCourse: T5,T12 | 📈 Hot"
 → Perfect: Strong course fit + hot form + proven course success
 
 VALUE PICK WITHOUT COURSE HISTORY:
-"Player Z [55.0] - R18 | SG:1.92 (OTT:1.15 APP:0.68) | Last5: T5,T12,T8,T15,T10 | ThisCourse: | ➡️ Steady"
+"Player Z [+5500] - R18 | SG:1.92 (OTT:1.15 APP:0.68) | Last5: T5,T12,T8,T15,T10 | ThisCourse: | ➡️ Steady"
 → Excellent pick despite no history: Elite course fit stats + consistent Top 15 form + good value odds
 
 ❌ BAD PICK:
-"Player Y [65.0] - R45 | SG:0.45 (OTT:-0.15 APP:0.25) | Last5: MC,T45,MC,T52,MC | ThisCourse: MC,T65 | 📉 Cold"
+"Player Y [+6500] - R45 | SG:0.45 (OTT:-0.15 APP:0.25) | Last5: MC,T45,MC,T52,MC | ThisCourse: MC,T65 | 📉 Cold"
 → Poor course fit + terrible form + bad course history = avoid
 
 REASONING REQUIREMENTS:
@@ -767,8 +867,8 @@ For each pick, explain IN THIS ORDER:
 Keep to 3-4 sentences max.
 
 🚨 FINAL REMINDER BEFORE YOU OUTPUT JSON:
-- Pick #1 MUST be odds < 20.0 (a favorite)
-- Picks #2-6 MUST be odds >= 20.0 (value picks)
+- Pick #1 MUST be odds under +1900 (a favorite)
+- Picks #2-6 MUST be odds +1900 or higher (value picks)
 - Double-check your picks array before returning!
 
 Return ONLY valid JSON (no markdown):
@@ -780,41 +880,41 @@ Return ONLY valid JSON (no markdown):
   "picks": [
     {
       "player": "THE FAVORITE - Player Name",
-      "odds": 14.0,
-      "reasoning": "Pick #1 FAVORITE (UNDER 20/1): Course fit: [Specific SG stats]. Course history: [Past results]. Form: [Recent finishes]. Weather: [How conditions help]. Value: [Why this favorite is better value than lower-odds favorites]."
+      "odds": 1400,
+      "reasoning": "Pick #1 FAVORITE (UNDER +1900): Course fit: [Specific SG stats]. Course history: [Past results]. Form: [Recent finishes]. Weather: [How conditions help]. Value: [Why this favorite is better value than lower-odds favorites]."
     },
     {
       "player": "VALUE PICK - Player Name",
-      "odds": 35.0,
-      "reasoning": "Pick #2 VALUE (20/1+): Course fit: [SG match]. History: [Results or why no history OK]. Form: [Finishes]. Weather: [Impact]. Value: [Market inefficiency]."
+      "odds": 3500,
+      "reasoning": "Pick #2 VALUE (+1900 and up): Course fit: [SG match]. History: [Results or why no history OK]. Form: [Finishes]. Weather: [Impact]. Value: [Market inefficiency]."
     },
     {
       "player": "VALUE PICK - Player Name", 
-      "odds": 45.0,
-      "reasoning": "Pick #3 VALUE (20/1+): [Same structure as above]"
+      "odds": 4500,
+      "reasoning": "Pick #3 VALUE (+1900 and up): [Same structure as above]"
     },
     {
       "player": "VALUE PICK - Player Name",
-      "odds": 55.0,
-      "reasoning": "Pick #4 VALUE (20/1+): [Same structure]"
+      "odds": 5500,
+      "reasoning": "Pick #4 VALUE (+1900 and up): [Same structure]"
     },
     {
       "player": "VALUE PICK - Player Name",
-      "odds": 65.0,
-      "reasoning": "Pick #5 VALUE (40/1+): [Same structure]"
+      "odds": 6500,
+      "reasoning": "Pick #5 VALUE (+4000 and up): [Same structure]"
     },
     {
       "player": "VALUE PICK - Player Name",
-      "odds": 80.0,
-      "reasoning": "Pick #6 VALUE (40/1+): [Same structure]"
+      "odds": 8000,
+      "reasoning": "Pick #6 VALUE (+4000 and up): [Same structure]"
     }
   ]
 }
 
 CRITICAL VALIDATION BEFORE RETURNING:
-- Check Pick #1 odds < 20.0 (if not, REJECT and choose different favorite)
-- Check Picks #2-6 odds >= 20.0 (if not, REJECT and choose different players)
-- Check at least 3 of Picks #2-6 have odds >= 40.0
+- Check Pick #1 odds under +1900 (if not, REJECT and choose different favorite)
+- Check Picks #2-6 odds +1900 or higher (if not, REJECT and choose different players)
+- Check at least 3 of Picks #2-6 have odds +4000 or higher
 `;
 }
 
