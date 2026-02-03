@@ -14,8 +14,17 @@ exports.handler = async (event, context) => {
     // Get Netlify Blobs store - wrap in try-catch for better error handling
     let store, blobs;
     try {
+      const siteID = process.env.SITE_ID;
+      const token = process.env.NETLIFY_AUTH_TOKEN;
+      
+      if (!siteID || !token) {
+        throw new Error('SITE_ID or NETLIFY_AUTH_TOKEN not configured');
+      }
+      
       store = getStore({
         name: 'predictions',
+        siteID: siteID,
+        token: token,
         consistency: 'strong'
       });
       const listResult = await store.list();
