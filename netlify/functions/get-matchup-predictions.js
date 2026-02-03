@@ -4,7 +4,6 @@ const axios = require('axios');
 /**
  * Matchup Predictor Endpoint
  * Generates AI-powered head-to-head matchup predictions
- * Supports both auto-generated and custom matchups
  */
 exports.handler = async (event, context) => {
   try {
@@ -21,78 +20,91 @@ exports.handler = async (event, context) => {
     const tournament = tournamentResponse.data;
     console.log(`[MATCHUP] Tournament: ${tournament.name}`);
 
-    // Step 2: Fetch odds (this now returns ALL players in the field automatically)
-    console.log(`[MATCHUP] Fetching odds for full field...`);
+    // Step 2: Get player names from tournament field
+    const playerNames = tournament.field?.map(p => p.name) || [];
+    if (playerNames.length === 0) {
+      throw new Error('No players found in tournament field');
+    }
+
+    // Step 3: Fetch odds for these players
+    console.log(`[MATCHUP] Fetching odds for ${playerNames.length} players...`);
     const oddsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-odds`, {
       tournamentName: tournament.name,
-      players: [] // Not needed anymore
+      players: playerNames,
+      tour: tournament.tour
     }, {
       timeout: 20000
     });
     const oddsData = oddsResponse.data;
     console.log(`[MATCHUP] Received odds for ${oddsData.odds.length} players`);
 
-    // Step 3: Get player names from odds data (top 120 for stats)
-    const playerNames = oddsData.odds.slice(0, 120).map(o => o.player);
-    console.log(`[MATCHUP] Fetching stats for ${playerNames.length} players`);
+    // Step 4: Get top 80 players by odds for detailed stats
+    const topPlayerNames = oddsData.odds
+      .sort((a, b) => a.odds - b.odds)
+      .slice(0, 80)
+      .map(o => o.player);
+    
+    console.log(`[MATCHUP] Fetching stats for top ${topPlayerNames.length} players`);
     
     const statsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-stats`, {
-      players: playerNames
+      players: topPlayerNames
     }, {
       timeout: 30000
     });
     const statsData = statsResponse.data;
 
-    // Step 4: Get weather
-    let weatherInfo = 'Weather data not available';
+    // Step 5: Get weather forecast
+    let weatherData = null;
     try {
       const weatherApiKey = process.env.WEATHER_API_KEY;
       if (weatherApiKey && tournament.location) {
         const location = tournament.location.split(',')[0].trim();
-        const weatherResponse = await axios.get(`https://api.weatherapi.com/v1/current.json`, {
-          params: { key: weatherApiKey, q: location, aqi: 'no' },
+        const weatherResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-weather-forecast`, {
+          location: location,
+          startDate: tournament.dates?.split('-')[0]?.trim()
+        }, {
           timeout: 8000
         });
-        
-        if (weatherResponse.data && weatherResponse.data.current) {
-          const current = weatherResponse.data.current;
-          weatherInfo = `${Math.round(current.temp_f)}°F, ${current.condition.text}, Wind: ${Math.round(current.wind_mph)}mph`;
-        }
+        weatherData = weatherResponse.data;
+        console.log('[MATCHUP] Weather data retrieved');
       }
     } catch (weatherError) {
       console.error('[MATCHUP] Weather fetch failed:', weatherError.message);
     }
 
-    // Step 5: Get course info
-    const courseInfo = await getCourseInfo(tournament.course);
+    const weatherSummary = weatherData?.summary || 'Weather data not available';
 
-    // Step 6: Prepare player data with stats and odds (WITH CONVERSION)
+    // Step 6: Get course info
+    let courseInfo;
+    try {
+      const courseResponse = await axios.get(`${baseUrl}/.netlify/functions/fetch-course-info?tour=${tour || 'pga'}&tournament=${encodeURIComponent(tournament.name)}`, {
+        timeout: 10000
+      });
+      courseInfo = courseResponse.data;
+    } catch (courseError) {
+      console.log('[MATCHUP] Course info fetch failed, using basic info');
+      courseInfo = {
+        courseName: tournament.course,
+        eventName: tournament.name
+      };
+    }
+
+    // Step 7: Prepare player data with stats and odds (American format)
     const playersWithData = statsData.players
       .map(stat => {
         const oddsEntry = oddsData.odds.find(o => 
           normalizePlayerName(o.player) === normalizePlayerName(stat.player)
         );
         
-        // Convert American odds to decimal
-        let decimalOdds = null;
-        let decimalMinOdds = null;
-        let decimalMaxOdds = null;
-        
-        if (oddsEntry?.odds) {
-          decimalOdds = americanToDecimal(oddsEntry.odds);
-          decimalMinOdds = oddsEntry.minOdds ? americanToDecimal(oddsEntry.minOdds) : null;
-          decimalMaxOdds = oddsEntry.maxOdds ? americanToDecimal(oddsEntry.maxOdds) : null;
-          console.log(`[MATCHUP] ${stat.player}: Avg ${decimalOdds.toFixed(1)} | Best ${decimalMinOdds?.toFixed(1)} | Worst ${decimalMaxOdds?.toFixed(1)}`);
-        }
+        if (!oddsEntry) return null;
         
         return {
           name: stat.player,
           rank: stat.stats.rank,
-          odds: decimalOdds, // Average odds in decimal format
-          minOdds: decimalMinOdds, // Best odds for bettor
-          maxOdds: decimalMaxOdds, // Worst odds for bettor
-          americanOdds: oddsEntry?.americanOdds || null,
-          bookmakerCount: oddsEntry?.bookmakerCount || 0,
+          odds: oddsEntry.odds, // American odds
+          minOdds: oddsEntry.minOdds, // Decimal
+          maxOdds: oddsEntry.maxOdds, // Decimal
+          bookmakerCount: oddsEntry.bookmakerCount || 0,
           sgTotal: stat.stats.sgTotal,
           sgOTT: stat.stats.sgOTT,
           sgAPP: stat.stats.sgAPP,
@@ -100,12 +112,12 @@ exports.handler = async (event, context) => {
           sgPutt: stat.stats.sgPutt
         };
       })
-      .filter(p => p.odds !== null)
-      .sort((a, b) => (a.odds || 999) - (b.odds || 999));
+      .filter(p => p !== null)
+      .sort((a, b) => a.odds - b.odds);
 
     console.log(`[MATCHUP] ${playersWithData.length} players with complete data`);
 
-    // Step 7: Build prompt for Claude
+    // Step 8: Build prompt for Claude
     const anthropic = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY
     });
@@ -113,7 +125,7 @@ exports.handler = async (event, context) => {
     const prompt = buildMatchupPrompt(
       tournament,
       playersWithData,
-      weatherInfo,
+      weatherSummary,
       courseInfo,
       customMatchup
     );
@@ -121,7 +133,7 @@ exports.handler = async (event, context) => {
     console.log(`[MATCHUP] Calling Claude API...`);
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 4000,
+      max_tokens: 3000,
       temperature: 0.4,
       messages: [{
         role: 'user',
@@ -149,7 +161,7 @@ exports.handler = async (event, context) => {
     const outputCost = (outputTokens / 1000000) * 15.00;
     const totalCost = inputCost + outputCost;
 
-    // Step 8: Return matchup predictions
+    // Step 9: Return matchup predictions
     return {
       statusCode: 200,
       headers: {
@@ -164,7 +176,7 @@ exports.handler = async (event, context) => {
           dates: tournament.dates,
           tour: tournament.tour
         },
-        weather: weatherInfo,
+        weather: weatherSummary,
         courseInfo: courseInfo,
         suggestedMatchups: matchupData.suggestedMatchups || [],
         customMatchup: matchupData.customMatchup || null,
@@ -187,6 +199,7 @@ exports.handler = async (event, context) => {
     console.error('[MATCHUP] Error:', error);
     return {
       statusCode: 500,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         error: 'Failed to generate matchup predictions',
         message: error.message
@@ -194,21 +207,6 @@ exports.handler = async (event, context) => {
     };
   }
 };
-
-/**
- * Convert American odds to decimal odds
- */
-function americanToDecimal(americanOdds) {
-  if (!americanOdds || americanOdds === 0) return null;
-  
-  if (americanOdds > 0) {
-    // Positive American odds: +1800 = 19.0 decimal
-    return (americanOdds / 100) + 1;
-  } else {
-    // Negative American odds: -200 = 1.5 decimal
-    return (100 / Math.abs(americanOdds)) + 1;
-  }
-}
 
 /**
  * Normalize player name for matching
@@ -225,24 +223,15 @@ function normalizePlayerName(name) {
 }
 
 /**
- * Get basic course info (simplified version)
+ * Build prompt for Claude's matchup analysis - using American odds
  */
-async function getCourseInfo(courseName) {
-  return {
-    name: courseName,
-    type: 'Analyze from name',
-    keyDemands: ['Ball striking', 'Course management', 'Putting']
-  };
-}
-
-/**
- * Build prompt for Claude's matchup analysis
- */
-function buildMatchupPrompt(tournament, players, weather, courseInfo, customMatchup) {
-  // Format top 40 players for analysis
-  const topPlayers = players.slice(0, 40);
+function buildMatchupPrompt(tournament, players, weatherSummary, courseInfo, customMatchup) {
+  const formatAmericanOdds = (odds) => odds > 0 ? `+${odds}` : `${odds}`;
+  
+  // Format top 50 players for analysis
+  const topPlayers = players.slice(0, 50);
   const playerList = topPlayers.map(p => 
-    `${p.name} [${p.odds.toFixed(1)}] - SG: Total:${p.sgTotal} OTT:${p.sgOTT} APP:${p.sgAPP} ARG:${p.sgARG} Putt:${p.sgPutt}`
+    `${p.name} [${formatAmericanOdds(p.odds)}] - R${p.rank} | SG:${p.sgTotal?.toFixed(2) || 'N/A'} (OTT:${p.sgOTT?.toFixed(2) || 'N/A'} APP:${p.sgAPP?.toFixed(2) || 'N/A'} ARG:${p.sgARG?.toFixed(2) || 'N/A'} P:${p.sgPutt?.toFixed(2) || 'N/A'})`
   ).join('\n');
 
   let customMatchupPrompt = '';
@@ -252,58 +241,46 @@ function buildMatchupPrompt(tournament, players, weather, courseInfo, customMatc
     
     customMatchupPrompt = `
 CUSTOM MATCHUP REQUESTED:
-Player A: ${playerA?.name || customMatchup.playerA} [${playerA?.odds?.toFixed(1) || '?'}]
-Stats: SG Total:${playerA?.sgTotal || '?'} OTT:${playerA?.sgOTT || '?'} APP:${playerA?.sgAPP || '?'} ARG:${playerA?.sgARG || '?'} Putt:${playerA?.sgPutt || '?'}
+Player A: ${playerA?.name || customMatchup.playerA} [${playerA ? formatAmericanOdds(playerA.odds) : '?'}]
+Stats: R${playerA?.rank || '?'} | SG:${playerA?.sgTotal?.toFixed(2) || '?'} (OTT:${playerA?.sgOTT?.toFixed(2) || '?'} APP:${playerA?.sgAPP?.toFixed(2) || '?'} ARG:${playerA?.sgARG?.toFixed(2) || '?'} P:${playerA?.sgPutt?.toFixed(2) || '?'})
 
-Player B: ${playerB?.name || customMatchup.playerB} [${playerB?.odds?.toFixed(1) || '?'}]
-Stats: SG Total:${playerB?.sgTotal || '?'} OTT:${playerB?.sgOTT || '?'} APP:${playerB?.sgAPP || '?'} ARG:${playerB?.sgARG || '?'} Putt:${playerB?.sgPutt || '?'}
+Player B: ${playerB?.name || customMatchup.playerB} [${playerB ? formatAmericanOdds(playerB.odds) : '?'}]
+Stats: R${playerB?.rank || '?'} | SG:${playerB?.sgTotal?.toFixed(2) || '?'} (OTT:${playerB?.sgOTT?.toFixed(2) || '?'} APP:${playerB?.sgAPP?.toFixed(2) || '?'} ARG:${playerB?.sgARG?.toFixed(2) || '?'} P:${playerB?.sgPutt?.toFixed(2) || '?'})
 
 YOU MUST analyze this specific matchup and include it in your response as "customMatchup".
 `;
   }
 
-  return `You are a professional golf analyst specializing in head-to-head matchup predictions.
+  return `Golf analyst: Generate 4-5 interesting head-to-head matchup predictions.
 
-TOURNAMENT:
-Name: ${tournament.name}
-Course: ${tournament.course}
-Location: ${tournament.location}
-Weather: ${weather}
+TOURNAMENT: ${tournament.name}
+Course: ${courseInfo.courseName || courseInfo.eventName} | ${courseInfo.yardage || '?'}y Par ${courseInfo.par || '?'}
+Weather: ${weatherSummary}
 
-COURSE TYPE:
-The course rewards: ${courseInfo.keyDemands.join(', ')}
-
-TOP PLAYERS IN FIELD WITH STATS (decimal odds shown):
+TOP PLAYERS (American odds shown):
 ${playerList}
 
 ${customMatchupPrompt}
 
 YOUR TASK:
-1. Identify 4-5 INTERESTING suggested matchups between players with similar odds (within 10.0 of each other)
-2. For each matchup, analyze stats, course fit, and weather impact
-3. Pick a winner and provide win probability
+1. Create 4-5 INTERESTING matchups between players with similar odds (within +500 of each other)
+2. Mix of tiers: favorites (+600 to +1500), mid-tier (+1500 to +4000), longshots (+4000 to +8000)
+3. Pick winner and provide win probability (52-65% range, be realistic)
 ${customMatchup ? '4. Analyze the custom matchup requested above' : ''}
-
-MATCHUP SELECTION CRITERIA:
-- Choose players with similar decimal odds (makes it interesting)
-- Mix of favorites (10-30), mid-tier (30-60), and longshots (60-100)
-- Look for stat advantages that create clear edges
-- Consider course fit differences
 
 ANALYSIS FRAMEWORK:
 - Compare SG stats relevant to this course
-- Identify which player's strengths better match course demands
-- Consider weather impact on each player's game
-- Provide win probability (50-80% range, be realistic)
-- Explain confidence level (Low/Medium/High)
+- Identify stat advantages (who has edge in key categories)
+- Consider weather impact
+- Provide clear reasoning with specific numbers
 
-Return ONLY valid JSON (no markdown):
+Return JSON:
 {
   "suggestedMatchups": [
     {
       "playerA": {
         "name": "Player Name",
-        "odds": 22.0,
+        "odds": 1800,
         "sgOTT": 0.8,
         "sgAPP": 1.2,
         "sgARG": 0.5,
@@ -311,7 +288,7 @@ Return ONLY valid JSON (no markdown):
       },
       "playerB": {
         "name": "Player Name",
-        "odds": 24.0,
+        "odds": 2100,
         "sgOTT": 1.1,
         "sgAPP": 0.4,
         "sgARG": 0.8,
@@ -319,11 +296,11 @@ Return ONLY valid JSON (no markdown):
       },
       "pick": "Player Name",
       "winProbability": 58,
-      "confidence": "Medium-High",
-      "reasoning": "Detailed 3-4 sentence analysis comparing their stats, explaining why pick has the edge. Include specific SG stats and course fit reasoning. Example: 'Player A ranks #8 in SG:APP (1.2) vs Player B at #45 (0.4). On a course demanding precise iron play to small greens, this creates a massive advantage. Player B's superior driving (#5 SG:OTT) is negated by wide fairways. Weather forecast of 15mph winds further favors accurate ball strikers.'"
+      "confidence": "Medium",
+      "reasoning": "3-4 sentences comparing stats and explaining edge. Example: 'Player A's elite SG:APP (+1.2, ranks #8) creates massive advantage on precision course with small greens. Player B's superior driving (#5 in SG:OTT at +1.1) is negated by wide fairways. Weather forecast of calm winds favors accurate ball strikers over bombers.'"
     }
-  ],
-  "customMatchup": ${customMatchup ? `{
+  ]${customMatchup ? `,
+  "customMatchup": {
     "playerA": {
       "name": "${customMatchup.playerA}",
       "odds": null,
@@ -343,9 +320,7 @@ Return ONLY valid JSON (no markdown):
     "pick": "Player Name",
     "winProbability": 55,
     "confidence": "Medium",
-    "reasoning": "Detailed analysis of this specific matchup"
-  }` : 'null'}
-}
-
-Be specific with stat comparisons and explain WHY one player has the edge on THIS course with THIS weather.`;
+    "reasoning": "Detailed analysis"
+  }` : ''}
+}`;
 }
