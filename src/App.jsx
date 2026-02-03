@@ -46,13 +46,18 @@ function App() {
       }
       
       const url = method === 'GET' 
-        ? `${endpoint}&_=${timestamp}`
+        ? `${endpoint}${endpoint.includes('?') ? '&' : '?'}_=${timestamp}`
         : endpoint;
       
       const response = await fetch(url, options);
       
       if (!response.ok) {
-        const errorData = await response.json();
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch {
+          throw new Error(`Request failed with status ${response.status}`);
+        }
         throw new Error(errorData.message || 'Request failed');
       }
       
@@ -60,7 +65,12 @@ function App() {
       setData(prev => ({ ...prev, [dataKey]: responseData }));
       
     } catch (err) {
-      setError(err.message);
+      // Handle JSON parse errors (often due to timeout)
+      if (err.message?.includes('JSON')) {
+        setError('Request timed out or server error. Please try again.');
+      } else {
+        setError(err.message);
+      }
       console.error('Fetch error:', err);
     } finally {
       setLoading(false);
