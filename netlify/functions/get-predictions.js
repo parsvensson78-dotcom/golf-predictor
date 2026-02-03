@@ -143,11 +143,11 @@ exports.handler = async (event, context) => {
       }
     }
 
-    // Step 3: Select top 60 players by odds (lower odds = higher ranked)
-    // Optimized for speed - must complete under 25 seconds to avoid Netlify timeout
+    // Step 3: Select top 50 players by odds (lower odds = higher ranked)
+    // Optimized for speed - must complete under 28 seconds for Netlify timeout
     const topPlayers = playersWithData
       .sort((a, b) => a.odds - b.odds)
-      .slice(0, 60);
+      .slice(0, 50);
     
     console.log(`[CLAUDE] Analyzing top ${topPlayers.length} players (optimized from ${playersWithData.length})`);
 
@@ -390,9 +390,9 @@ async function fetchRecentFormAndHistory(playerNames, courseName, tour) {
           return false;
         }
         
-        // Tournament is completed if it ended at least 2 days ago
-        const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
-        const isCompleted = tourneyEndDate < twoDaysAgo;
+        // Tournament is completed if it ended at least 1 day ago
+        const oneDayAgo = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000);
+        const isCompleted = tourneyEndDate < oneDayAgo;
         
         if (tournaments.indexOf(t) < 5) {
           const dateSource = t.end_date ? 'end_date' : t.start_date ? 'start_date+4' : 'date+4';
