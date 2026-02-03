@@ -611,8 +611,21 @@ const ResultsView = ({ data, requestId }) => {
     return (
       <div className="predictions-container" key={`results-${requestId}`}>
         <div style={{textAlign: 'center', padding: '4rem 2rem'}}>
-          <h3>No Predictions Saved Yet</h3>
-          <p>Generate some predictions first, and they'll automatically be saved for results tracking!</p>
+          <h3>📊 Results Tracking</h3>
+          <p style={{fontSize: '1.1rem', marginTop: '1rem', color: '#666'}}>
+            {data.message || 'Generate some predictions first, and they will automatically be saved for results tracking!'}
+          </p>
+          {data.message?.includes('Blob storage') && (
+            <div style={{marginTop: '2rem', padding: '1.5rem', background: '#e3f2fd', borderRadius: '8px', border: '2px solid #2196F3'}}>
+              <h4 style={{color: '#1976d2', marginBottom: '1rem'}}>💡 How to Enable Results Tracking:</h4>
+              <ol style={{textAlign: 'left', display: 'inline-block', color: '#555'}}>
+                <li>Go to your Netlify site dashboard</li>
+                <li>Navigate to Site settings → Storage → Blobs</li>
+                <li>Enable Netlify Blobs</li>
+                <li>Generate predictions - they'll auto-save!</li>
+              </ol>
+            </div>
+          )}
         </div>
       </div>
     );
