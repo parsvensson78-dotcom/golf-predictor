@@ -9,6 +9,12 @@ import './App.css';
  * - Cleaner structure
  */
 
+// Helper function to format American odds
+const formatAmericanOdds = (odds) => {
+  if (!odds || odds === 0) return 'N/A';
+  return odds > 0 ? `+${odds}` : `${odds}`;
+};
+
 function App() {
   const [tour, setTour] = useState('pga');
   const [activeTab, setActiveTab] = useState('predictions');
@@ -470,10 +476,10 @@ const PredictionsView = ({ data, requestId }) => (
             </div>
             <h3 className="pick-name">{pick.player}</h3>
             <OddsBreakdown pick={pick} />
-            <div className="pick-reasoning-formatted">
-              {pick.reasoning.split('. ').filter(s => s.trim()).map((sentence, i) => (
+            <div className="pick-reasoning">
+              {pick.reasoning.split('. ').filter(s => s.trim()).map((sentence, i, arr) => (
                 <p key={i} style={{marginBottom: '0.5rem', lineHeight: '1.6', fontSize: '0.95rem'}}>
-                  {sentence.trim()}{!sentence.endsWith('.') && !sentence.endsWith('!') && !sentence.endsWith('?') ? '.' : ''}
+                  {sentence.trim()}{i < arr.length - 1 || !sentence.endsWith('.') ? '.' : ''}
                 </p>
               ))}
             </div>
