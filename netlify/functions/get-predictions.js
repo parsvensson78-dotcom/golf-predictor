@@ -469,6 +469,26 @@ function normalizePlayerName(name) {
  * Build enhanced prompt for Claude with weather analysis
  */
 function buildClaudePrompt(tournament, players, weatherSummary, courseInfo) {
+  // ========================================
+  // 🎯 WEIGHTING CONFIGURATION - EDIT HERE
+  // ========================================
+  const WEIGHTS = {
+    courseFit: 40,           // % - How well stats match course demands
+    recentForm: 10,          // % - Last 5 tournaments performance
+    courseHistory: 20,       // % - Past results at this venue (0% if no history)
+    weather: 20,             // % - Weather adaptation
+    statisticalQuality: 10   // % - Overall player quality check
+  };
+  
+  // When player has NO course history, redistribute weight:
+  const WEIGHTS_NO_HISTORY = {
+    courseFit: 50,           // Increased importance
+    recentForm: 10,          // Increased importance
+    weather: 25,             // Same
+    statisticalQuality: 15   // Increased importance
+  };
+  // ========================================
+  
   const favorites = players.slice(0, 15);
   const midTier = players.slice(15, 50);
   const longshots = players.slice(50);
@@ -543,66 +563,104 @@ ${formatPlayerList(midTier)}
 ${formatPlayerList(longshots)}
 
 YOUR TASK - MULTI-FACTOR ANALYSIS:
-Select exactly 6 VALUE picks using this decision framework:
+**CRITICAL: Select EXACTLY 6 picks with this MANDATORY distribution:**
+- **Pick #1: ONE FAVORITE (odds UNDER 20/1)** - The BEST favorite from entire field
+- **Picks #2-6: FIVE VALUE PICKS (odds 20/1 OR HIGHER)** - Best value from entire field
 
-1. COURSE FIT (Most Important - 40% weight):
+This is NON-NEGOTIABLE: You MUST include exactly 1 favorite and 5 value picks.
+
+Use this decision framework:
+
+1. COURSE FIT (Most Important - ${WEIGHTS.courseFit}% weight):
    - Match SG stats to PRIMARY SKILL DEMANDS listed above
    - Players MUST show strength in the course's key statistical categories
    - Example: Long course → prioritize high SG:OTT players
    - Example: Tight course → prioritize SG:APP and SG:ARG over SG:OTT
 
-2. RECENT FORM & MOMENTUM (Critical - 30% weight):
+2. RECENT FORM & MOMENTUM (Important - ${WEIGHTS.recentForm}% weight):
    - "Last5" shows last 5 tournament finishes (lower = better, MC = missed cut)
    - Look for players with Top 20 finishes in recent events
    - Prioritize players with 📈 Hot (improving) momentum
    - AVOID players with 📉 Cold (declining) momentum
    - Recent good form (T5, T10, T15) indicates confidence and sharp game
    
-3. COURSE HISTORY (Important - 20% weight):
+3. COURSE HISTORY (Important - ${WEIGHTS.courseHistory}% weight):
    - "ThisCourse" shows past results at THIS specific venue
-   - Players with Top 10 finishes at this course have proven they can score here
-   - Course familiarity is a HUGE advantage - prioritize players with good history
-   - If a player has never played well here, odds must be exceptional to pick them
+   - Players with Top 10 finishes at this course have PROVEN track record
+   - **IMPORTANT: Many players have NO course history (empty "ThisCourse")**
+   - **If ThisCourse is empty: Redistribute weight → ${WEIGHTS_NO_HISTORY.courseFit}% Course Fit, ${WEIGHTS_NO_HISTORY.recentForm}% Recent Form, ${WEIGHTS_NO_HISTORY.weather}% Weather**
+   - **Players WITHOUT history CAN still be great picks if:**
+     - Their SG stats are PERFECT match for course demands (strong course fit)
+     - They have excellent recent form (multiple Top 20s in Last5)
+     - Similar course types where they've succeeded
+   - **With good history: Major bonus - prioritize these players**
+   - **With bad history (MC, T65+): Requires exceptional odds to overcome**
 
-4. WEATHER ADAPTATION (10% weight):
+4. WEATHER ADAPTATION (Important - ${WEIGHTS.weather}% weight):
    - Apply weather impact analysis from above
    - Wind → favor SG:OTT (ball flight control)
    - Wet conditions → favor length (SG:OTT) and wedge play (SG:APP)
    - Calm conditions → favor putting (SG:Putt becomes critical)
 
-5. ODDS VALUE (Selection Criteria):
-   - ALL picks MUST be 20/1 or higher
-   - At least 4 picks MUST be 40/1 or higher
-   - Target distribution: 2 picks at 20-40/1, 2-3 picks at 40-80/1, 1-2 picks at 80-150/1
-   - Avoid favorites under 20/1 regardless of course fit
+5. ODDS DISTRIBUTION (MANDATORY):
+   **PICK #1 - THE FAVORITE:**
+   - MUST be UNDER 20/1 (from the FAVORITES section)
+   - **CRITICAL: Choose the favorite with BEST VALUE, NOT just lowest odds!**
+   - A favorite at 12/1 with perfect fit is better than 3/1 with weak fit
+   - Evaluate favorites using THE SAME criteria as value picks:
+     * Course fit (40%) - Do their SG stats PERFECTLY match course demands?
+     * Course history (20%) - Have they won/finished Top 5 here before?
+     * Recent form (15%) - Are they playing well NOW (not just ranked #1)?
+     * Weather (15%) - Do conditions favor their game?
+   - **Example:** Scheffler at 3/1 with mediocre course fit = SKIP
+   - **Example:** Morikawa at 14/1 with elite APP stats on precision course = PICK
+   
+   **PICKS #2-6 - VALUE ZONE:**
+   - ALL 5 must be 20/1 OR HIGHER
+   - At least 3 picks MUST be 40/1 or higher
+   - Target distribution: 2 picks at 20-40/1, 2-3 picks at 40-80/1, 0-1 pick at 80-150/1
 
-EXAMPLE GOOD PICK:
-"Player X [45.0] - R12 | SG:1.85 (OTT:0.95 APP:0.72 ARG:0.08 P:0.10) | Last5: T8,T15,T22,MC,T18 | ThisCourse: T5,T12 | 📈 Hot"
-→ Good course fit (high OTT/APP for long course), hot form, excellent course history
-
-EXAMPLE BAD PICK:
-"Player Y [65.0] - R45 | SG:0.45 (OTT:-0.15 APP:0.25 ARG:0.20 P:0.15) | Last5: MC,T45,MC,T52,MC | ThisCourse: MC,T65 | 📉 Cold"
-→ Poor course fit, terrible recent form, no course success, declining momentum
-
-2. WEATHER ADAPTATION (Important - 25% weight):
-   - Apply weather impact analysis from above
-   - Wind → favor SG:OTT (ball flight control)
-   - Wet conditions → favor length (SG:OTT) and wedge play (SG:APP)
-   - Calm conditions → favor putting (SG:Putt becomes critical)
-
-6. STATISTICAL QUALITY:
+6. STATISTICAL QUALITY (${WEIGHTS.statisticalQuality}% - Quality Check):
    - Prefer positive SG:Total (indicates above-average player)
    - Look for "unbalanced" players (one great SG stat that matches course needs)
    - Example: Player with +1.2 SG:OTT but only +0.2 SG:Putt might be undervalued on long course
 
+EXAMPLES:
+
+✅ PICK #1 - THE FAVORITE (UNDER 20/1) - VALUE-BASED SELECTION:
+
+GOOD FAVORITE (Not lowest odds, but BEST VALUE):
+"Collin Morikawa [14.0] - R5 | SG:2.45 (OTT:0.45 APP:1.65 ARG:0.25 P:0.10) | Last5: T3,T8,2,T12,T5 | ThisCourse: 1,T4 | 📈 Hot"
+→ At 14/1, elite APP stats PERFECTLY match this precision course + won here before + hot form = BEST VALUE FAVORITE
+
+BAD FAVORITE (Lowest odds, but POOR VALUE):
+"Scottie Scheffler [3.2] - R1 | SG:3.10 (OTT:0.93 APP:1.30) | Last5: 1,T2,T5 | ThisCourse: T45,MC | ➡️ Steady"
+→ At 3/1, yes he's #1 in world but bad course history + course doesn't suit his strengths = POOR VALUE, SKIP
+
+The favorite pick should be the one where odds are MOST WRONG relative to their fit, NOT just the tournament favorite!
+
+✅ PICKS #2-6 - VALUE PICKS (20/1+):
+
+VALUE PICK WITH COURSE HISTORY:
+"Player X [45.0] - R12 | SG:1.85 (OTT:0.95 APP:0.72) | Last5: T8,T15,T22,MC,T18 | ThisCourse: T5,T12 | 📈 Hot"
+→ Perfect: Strong course fit + hot form + proven course success
+
+VALUE PICK WITHOUT COURSE HISTORY:
+"Player Z [55.0] - R18 | SG:1.92 (OTT:1.15 APP:0.68) | Last5: T5,T12,T8,T15,T10 | ThisCourse: | ➡️ Steady"
+→ Excellent pick despite no history: Elite course fit stats + consistent Top 15 form + good value odds
+
+❌ BAD PICK:
+"Player Y [65.0] - R45 | SG:0.45 (OTT:-0.15 APP:0.25) | Last5: MC,T45,MC,T52,MC | ThisCourse: MC,T65 | 📉 Cold"
+→ Poor course fit + terrible form + bad course history = avoid
+
 REASONING REQUIREMENTS:
-For each pick, explain:
-- PRIMARY SKILL match (specific SG stat + course demand)
-- RECENT FORM (mention specific finishes and momentum)
-- COURSE HISTORY (if applicable - big advantage!)
-- WEATHER impact (how conditions favor this player)
-- VALUE case (why odds are too high given the above factors)
-- Keep to 3-4 sentences max
+For each pick, explain IN THIS ORDER:
+1. **COURSE FIT (${WEIGHTS.courseFit}%)** - Which PRIMARY SKILL DEMANDS they satisfy (specific SG stats)
+2. **COURSE HISTORY (${WEIGHTS.courseHistory}%)** - Past results here OR explain why no history doesn't matter
+3. **RECENT FORM (${WEIGHTS.recentForm}%)** - Mention specific finishes and momentum trend
+4. **WEATHER (${WEIGHTS.weather}%)** - How conditions favor this player's game
+5. **VALUE (${WEIGHTS.statisticalQuality}%)** - Why odds are too high given all factors above
+Keep to 3-4 sentences max.
 
 Return ONLY valid JSON (no markdown):
 {
