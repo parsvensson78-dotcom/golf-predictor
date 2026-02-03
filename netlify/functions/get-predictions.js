@@ -322,6 +322,9 @@ function mergePlayerData(statsPlayers, oddsPlayers) {
           gir: playerStats.gir
         },
         odds: oddsPlayer.odds,
+        minOdds: oddsPlayer.minOdds,
+        maxOdds: oddsPlayer.maxOdds,
+        bestBookmaker: oddsPlayer.bestBookmaker,
         bookmakers: oddsPlayer.bookmakers || []
       };
     })
@@ -356,17 +359,27 @@ function enrichPredictionsWithOdds(predictions, playersWithData) {
       normalizePlayerName(p.name) === normalizePlayerName(pick.player)
     );
 
-    if (playerData?.bookmakers?.length > 0) {
-      const bookmakerOdds = playerData.bookmakers.map(b => b.odds).filter(o => o > 0);
+    if (playerData) {
+      // Add odds breakdown if available
+      if (playerData.minOdds) pick.minOdds = playerData.minOdds;
+      if (playerData.maxOdds) pick.maxOdds = playerData.maxOdds;
+      if (playerData.bestBookmaker) pick.bestBookmaker = playerData.bestBookmaker;
       
-      if (bookmakerOdds.length > 0) {
-        pick.minOdds = Math.min(...bookmakerOdds);
-        pick.maxOdds = Math.max(...bookmakerOdds);
+      // Also check for bookmakers array as backup
+      if (playerData.bookmakers?.length > 0) {
+        const bookmakerOdds = playerData.bookmakers.map(b => b.odds).filter(o => o > 0);
         
-        const bestBookmaker = playerData.bookmakers.reduce((best, current) => 
-          current.odds > best.odds ? current : best
-        );
-        pick.bestBookmaker = bestBookmaker.bookmaker;
+        if (bookmakerOdds.length > 0) {
+          pick.minOdds = pick.minOdds || Math.min(...bookmakerOdds);
+          pick.maxOdds = pick.maxOdds || Math.max(...bookmakerOdds);
+          
+          if (!pick.bestBookmaker) {
+            const bestBookmaker = playerData.bookmakers.reduce((best, current) => 
+              current.odds > best.odds ? current : best
+            );
+            pick.bestBookmaker = bestBookmaker.bookmaker;
+          }
+        }
       }
     }
   });
