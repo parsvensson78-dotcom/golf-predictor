@@ -69,6 +69,7 @@ exports.handler = async (event, context) => {
 
     let message, predictions;
     try {
+      const claudeStartTime = Date.now();
       console.log(`[CLAUDE] Sending request to Claude API...`);
       message = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
@@ -76,7 +77,8 @@ exports.handler = async (event, context) => {
         temperature: 0.3,
         messages: [{ role: 'user', content: prompt }]
       });
-      console.log(`[CLAUDE] ✅ Received response from Claude API`);
+      const claudeDuration = ((Date.now() - claudeStartTime) / 1000).toFixed(1);
+      console.log(`[CLAUDE] ✅ Received response from Claude API (took ${claudeDuration}s)`);
     } catch (claudeError) {
       console.error(`[CLAUDE] ❌ API call failed:`, claudeError.message);
       throw new Error(`Claude API error: ${claudeError.message}`);
@@ -304,9 +306,29 @@ async function fetchRecentFormAndHistory(playerNames, courseName, tour) {
       ? scheduleResponse.data.schedule 
       : Object.values(scheduleResponse.data.schedule);
 
+    console.log(`[FORM] Fetched ${tournaments.length} tournaments from schedule`);
+    
+    // Log a sample to see the structure
+    if (tournaments.length > 0) {
+      const sample = tournaments[0];
+      console.log(`[FORM] Sample tournament structure:`, JSON.stringify({
+        event_name: sample.event_name,
+        event_completed: sample.event_completed,
+        date: sample.date,
+        start_date: sample.start_date,
+        end_date: sample.end_date
+      }));
+    }
+
     // Get last 10 completed tournaments
     const completedTournaments = tournaments
-      .filter(t => t.event_completed)
+      .filter(t => {
+        const isCompleted = t.event_completed === true;
+        if (!isCompleted && tournaments.indexOf(t) < 5) {
+          console.log(`[FORM] Tournament "${t.event_name}" - event_completed: ${t.event_completed}`);
+        }
+        return isCompleted;
+      })
       .sort((a, b) => new Date(b.date) - new Date(a.date))
       .slice(0, 10);
 
