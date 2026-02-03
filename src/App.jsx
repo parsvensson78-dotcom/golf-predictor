@@ -46,7 +46,7 @@ function App() {
       }
       
       const url = method === 'GET' 
-        ? `${endpoint}&_=${timestamp}`
+        ? `${endpoint}${endpoint.includes('?') ? '&' : '?'}_=${timestamp}`
         : endpoint;
       
       const response = await fetch(url, options);
@@ -188,7 +188,7 @@ const ActionButton = ({ activeTab, loading, onGetPredictions, onGetAvoidPicks, o
     avoid: { text: 'Get Avoid Picks', handler: onGetAvoidPicks },
     news: { text: 'Get News & Preview', handler: onGetNews },
     matchups: { text: 'Get Matchup Predictions', handler: onGetMatchups },
-    results: { text: 'View Results History', handler: onGetResults }
+    results: { text: 'Load Results History', handler: onGetResults }
   };
 
   const config = buttonConfig[activeTab];
@@ -200,7 +200,7 @@ const ActionButton = ({ activeTab, loading, onGetPredictions, onGetAvoidPicks, o
         onClick={config.handler}
         disabled={loading}
       >
-        {loading ? 'Analyzing...' : config.text}
+        {config.text}
       </button>
     </div>
   );
@@ -210,242 +210,17 @@ const ActionButton = ({ activeTab, loading, onGetPredictions, onGetAvoidPicks, o
 const LoadingState = ({ requestId }) => (
   <div className="loading" key={`loading-${requestId}`}>
     <div className="spinner"></div>
-    <p>Analyzing complete tournament field...</p>
-    <p className="loading-subtext">Evaluating 120+ players for value picks</p>
+    <h3>Analyzing Tournament Data...</h3>
+    <p className="loading-subtext">Fetching stats, odds, weather & generating AI predictions</p>
   </div>
 );
 
 // ==================== ERROR STATE ====================
 const ErrorState = ({ error, onRetry, requestId }) => (
   <div className="error" key={`error-${requestId}`}>
-    <p>❌ {error}</p>
-    <button onClick={onRetry}>Retry</button>
-  </div>
-);
-
-// ==================== SHARED COMPONENTS ====================
-const TournamentInfo = ({ tournament }) => (
-  <div className="tournament-info">
-    <h2>{tournament.name}</h2>
-    <div className="tournament-details">
-      <span>📍 {tournament.course}</span>
-      <span>📅 {tournament.dates}</span>
-    </div>
-  </div>
-);
-
-const WeatherForecast = ({ dailyForecast }) => {
-  if (!dailyForecast?.length) return null;
-  
-  return (
-    <div className="weather-forecast-section">
-      <h3>🌤️ Tournament Week Forecast</h3>
-      <div className="daily-forecast-grid">
-        {dailyForecast.map((day, index) => (
-          <div key={index} className="forecast-day-card">
-            <div className="forecast-day-name">{day.day}</div>
-            <div className="forecast-temp">
-              <span className="temp-high">{day.tempHigh}°</span>
-              <span className="temp-divider">/</span>
-              <span className="temp-low">{day.tempLow}°</span>
-            </div>
-            <div className="forecast-condition">{day.condition}</div>
-            <div className="forecast-details">
-              <span className="forecast-wind">💨 {day.windSpeed}mph</span>
-              {day.chanceOfRain > 30 && (
-                <span className="forecast-rain">🌧️ {day.chanceOfRain}%</span>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-const CourseDetails = ({ courseInfo, courseAnalysis }) => {
-  if (!courseInfo) return null;
-
-  return (
-    <div className="course-details-card">
-      <div className="course-header-section">
-        <h3>⛳ Course Profile: {courseInfo.name}</h3>
-        {courseInfo.difficulty && (
-          <span className="difficulty-badge">{courseInfo.difficulty}</span>
-        )}
-      </div>
-
-      <div className="course-overview">
-        <h4>📏 Course Specifications</h4>
-        <div className="course-stats-grid">
-          {courseInfo.yardage && (
-            <div className="course-stat highlight">
-              <span className="stat-label">Total Length</span>
-              <span className="stat-value">{courseInfo.yardage.toLocaleString()}</span>
-              <span className="stat-unit">yards</span>
-            </div>
-          )}
-          <div className="course-stat">
-            <span className="stat-label">Par</span>
-            <span className="stat-value">{courseInfo.par}</span>
-            <span className="stat-unit">strokes</span>
-          </div>
-          {courseInfo.avgScore && (
-            <>
-              <div className="course-stat">
-                <span className="stat-label">Tour Average</span>
-                <span className="stat-value">{courseInfo.avgScore}</span>
-                <span className="stat-unit">strokes</span>
-              </div>
-              {courseInfo.par && (
-                <div className="course-stat">
-                  <span className="stat-label">Scoring Margin</span>
-                  <span className="stat-value">
-                    {(courseInfo.avgScore - courseInfo.par) > 0 ? '+' : ''}
-                    {(courseInfo.avgScore - courseInfo.par).toFixed(1)}
-                  </span>
-                  <span className="stat-unit">vs par</span>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="course-characteristics-detailed">
-        <h4>🏌️ Course Characteristics</h4>
-        <div className="characteristics-grid">
-          <CharacteristicCard icon="🎯" title="Fairways" content={courseInfo.width} />
-          <CharacteristicCard icon="🟢" title="Greens" content={courseInfo.greens} />
-          <CharacteristicCard icon="🌿" title="Rough" content={courseInfo.rough} />
-        </div>
-      </div>
-
-      {courseAnalysis?.notes && (
-        <div className="course-notes-section">
-          <h4>📝 Course Setup & Betting Insights</h4>
-          <div className="course-notes-content">
-            <p>{courseAnalysis.notes}</p>
-          </div>
-        </div>
-      )}
-
-      {courseInfo.keyFeatures?.length > 0 && (
-        <div className="key-features-detailed">
-          <h4>⭐ Signature Course Features</h4>
-          <div className="features-grid">
-            {courseInfo.keyFeatures.map((feature, idx) => (
-              <div key={idx} className="feature-item">
-                <span className="feature-bullet">⛳</span>
-                <span className="feature-text">{feature}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {courseInfo.rewards?.length > 0 && (
-        <div className="rewards-skills-detailed">
-          <h4>💪 Critical Skills for Success</h4>
-          <p className="skills-intro">This course rewards players who excel in:</p>
-          <div className="skills-tags">
-            {courseInfo.rewards.map((skill, idx) => (
-              <span key={idx} className="skill-tag-enhanced">
-                <span className="skill-number">{idx + 1}</span>
-                {skill}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const CharacteristicCard = ({ icon, title, content }) => (
-  <div className="characteristic-card">
-    <div className="char-icon">{icon}</div>
-    <div className="char-content">
-      <strong>{title}</strong>
-      <p>{content}</p>
-    </div>
-  </div>
-);
-
-const CourseAnalysis = ({ courseAnalysis }) => {
-  if (!courseAnalysis) return null;
-
-  return (
-    <div className="course-analysis">
-      <h3>📊 Course Analysis</h3>
-      <div className="analysis-item">
-        <strong>Course Type:</strong> {courseAnalysis.type}
-      </div>
-      <div className="analysis-item">
-        <strong>Weather Impact:</strong> {courseAnalysis.weatherImpact}
-      </div>
-      {courseAnalysis.keyFactors?.length > 0 && (
-        <div className="analysis-item">
-          <strong>Key Success Factors:</strong>
-          <ul className="factors-list">
-            {courseAnalysis.keyFactors.map((factor, idx) => (
-              <li key={idx}>{factor}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const OddsBreakdown = ({ pick }) => {
-  if (!pick.minOdds || !pick.maxOdds) return null;
-
-  return (
-    <div className="odds-breakdown">
-      <div className="odds-breakdown-item">
-        <span className="odds-breakdown-label">Best:</span>
-        <span className="odds-breakdown-value best">{Math.round(pick.minOdds)}/1</span>
-        {pick.bestBookmaker && <span className="odds-breakdown-book">({pick.bestBookmaker})</span>}
-      </div>
-      <div className="odds-breakdown-item">
-        <span className="odds-breakdown-label">Avg:</span>
-        <span className="odds-breakdown-value avg">{Math.round(pick.odds)}/1</span>
-      </div>
-      <div className="odds-breakdown-item">
-        <span className="odds-breakdown-label">Worst:</span>
-        <span className="odds-breakdown-value worst">{Math.round(pick.maxOdds)}/1</span>
-        {pick.worstBookmaker && <span className="odds-breakdown-book">({pick.worstBookmaker})</span>}
-      </div>
-    </div>
-  );
-};
-
-const FooterInfo = ({ data }) => (
-  <div className="footer-info">
-    <p className="generated-time">
-      Generated: {new Date(data.generatedAt).toLocaleString()}
-    </p>
-    {data.tokensUsed && (
-      <div className="api-usage-info">
-        <div className="token-info">
-          <span className="token-label">API tokens:</span>
-          <span className="token-value">{data.tokensUsed.toLocaleString()}</span>
-          {data.tokenBreakdown && (
-            <span className="token-breakdown">
-              (↓{data.tokenBreakdown.input.toLocaleString()} 
-              ↑{data.tokenBreakdown.output.toLocaleString()})
-            </span>
-          )}
-        </div>
-        {data.estimatedCost && (
-          <div className="cost-info">
-            <span className="cost-label">Estimated cost:</span>
-            <span className="cost-value">{data.estimatedCost.formatted}</span>
-          </div>
-        )}
-      </div>
-    )}
+    <h3>❌ Error</h3>
+    <p>{error}</p>
+    <button onClick={onRetry}>Try Again</button>
   </div>
 );
 
@@ -453,28 +228,12 @@ const FooterInfo = ({ data }) => (
 const PredictionsView = ({ data, requestId }) => (
   <div className="predictions-container" key={`predictions-${requestId}-${data.generatedAt}`}>
     <TournamentInfo tournament={data.tournament} />
-    <WeatherForecast dailyForecast={data.dailyForecast} />
-    <CourseDetails courseInfo={data.courseInfo} courseAnalysis={data.courseAnalysis} />
-    <CourseAnalysis courseAnalysis={data.courseAnalysis} />
     
-    <div className="picks-section">
-      <h3>💎 Value Picks</h3>
-      <div className="picks-grid">
-        {data.predictions?.map((pick, index) => (
-          <div key={`pick-${requestId}-${index}`} className="pick-card">
-            <div className="pick-header">
-              <span className="pick-number">#{index + 1}</span>
-              <div className="odds-container">
-                <span className="pick-odds">{Math.round(pick.odds)}/1</span>
-              </div>
-            </div>
-            <h3 className="pick-name">{pick.player}</h3>
-            <OddsBreakdown pick={pick} />
-            <p className="pick-reasoning">{pick.reasoning}</p>
-          </div>
-        ))}
-      </div>
-    </div>
+    {data.dailyForecast?.length > 0 && <DailyWeatherForecast daily={data.dailyForecast} />}
+    
+    <CourseDetailsCard courseInfo={data.courseInfo} courseAnalysis={data.courseAnalysis} />
+    
+    <PredictionCards predictions={data.predictions} />
     
     <FooterInfo data={data} />
   </div>
@@ -482,27 +241,263 @@ const PredictionsView = ({ data, requestId }) => (
 
 // ==================== AVOID PICKS VIEW ====================
 const AvoidPicksView = ({ data, requestId }) => (
-  <div className="avoid-picks-container" key={`avoid-${requestId}-${data.generatedAt}`}>
+  <div className="predictions-container" key={`avoid-${requestId}-${data.generatedAt}`}>
     <TournamentInfo tournament={data.tournament} />
     
-    <div className="avoid-section">
-      <h3>❌ Players to Avoid (Poor Course Fit)</h3>
-      <p className="avoid-subtitle">{data.reasoning}</p>
-      <div className="avoid-grid">
-        {data.avoidPicks?.map((avoid, index) => (
-          <div key={`avoid-${requestId}-${index}`} className="avoid-card">
-            <div className="avoid-header">
-              <span className="avoid-icon">⚠️</span>
-              <span className="avoid-odds">{Math.round(avoid.odds)}/1</span>
-            </div>
-            <h4 className="avoid-name">{avoid.player}</h4>
-            <p className="avoid-reasoning">{avoid.reasoning}</p>
-          </div>
-        ))}
-      </div>
-    </div>
+    {data.dailyForecast?.length > 0 && <DailyWeatherForecast daily={data.dailyForecast} />}
+    
+    <CourseDetailsCard courseInfo={data.courseInfo} courseAnalysis={data.courseAnalysis} />
+    
+    <AvoidPicksCards picks={data.avoidPicks} />
     
     <FooterInfo data={data} />
+  </div>
+);
+
+// ==================== TOURNAMENT INFO ====================
+const TournamentInfo = ({ tournament }) => (
+  <div className="tournament-info">
+    <h2>{tournament.name}</h2>
+    <div className="tournament-details">
+      <span>🏌️ {tournament.course}</span>
+      <span>📍 {tournament.location}</span>
+      <span>📅 {tournament.dates}</span>
+      <span>🌍 {tournament.tour === 'pga' ? 'PGA Tour' : 'DP World Tour'}</span>
+    </div>
+  </div>
+);
+
+// ==================== DAILY WEATHER FORECAST ====================
+const DailyWeatherForecast = ({ daily }) => (
+  <div className="weather-forecast-section">
+    <h3>☀️ 4-Day Weather Forecast</h3>
+    <div className="daily-forecast-grid">
+      {daily.map((day, index) => (
+        <div key={index} className="forecast-day-card">
+          <div className="forecast-day-name">{day.day}</div>
+          <div className="forecast-temp">
+            <span className="temp-high">{day.tempHigh}°</span>
+            <span className="temp-divider">/</span>
+            <span className="temp-low">{day.tempLow}°</span>
+          </div>
+          <div className="forecast-condition">{day.condition}</div>
+          <div className="forecast-details">
+            <span className="forecast-wind">💨 {day.windSpeed}mph</span>
+            <span className="forecast-rain">☔ {day.chanceOfRain}%</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+// ==================== COURSE DETAILS CARD ====================
+const CourseDetailsCard = ({ courseInfo, courseAnalysis }) => {
+  const hasBasicInfo = courseInfo.par || courseInfo.yardage || courseInfo.width || courseInfo.greens || courseInfo.rough;
+  const hasDetailedInfo = courseInfo.keyFeatures?.length > 0 || courseInfo.rewards?.length > 0;
+  
+  if (!hasBasicInfo && !hasDetailedInfo) return null;
+
+  return (
+    <div className="course-details-card">
+      <div className="course-header-section">
+        <h3>⛳ {courseInfo.name || courseInfo.courseName || 'Course Details'}</h3>
+        {courseInfo.difficulty && (
+          <span className="difficulty-badge">{courseInfo.difficulty}</span>
+        )}
+      </div>
+
+      {(courseInfo.par || courseInfo.yardage || courseInfo.avgScore) && (
+        <div className="course-overview">
+          <h4>📊 Course Statistics</h4>
+          <div className="course-stats-grid">
+            {courseInfo.par && (
+              <div className="course-stat highlight">
+                <div className="stat-label">Par</div>
+                <div className="stat-value">{courseInfo.par}</div>
+              </div>
+            )}
+            {courseInfo.yardage && (
+              <div className="course-stat highlight">
+                <div className="stat-label">Yardage</div>
+                <div className="stat-value">{courseInfo.yardage.toLocaleString()}</div>
+                <div className="stat-unit">yards</div>
+              </div>
+            )}
+            {courseInfo.avgScore && (
+              <div className="course-stat">
+                <div className="stat-label">Avg Score</div>
+                <div className="stat-value">{courseInfo.avgScore}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {(courseInfo.width || courseInfo.greens || courseInfo.rough) && (
+        <div className="course-characteristics-detailed">
+          <h4>🎯 Course Characteristics</h4>
+          <div className="characteristics-grid">
+            {courseInfo.width && (
+              <div className="characteristic-card">
+                <span className="char-icon">↔️</span>
+                <div className="char-content">
+                  <div className="char-label">Fairway Width</div>
+                  <div className="char-value">{courseInfo.width}</div>
+                </div>
+              </div>
+            )}
+            {courseInfo.greens && (
+              <div className="characteristic-card">
+                <span className="char-icon">🟢</span>
+                <div className="char-content">
+                  <div className="char-label">Greens</div>
+                  <div className="char-value">{courseInfo.greens}</div>
+                </div>
+              </div>
+            )}
+            {courseInfo.rough && (
+              <div className="characteristic-card">
+                <span className="char-icon">🌾</span>
+                <div className="char-content">
+                  <div className="char-label">Rough</div>
+                  <div className="char-value">{courseInfo.rough}</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {courseInfo.keyFeatures?.length > 0 && (
+        <div className="key-features-detailed">
+          <h4>🔑 Key Course Features</h4>
+          <div className="features-grid">
+            {courseInfo.keyFeatures.map((feature, index) => (
+              <div key={index} className="feature-item-detailed">
+                <span className="feature-bullet">•</span>
+                <span>{feature}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {courseAnalysis && (
+        <div className="course-analysis-section">
+          <h4>🧠 AI Course Analysis</h4>
+          {courseAnalysis.type && (
+            <div className="analysis-block">
+              <div className="analysis-subtitle">Course Type & Setup</div>
+              <p>{courseAnalysis.type}</p>
+            </div>
+          )}
+          {courseAnalysis.weatherImpact && (
+            <div className="analysis-block">
+              <div className="analysis-subtitle">Weather Impact</div>
+              <p>{courseAnalysis.weatherImpact}</p>
+            </div>
+          )}
+          {courseAnalysis.keyFactors?.length > 0 && (
+            <div className="analysis-block">
+              <div className="analysis-subtitle">Key Success Factors</div>
+              <ul className="key-factors-list">
+                {courseAnalysis.keyFactors.map((factor, index) => (
+                  <li key={index}>{factor}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {courseAnalysis.notes && (
+            <div className="analysis-block">
+              <div className="analysis-subtitle">Additional Notes</div>
+              <p>{courseAnalysis.notes}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {courseInfo.rewards?.length > 0 && (
+        <div className="rewards-skills-detailed">
+          <h4>💪 Skills Rewarded</h4>
+          <div className="skills-tags">
+            {courseInfo.rewards.map((skill, index) => (
+              <span key={index} className="skill-tag-enhanced">{skill}</span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ==================== PREDICTION CARDS ====================
+const PredictionCards = ({ predictions }) => (
+  <div className="predictions-grid">
+    {predictions.map((pick, index) => (
+      <div key={index} className="prediction-card">
+        <div className="pick-number">Pick #{index + 1}</div>
+        <h3 className="player-name">{pick.player}</h3>
+        <div className="odds-display">{Math.round(pick.odds)}/1</div>
+        
+        {(pick.minOdds || pick.maxOdds || pick.bestBookmaker) && (
+          <div className="odds-breakdown">
+            {pick.bestBookmaker && pick.maxOdds && (
+              <div className="odds-breakdown-item">
+                <span className="odds-breakdown-label">Best</span>
+                <span className="odds-breakdown-value best">{Math.round(pick.maxOdds)}/1</span>
+                <span className="odds-breakdown-book">{pick.bestBookmaker}</span>
+              </div>
+            )}
+            {pick.odds && (
+              <div className="odds-breakdown-item">
+                <span className="odds-breakdown-label">Avg</span>
+                <span className="odds-breakdown-value avg">{Math.round(pick.odds)}/1</span>
+              </div>
+            )}
+            {pick.minOdds && (
+              <div className="odds-breakdown-item">
+                <span className="odds-breakdown-label">Worst</span>
+                <span className="odds-breakdown-value worst">{Math.round(pick.minOdds)}/1</span>
+              </div>
+            )}
+          </div>
+        )}
+        
+        <p className="reasoning">{pick.reasoning}</p>
+      </div>
+    ))}
+  </div>
+);
+
+// ==================== AVOID PICKS CARDS ====================
+const AvoidPicksCards = ({ picks }) => (
+  <div className="avoid-picks-section">
+    <h3>❌ Players to Avoid This Week</h3>
+    <p className="avoid-subtitle">Course mismatches • Recent form concerns • Statistical red flags</p>
+    <div className="avoid-picks-grid">
+      {picks.map((pick, index) => (
+        <div key={index} className="avoid-card">
+          <div className="avoid-header">
+            <h4>{pick.player}</h4>
+            <span className="avoid-odds">{Math.round(pick.odds)}/1</span>
+          </div>
+          <p className="avoid-reasoning">{pick.reasoning}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+// ==================== FOOTER INFO ====================
+const FooterInfo = ({ data }) => (
+  <div className="api-usage-info">
+    <div className="token-info">
+      💬 Tokens: {data.tokensUsed?.toLocaleString() || 'N/A'}
+    </div>
+    <div className="cost-info">
+      💰 Cost: {data.estimatedCost || 'N/A'}
+    </div>
   </div>
 );
 
