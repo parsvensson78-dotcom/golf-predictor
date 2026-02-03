@@ -2,6 +2,8 @@ const { getStore } = require('@netlify/blobs');
 
 /**
  * Save predictions using Netlify Blobs for persistent storage
+ * Note: Predictions are now automatically saved by get-predictions.js
+ * This endpoint is kept for manual saves if needed
  */
 exports.handler = async (event, context) => {
   try {
@@ -37,7 +39,8 @@ exports.handler = async (event, context) => {
         course: tournament.course,
         location: tournament.location,
         dates: tournament.dates,
-        tour: tournament.tour
+        tour: tournament.tour,
+        eventId: tournament.eventId
       },
       courseInfo: {
         par: courseInfo?.par,
