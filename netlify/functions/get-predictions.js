@@ -692,7 +692,16 @@ WEIGHTS: Course Fit 40%, History 20%, Form 15%, Weather 15%, Quality 10%
 
 Pick 6 players with best value (performance potential vs odds). Mix odds ranges for diversification.
 
-Return JSON with picks array (player, odds, reasoning).
+Return ONLY JSON:
+{
+  "courseType": "Brief course analysis (2-3 sentences)",
+  "weatherImpact": "How weather affects play (2 sentences)",
+  "keyFactors": ["Factor 1", "Factor 2", "Factor 3", "Factor 4"],
+  "courseNotes": "Betting insights: which player types over/underpriced (2-3 sentences)",
+  "picks": [
+    {"player": "Name", "odds": 1400, "reasoning": "Course fit + history + form + weather + value"}
+  ]
+}`;
 }
 
 /**
