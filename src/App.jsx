@@ -94,7 +94,6 @@ function App() {
     const uniqueId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     console.log(`[BUTTON] Get Predictions button clicked - Request ID: ${uniqueId}`);
     
-    // Set a message about expected wait time
     setError(null);
     setLoading(true);
     
