@@ -18,6 +18,19 @@ exports.handler = async (event, context) => {
 
     console.log(`[SAVE] Saving predictions for ${tournament.name}`);
 
+    // Check if Netlify Blobs is properly configured
+    if (!process.env.NETLIFY) {
+      console.log('[SAVE] Not running on Netlify - skipping blob storage');
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          success: false,
+          message: 'Blob storage only available when deployed on Netlify'
+        })
+      };
+    }
+
     // Get Netlify Blobs store
     const store = getStore('predictions');
 
