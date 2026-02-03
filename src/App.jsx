@@ -30,6 +30,8 @@ function App() {
     setError(null);
     setLoading(true);
     
+    console.log(`[FETCH] Starting request #${newRequestId} to ${endpoint}`);
+    
     try {
       const timestamp = Date.now();
       const options = {
@@ -49,7 +51,9 @@ function App() {
         ? `${endpoint}${endpoint.includes('?') ? '&' : '?'}_=${timestamp}`
         : endpoint;
       
+      console.log(`[FETCH] Calling: ${url}`);
       const response = await fetch(url, options);
+      console.log(`[FETCH] Response status: ${response.status}`);
       
       if (!response.ok) {
         let errorData;
@@ -62,9 +66,11 @@ function App() {
       }
       
       const responseData = await response.json();
+      console.log(`[FETCH] Request #${newRequestId} completed successfully`);
       setData(prev => ({ ...prev, [dataKey]: responseData }));
       
     } catch (err) {
+      console.error(`[FETCH] Request #${newRequestId} failed:`, err);
       // Handle JSON parse errors (often due to timeout)
       if (err.message?.includes('JSON')) {
         setError('Request timed out or server error. Please try again.');
@@ -74,11 +80,14 @@ function App() {
       console.error('Fetch error:', err);
     } finally {
       setLoading(false);
+      console.log(`[FETCH] Request #${newRequestId} finished (loading set to false)`);
     }
   }, [requestId]);
 
-  const handleGetPredictions = () => 
+  const handleGetPredictions = () => {
+    console.log('[BUTTON] Get Predictions button clicked');
     fetchData(`/.netlify/functions/get-predictions?tour=${tour}`, 'GET', null, 'predictions');
+  };
   
   const handleGetAvoidPicks = () => 
     fetchData(`/.netlify/functions/get-avoid-picks`, 'POST', { tour }, 'avoidPicks');
