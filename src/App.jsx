@@ -52,7 +52,7 @@ function App() {
       }
       
       const url = method === 'GET' 
-        ? `${endpoint}&_=${timestamp}`
+        ? `${endpoint}${endpoint.includes('?') ? '&' : '?'}_=${timestamp}`
         : endpoint;
       
       const response = await fetch(url, options);
