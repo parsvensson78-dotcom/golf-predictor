@@ -76,8 +76,14 @@ function App() {
   const handleGetPredictions = () => 
     fetchData(`/.netlify/functions/get-predictions?tour=${tour}`, 'GET', null, 'predictions');
   
-  const handleGetAvoidPicks = () => 
-    fetchData(`/.netlify/functions/get-avoid-picks`, 'POST', { tour }, 'avoidPicks');
+  const handleGetAvoidPicks = () => {
+    // Get current value picks if they exist
+    const valuePicks = data.predictions?.predictions?.map(p => p.player) || [];
+    fetchData(`/.netlify/functions/get-avoid-picks`, 'POST', { 
+      tour,
+      excludePlayers: valuePicks 
+    }, 'avoidPicks');
+  };
   
   const handleGetNews = () => 
     fetchData(`/.netlify/functions/get-tournament-news?tour=${tour}`, 'GET', null, 'newsPreview');
