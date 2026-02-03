@@ -78,25 +78,26 @@ exports.handler = async (event, context) => {
     });
     const statsData = statsResponse.data;
 
-    // Step 5: Get weather
-    let weatherInfo = 'Weather data not available';
+    // Step 5: Get weather forecast (same as get-predictions)
+    let weatherData = null;
     try {
       const weatherApiKey = process.env.WEATHER_API_KEY;
       if (weatherApiKey && tournament.location) {
         const location = tournament.location.split(',')[0].trim();
-        const weatherResponse = await axios.get(`https://api.weatherapi.com/v1/current.json`, {
-          params: { key: weatherApiKey, q: location, aqi: 'no' },
+        const weatherResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-weather-forecast`, {
+          location: location,
+          startDate: tournament.dates?.split('-')[0]?.trim()
+        }, {
           timeout: 8000
         });
-        
-        if (weatherResponse.data && weatherResponse.data.current) {
-          const current = weatherResponse.data.current;
-          weatherInfo = `${Math.round(current.temp_f)}°F, ${current.condition.text}, Wind: ${Math.round(current.wind_mph)}mph`;
-        }
+        weatherData = weatherResponse.data;
+        console.log('[AVOID] Weather data retrieved');
       }
     } catch (weatherError) {
       console.error('[AVOID] Weather fetch failed:', weatherError.message);
     }
+
+    const weatherSummary = weatherData?.summary || 'Weather data not available';
 
     // Step 6: Build player data for TOP FAVORITES only
     const playersWithOdds = statsData.players
@@ -121,8 +122,24 @@ exports.handler = async (event, context) => {
 
     console.log(`[AVOID] ${playersWithOdds.length} top favorites ready for analysis`);
 
-    // Step 7: Get course info
-    const courseInfo = getCourseBasicInfo(tournament.course);
+    // Step 7: Get course info with proper analysis
+    let courseInfo;
+    try {
+      const courseResponse = await axios.get(`${baseUrl}/.netlify/functions/fetch-course-info?tour=${tour || 'pga'}&tournament=${encodeURIComponent(tournament.name)}`, {
+        timeout: 10000
+      });
+      courseInfo = courseResponse.data;
+    } catch (courseError) {
+      console.log('[AVOID] Course info fetch failed, using basic info');
+      courseInfo = {
+        courseName: tournament.course,
+        eventName: tournament.name
+      };
+    }
+
+    // Analyze course demands (same as get-predictions)
+    const courseDemands = analyzeCourseSkillDemands(courseInfo);
+    const weatherAnalysis = analyzeWeatherConditions(weatherSummary);
 
     // Step 8: Call Claude for avoid picks
     const anthropic = new Anthropic({
@@ -132,8 +149,9 @@ exports.handler = async (event, context) => {
     const prompt = buildAvoidPicksPrompt(
       tournament,
       playersWithOdds,
-      weatherInfo,
       courseInfo,
+      courseDemands,
+      weatherAnalysis,
       excludePlayers
     );
 
@@ -183,7 +201,7 @@ exports.handler = async (event, context) => {
           dates: tournament.dates,
           tour: tournament.tour
         },
-        weather: weatherInfo,
+        weather: weatherSummary,
         avoidPicks: avoidData.avoid || [],
         reasoning: avoidData.reasoning || '',
         generatedAt: new Date().toISOString(),
@@ -229,61 +247,212 @@ function normalizePlayerName(name) {
 }
 
 /**
- * Get basic course info
+ * Analyze course skill demands (EXACT COPY from get-predictions)
  */
-function getCourseBasicInfo(courseName) {
-  return {
-    name: courseName,
-    demands: ['To be analyzed from name and characteristics']
-  };
+function analyzeCourseSkillDemands(courseInfo) {
+  const demands = [];
+
+  // Yardage analysis
+  if (courseInfo.yardage) {
+    if (courseInfo.yardage > 7500) {
+      demands.push('1. SG:OTT (PRIMARY) - Extreme length demands elite driving distance and accuracy');
+    } else if (courseInfo.yardage > 7300) {
+      demands.push('1. SG:OTT (CRITICAL) - Long course heavily favors driving distance');
+    } else if (courseInfo.yardage > 7100) {
+      demands.push('1. SG:OTT (Important) - Above-average length requires solid driving');
+    } else {
+      demands.push('1. SG:APP + SG:ARG (PRIMARY) - Shorter course emphasizes precision over power');
+    }
+  }
+
+  // Width analysis
+  if (courseInfo.width) {
+    const width = courseInfo.width.toLowerCase();
+    if (width.includes('narrow') || width.includes('tight')) {
+      demands.push('2. SG:APP (CRITICAL) - Narrow fairways require precision iron play and course management');
+      demands.push('3. SG:ARG (Important) - Tight course means more scrambling opportunities');
+    } else if (width.includes('wide') || width.includes('generous')) {
+      demands.push('2. SG:OTT (Enhanced) - Wide fairways reward aggressive driving for distance');
+      demands.push('3. SG:APP (Important) - Longer approaches from extra distance');
+    }
+  }
+
+  // Rough analysis
+  if (courseInfo.rough) {
+    const rough = courseInfo.rough.toLowerCase();
+    if (rough.includes('heavy') || rough.includes('thick') || rough.includes('penal')) {
+      demands.push('4. SG:OTT (Accuracy) - Heavy rough severely punishes offline drives');
+      demands.push('5. SG:ARG (Critical) - Recovery skills essential for scrambling');
+    }
+  }
+
+  // Green analysis
+  if (courseInfo.greens) {
+    const greens = courseInfo.greens.toLowerCase();
+    if (greens.includes('fast') || greens.includes('firm') || greens.includes('bentgrass')) {
+      demands.push('6. SG:Putt (Enhanced) - Fast greens amplify putting skill differences');
+    } else if (greens.includes('poa') || greens.includes('bumpy')) {
+      demands.push('6. SG:APP (Critical) - Inconsistent greens demand precise approach distance control');
+    }
+  }
+
+  // Difficulty analysis
+  if (courseInfo.difficulty) {
+    const difficulty = courseInfo.difficulty.toLowerCase();
+    if (difficulty.includes('very difficult') || difficulty.includes('extremely')) {
+      demands.push('7. SG:Total (Quality) - Difficult course requires well-rounded elite players');
+    }
+  }
+
+  // Default if no specific demands identified
+  if (demands.length === 0) {
+    demands.push('1. SG:OTT (Important) - Driving quality sets up scoring opportunities');
+    demands.push('2. SG:APP (Important) - Iron play for green-in-regulation');
+    demands.push('3. SG:ARG (Moderate) - Short game for scrambling');
+    demands.push('4. SG:Putt (Moderate) - Putting to convert scoring chances');
+  }
+
+  return demands.join('\n');
 }
 
 /**
- * Build prompt for avoid picks - ONLY analyzes top favorites
+ * Analyze weather conditions (EXACT COPY from get-predictions)
  */
-function buildAvoidPicksPrompt(tournament, players, weather, courseInfo, excludePlayers = []) {
+function analyzeWeatherConditions(weatherSummary) {
+  if (!weatherSummary || weatherSummary === 'Weather data not available') {
+    return 'Weather data not available - focus purely on course characteristics and historical stats.';
+  }
+
+  // Parse weather summary to extract conditions
+  const windSpeeds = [];
+  const rainChances = [];
+  let conditions = weatherSummary;
+
+  // Extract wind speeds
+  const windMatches = weatherSummary.match(/Wind:\s*(\d+)mph/g);
+  if (windMatches) {
+    windMatches.forEach(match => {
+      const speed = parseInt(match.match(/\d+/)[0]);
+      windSpeeds.push(speed);
+    });
+  }
+
+  // Extract rain chances
+  const rainMatches = weatherSummary.match(/Rain:\s*(\d+)%/g);
+  if (rainMatches) {
+    rainMatches.forEach(match => {
+      const chance = parseInt(match.match(/\d+/)[0]);
+      rainChances.push(chance);
+    });
+  }
+
+  const avgWind = windSpeeds.length > 0 
+    ? Math.round(windSpeeds.reduce((a, b) => a + b, 0) / windSpeeds.length) 
+    : 0;
+  const maxWind = windSpeeds.length > 0 ? Math.max(...windSpeeds) : 0;
+  const highRainDays = rainChances.filter(r => r > 50).length;
+  const anyRainDays = rainChances.filter(r => r > 30).length;
+
+  let analysis = [`Raw Conditions: ${conditions}`, ''];
+
+  // Wind analysis
+  if (maxWind >= 15) {
+    analysis.push(`⚠️ HIGH WIND ALERT (${maxWind}mph max, ${avgWind}mph avg):`);
+    analysis.push('- CRITICAL: Prioritize SG:OTT (ball flight control, trajectory management)');
+    analysis.push('- Secondary: SG:APP (wind-adjusted approach shots)');
+    analysis.push('- Deprioritize: SG:Putt (less important when scores are high)');
+    analysis.push('- Look for: Players with positive SG:OTT who are undervalued');
+  } else if (avgWind >= 10) {
+    analysis.push(`💨 MODERATE WIND (${avgWind}mph avg):`);
+    analysis.push('- Important: SG:OTT (trajectory control matters)');
+    analysis.push('- Balanced approach: All SG categories relevant');
+  } else {
+    analysis.push(`😌 CALM CONDITIONS (${avgWind}mph avg):`);
+    analysis.push('- CRITICAL: SG:Putt (low scores, putting wins)');
+    analysis.push('- Secondary: SG:APP (hitting greens for birdie chances)');
+    analysis.push('- Deprioritize: SG:OTT (length advantage reduced when conditions are easy)');
+  }
+
+  // Rain analysis
+  if (highRainDays >= 2) {
+    analysis.push('');
+    analysis.push(`🌧️ WET CONDITIONS (${highRainDays} days with 50%+ rain):`);
+    analysis.push('- CRITICAL: SG:OTT (length advantage on soft fairways/greens)');
+    analysis.push('- Important: SG:APP (wedge play, soft greens hold shots)');
+    analysis.push('- Consider: SG:ARG (soft conditions around greens)');
+    analysis.push('- Deprioritize: SG:Putt (soft greens are easier to putt)');
+  } else if (anyRainDays > 0) {
+    analysis.push('');
+    analysis.push(`🌦️ SOME RAIN POSSIBLE (${anyRainDays} days with 30%+ chance):`);
+    analysis.push('- Slight advantage: Longer hitters (SG:OTT)');
+    analysis.push('- Monitor: Conditions may soften as week progresses');
+  }
+
+  return analysis.join('\n');
+}
+
+/**
+ * Build prompt for avoid picks - same analytical depth as get-predictions
+ */
+function buildAvoidPicksPrompt(tournament, players, courseInfo, courseDemands, weatherAnalysis, excludePlayers = []) {
   const formatAmericanOdds = (odds) => odds > 0 ? `+${odds}` : `${odds}`;
   
   const playerList = players.map((p, i) => 
-    `#${i+1}. ${p.player} [${formatAmericanOdds(p.odds)}] - R${p.stats.rank} | SG:${p.stats.sgTotal?.toFixed(2) || 'N/A'} (OTT:${p.stats.sgOTT?.toFixed(2) || 'N/A'} APP:${p.stats.sgAPP?.toFixed(2) || 'N/A'} ARG:${p.stats.sgARG?.toFixed(2) || 'N/A'} P:${p.stats.sgPutt?.toFixed(2) || 'N/A'})`
+    `${p.player} [${formatAmericanOdds(p.odds)}] - R${p.stats.rank} | SG:${p.stats.sgTotal?.toFixed(2) || 'N/A'} (OTT:${p.stats.sgOTT?.toFixed(2) || 'N/A'} APP:${p.stats.sgAPP?.toFixed(2) || 'N/A'} ARG:${p.stats.sgARG?.toFixed(2) || 'N/A'} P:${p.stats.sgPutt?.toFixed(2) || 'N/A'})`
   ).join('\n');
 
   const exclusionWarning = excludePlayers.length > 0 
-    ? `\n🚫 DO NOT PICK THESE PLAYERS (already recommended as value picks):\n${excludePlayers.join(', ')}\n` 
+    ? `\n🚫 EXCLUDED (already recommended as value picks - DO NOT select):\n${excludePlayers.join(', ')}\n` 
     : '';
 
-  return `You are identifying PUBLIC FAVORITES to AVOID - the top betting favorites with poor course fit.
+  return `Golf analyst: Find 3 PUBLIC FAVORITES to AVOID based on poor course fit.
 
 TOURNAMENT: ${tournament.name}
-Course: ${tournament.course}
-Weather: ${weather}
+Course: ${courseInfo.courseName || courseInfo.eventName} | ${courseInfo.yardage || '?'}y Par ${courseInfo.par || '?'}
+Course Demands: ${courseDemands}
+Weather Analysis: ${weatherAnalysis}
 ${exclusionWarning}
-TOP ${players.length} FAVORITES (shortest odds = most bet on):
+TOP ${players.length} PUBLIC FAVORITES (shortest odds in field):
 ${playerList}
 
-CRITICAL CONTEXT:
-- These are the PUBLIC FAVORITES (shortest odds in entire field)
-- The market is backing these players heavily
-- Your job: Find which 3 have WORST course fit despite being favorites
-- Look for OVERVALUED favorites whose stats DON'T fit this course
-${excludePlayers.length > 0 ? `- IMPORTANT: DO NOT select any of these players: ${excludePlayers.join(', ')}` : ''}
+ANALYSIS FRAMEWORK (same as value picks):
+1. Course Fit (40%): Does their SG profile MISMATCH course demands?
+2. Course History (20%): Poor results at this venue?
+3. Recent Form (15%): Cold streak or inconsistent?
+4. Weather (15%): Do conditions expose their weaknesses?
+5. Value Assessment: Are odds too SHORT given above negatives?
 
-WHAT TO LOOK FOR:
-❌ Player is top 5 favorite BUT ranks #80+ in key stat for this course
-❌ Player has short odds BUT historically struggles at this venue
-❌ Player's strength is OPPOSITE of what course demands
+YOUR TASK:
+Identify exactly 3 players who should be AVOIDED because:
+- They are PUBLIC FAVORITES (short odds = market backing)
+- BUT they have POOR statistical fit for THIS specific course
+- Their SG stats DON'T match what the course demands
 
-Your task: Find 3 PUBLIC FAVORITES (from list above) with WORST course fit.
-${excludePlayers.length > 0 ? `\nREMINDER: You CANNOT pick: ${excludePlayers.join(', ')}` : ''}
+CRITICAL REQUIREMENTS:
+${excludePlayers.length > 0 ? `- You CANNOT select: ${excludePlayers.join(', ')} (already in value picks)` : ''}
+- Focus on STATISTICAL MISMATCHES between player strengths and course demands
+- Compare their SG stats to course demands above
+- Explain WHY their profile is WRONG for this course
 
-Return JSON:
+EXAMPLES OF GOOD AVOID REASONING:
+
+GOOD: "Despite being 4th favorite at +800, his SG:APP (+0.25) ranks #85 on tour - far below elite level needed for this precision course with small, elevated greens. Course demands show 'SG:APP CRITICAL' but his approach game is merely average. Recent form shows inconsistency (T45, MC, T22 in Last5). Weather analysis indicates winds favor ball-strikers, which isn't his strength. At +800, public overvalues name recognition over statistical course fit."
+
+BAD: "Good stats but overpriced" ← NO! Must show SPECIFIC stat mismatch with course demands!
+
+WEIGHTS: Course Fit 40%, History 20%, Form 15%, Weather 15%, Value 10%
+
+REASONING FORMAT (3-4 sentences covering ALL factors):
+"Course fit: [Specific SG weakness vs course demands]. History: [Poor results here or context]. Form: [Recent struggles]. Weather: [How conditions hurt]. Value: [Why odds too short given above]."
+
+Return JSON with exactly 3 avoid picks:
 {
-  "reasoning": "What this course demands that these favorites lack (2-3 sentences)",
+  "reasoning": "What this course demands and why these favorites don't have it (2-3 sentences)",
   "avoid": [
     {
-      "player": "Must be from the top ${players.length} list above (NOT from excluded list)",
-      "odds": 600,
-      "reasoning": "Why THIS FAVORITE has poor fit. Include: stat rankings showing weakness, course history if poor, why odds too short given mismatch. 3-4 sentences with specific numbers."
+      "player": "Must be from top ${players.length} list (NOT excluded list)",
+      "odds": 800,
+      "reasoning": "Full analysis: Course fit mismatch, history, form, weather, why overvalued. Use specific SG numbers and rankings."
     }
   ]
 }`;
