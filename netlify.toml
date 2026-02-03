@@ -6,15 +6,7 @@
 [build.environment]
   NODE_VERSION = "18"
 
-# Enable Netlify Blobs
-[[plugins]]
-  package = "@netlify/plugin-blob"
-
 # Functions configuration
 [functions]
   node_bundler = "esbuild"
   external_node_modules = ["@netlify/blobs"]
-
-# Blob storage configuration
-[blobs]
-  enabled = true
