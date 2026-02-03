@@ -242,39 +242,46 @@ function getCourseBasicInfo(courseName) {
 function buildAvoidPicksPrompt(tournament, players, weather, courseInfo) {
   const formatAmericanOdds = (odds) => odds > 0 ? `+${odds}` : `${odds}`;
   
-  const playerList = players.slice(0, 30).map(p => 
-    `${p.player} [${formatAmericanOdds(p.odds)}] - Rank:${p.stats.rank} SG:Total:${p.stats.sgTotal} OTT:${p.stats.sgOTT} APP:${p.stats.sgAPP} ARG:${p.stats.sgARG} Putt:${p.stats.sgPutt}`
+  const playerList = players.slice(0, 40).map(p => 
+    `${p.player} [${formatAmericanOdds(p.odds)}] - R${p.stats.rank} | SG:${p.stats.sgTotal?.toFixed(2) || 'N/A'} (OTT:${p.stats.sgOTT?.toFixed(2) || 'N/A'} APP:${p.stats.sgAPP?.toFixed(2) || 'N/A'} ARG:${p.stats.sgARG?.toFixed(2) || 'N/A'} P:${p.stats.sgPutt?.toFixed(2) || 'N/A'})`
   ).join('\n');
 
-  return `You are a professional golf analyst identifying players to AVOID betting on this week.
+  return `You are identifying players to AVOID - players with SHORT odds but POOR course fit.
 
-TOURNAMENT:
-Name: ${tournament.name}
+TOURNAMENT: ${tournament.name}
 Course: ${tournament.course}
 Location: ${tournament.location}
 Weather: ${weather}
 
-SHORT ODDS PLAYERS (American odds shown):
+SHORT ODDS PLAYERS (sorted by odds, showing top 40):
 ${playerList}
 
-YOUR TASK:
-Identify exactly 3 players with SHORT ODDS (under +2000) who have POOR course fit and should be avoided.
+YOUR TASK - FIND POOR COURSE FITS:
+Identify exactly 3 players who should be AVOIDED because:
+1. They have SHORT odds (market backing them - under +2000)
+2. BUT their stats are WRONG for this course
+3. Specific statistical WEAKNESSES that hurt them here
 
-CRITERIA:
-- Short odds (market backing them)
-- Stats DON'T match course demands
-- Specific statistical weaknesses
-- Why odds are too short
+IMPORTANT: You are looking for MISMATCHES between player strengths and course demands!
 
-Return JSON:
+EXAMPLES OF WHAT TO LOOK FOR:
+❌ AVOID: Player has poor SG:APP (-0.3) but course has tiny greens requiring elite approach accuracy
+❌ AVOID: Player ranks #120 in SG:OTT but course is 7,500 yards demanding elite distance
+❌ AVOID: Player has weak SG:Putt on bentgrass but course has fast bentgrass greens
+
+DO NOT pick players with good course fit! You are finding POOR fits only.
+
+Return JSON with exactly 3 avoid picks:
 {
-  "reasoning": "What this course demands and why certain players will struggle (2 sentences)",
+  "reasoning": "What this course demands and why these specific player types will struggle (2-3 sentences)",
   "avoid": [
     {
       "player": "Player Name",
       "odds": 800,
-      "reasoning": "Specific stat mismatch with numbers showing poor fit (2-3 sentences)"
+      "reasoning": "SPECIFIC statistical weakness for THIS course. Example: 'Ranks #95 in SG:APP (-0.4) on a course demanding pinpoint iron play to small greens. His weak short game (#102 SG:ARG, -0.3) compounds the problem when missing greens. At +800, market ignores poor course fit.' Include actual stat rankings and values."
     }
   ]
-}`;
+}
+
+Remember: Find players whose WEAKNESSES match this course's DEMANDS. Not players with good fits!`;
 }
