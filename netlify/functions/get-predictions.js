@@ -474,17 +474,17 @@ function buildClaudePrompt(tournament, players, weatherSummary, courseInfo) {
   // ========================================
   const WEIGHTS = {
     courseFit: 40,           // % - How well stats match course demands
-    recentForm: 10,          // % - Last 5 tournaments performance
+    recentForm: 15,          // % - Last 5 tournaments performance
     courseHistory: 20,       // % - Past results at this venue (0% if no history)
-    weather: 20,             // % - Weather adaptation
+    weather: 15,             // % - Weather adaptation
     statisticalQuality: 10   // % - Overall player quality check
   };
   
   // When player has NO course history, redistribute weight:
   const WEIGHTS_NO_HISTORY = {
     courseFit: 50,           // Increased importance
-    recentForm: 10,          // Increased importance
-    weather: 25,             // Same
+    recentForm: 20,          // Increased importance
+    weather: 15,             // Same
     statisticalQuality: 15   // Increased importance
   };
   // ========================================
@@ -670,12 +670,43 @@ Return ONLY valid JSON (no markdown):
   "courseNotes": "3-4 sentences analyzing: (1) The course's defining characteristic at ${courseInfo.yardage || 'this'} yards, (2) How weather amplifies or reduces certain demands, (3) What creates betting value - which player types are overpriced vs underpriced, (4) Specific stat ranges that correlate with success here.",
   "picks": [
     {
-      "player": "Player Name",
+      "player": "THE FAVORITE - Player Name",
+      "odds": 14.0,
+      "reasoning": "Pick #1 FAVORITE (UNDER 20/1): Course fit: [Specific SG stats]. Course history: [Past results]. Form: [Recent finishes]. Weather: [How conditions help]. Value: [Why this favorite is better value than lower-odds favorites]."
+    },
+    {
+      "player": "VALUE PICK - Player Name",
+      "odds": 35.0,
+      "reasoning": "Pick #2 VALUE (20/1+): Course fit: [SG match]. History: [Results or why no history OK]. Form: [Finishes]. Weather: [Impact]. Value: [Market inefficiency]."
+    },
+    {
+      "player": "VALUE PICK - Player Name", 
       "odds": 45.0,
-      "reasoning": "Course fit: [Specific SG stat match to PRIMARY DEMAND]. Weather: [How conditions favor this player]. Value: [Why odds are too high - market inefficiency]. 2-3 sentences."
+      "reasoning": "Pick #3 VALUE (20/1+): [Same structure as above]"
+    },
+    {
+      "player": "VALUE PICK - Player Name",
+      "odds": 55.0,
+      "reasoning": "Pick #4 VALUE (20/1+): [Same structure]"
+    },
+    {
+      "player": "VALUE PICK - Player Name",
+      "odds": 65.0,
+      "reasoning": "Pick #5 VALUE (40/1+): [Same structure]"
+    },
+    {
+      "player": "VALUE PICK - Player Name",
+      "odds": 80.0,
+      "reasoning": "Pick #6 VALUE (40/1+): [Same structure]"
     }
   ]
-}`;
+}
+
+CRITICAL VALIDATION BEFORE RETURNING:
+- Check Pick #1 odds < 20.0 (if not, REJECT and choose different favorite)
+- Check Picks #2-6 odds >= 20.0 (if not, REJECT and choose different players)
+- Check at least 3 of Picks #2-6 have odds >= 40.0
+`;
 }
 
 /**
