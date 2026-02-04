@@ -315,7 +315,7 @@ const ActionButton = ({ activeTab, loading, onGetPredictions, onGetAvoidPicks, o
   return (
     <div className="action-section">
       <button 
-        className="get-predictions-btn"
+        className="btn btn-success get-predictions-btn"
         onClick={config.handler}
         disabled={loading}
       >
@@ -618,7 +618,7 @@ const PredictionsView = ({ data, requestId }) => {
   // If neither predictions nor avoid picks exist, show empty state
   if (!hasPredictions && !hasAvoidPicks) {
     return (
-      <div className="predictions-container" key={`predictions-${requestId}`}>
+      <div className="container" key={`predictions-${requestId}`}>
         <div style={{textAlign: 'center', padding: '4rem 2rem'}}>
           <h3>No Cached Data Found</h3>
           <p>Click "Get Predictions" to generate value picks and avoid recommendations</p>
@@ -631,7 +631,7 @@ const PredictionsView = ({ data, requestId }) => {
   const isCached = isCachedData(generatedTime);
   
   return (
-    <div className="predictions-container loaded" key={`predictions-${requestId}-${generatedTime}`}>
+    <div className="container loaded" key={`predictions-${requestId}-${generatedTime}`}>
       <div className={`cache-indicator ${isCached ? 'cached' : 'fresh'}`}>
         {isCached ? 'Cached' : 'Fresh'}
       </div>
@@ -649,7 +649,7 @@ const PredictionsView = ({ data, requestId }) => {
             <h3>💎 Value Picks</h3>
             <div className="picks-grid">
               {data.predictions.predictions.map((pick, index) => (
-                <div key={`pick-${requestId}-${index}`} className="pick-card">
+                <div key={`pick-${requestId}-${index}`} className="card pick-card">
                   <div className="pick-header">
                     <span className="pick-number">#{index + 1}</span>
                     <div className="odds-container">
@@ -690,7 +690,7 @@ const AvoidPicksView = ({ data, requestId }) => {
   const isCached = isCachedData(data.generatedAt);
   
   return (
-    <div className="avoid-picks-container loaded" key={`avoid-${requestId}-${data.generatedAt}`}>
+    <div className="container loaded" key={`avoid-${requestId}-${data.generatedAt}`}>
       <div className={`cache-indicator ${isCached ? 'cached' : 'fresh'}`}>
         {isCached ? 'Cached' : 'Fresh'}
       </div>
@@ -701,7 +701,7 @@ const AvoidPicksView = ({ data, requestId }) => {
         <h3>❌ Players to Avoid (Poor Course Fit)</h3>
         <div className="avoid-grid">
           {data.avoidPicks?.map((avoid, index) => (
-            <div key={`avoid-${requestId}-${index}`} className="avoid-card">
+            <div key={`avoid-${requestId}-${index}`} className="card avoid-card">
               <div className="avoid-header">
                 <span className="avoid-number">#{index + 1}</span>
                 <span className="avoid-odds">{formatAmericanOdds(avoid.odds)}</span>
@@ -857,7 +857,7 @@ const PlayerBox = ({ player, isPick }) => (
 const ResultsView = ({ data, requestId }) => {
   if (!data.tournaments || data.tournaments.length === 0) {
     return (
-      <div className="predictions-container" key={`results-${requestId}`}>
+      <div className="container" key={`results-${requestId}`}>
         <div style={{textAlign: 'center', padding: '4rem 2rem'}}>
           <h3>No Predictions Saved Yet</h3>
           <p>Generate some predictions first, and they'll automatically be saved for results tracking!</p>
@@ -867,7 +867,7 @@ const ResultsView = ({ data, requestId }) => {
   }
 
   return (
-    <div className="predictions-container" key={`results-${requestId}`}>
+    <div className="container" key={`results-${requestId}`}>
       {data.generatedAt && <TimestampHeader generatedAt={data.generatedAt} />}
       
       <div style={{textAlign: 'center', marginBottom: '2rem'}}>
