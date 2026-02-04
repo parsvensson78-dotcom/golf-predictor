@@ -10,20 +10,8 @@ exports.handler = async (event, context) => {
     
     console.log(`[LATEST] Fetching latest predictions for ${tour}`);
     
-    // Check if running on Netlify
-    if (!process.env.NETLIFY) {
-      console.log('[LATEST] Not running on Netlify - Blobs not available');
-      return {
-        statusCode: 503,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          error: 'Blobs not available',
-          message: 'Blob storage only available when deployed on Netlify'
-        })
-      };
-    }
-    
     // Get Netlify Blobs store (same approach as get-predictions.js)
+    // Note: We don't check process.env.NETLIFY as it's not always set
     const siteID = process.env.SITE_ID || context.site?.id;
     const token = process.env.NETLIFY_AUTH_TOKEN;
     
