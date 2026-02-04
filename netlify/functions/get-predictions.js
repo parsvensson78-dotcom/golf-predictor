@@ -3,9 +3,30 @@ const axios = require('axios');
 const { getStore } = require('@netlify/blobs');
 
 /**
- * Main prediction endpoint - OPTIMIZED VERSION
- * Fetches data in parallel where possible and reduces logging overhead
+ * Main prediction endpoint - OPTIMIZED VERSION v2
+ * OPTIMIZATIONS:
+ * - Centralized blob store setup (eliminates code duplication)
+ * - Reduced excessive logging in loops
+ * - Added timeout protection for blob saves
+ * - Removed hardcoded API key fallbacks
  */
+
+// Helper: Get blob store with consistent config
+function getBlobStore(storeName) {
+  const siteID = process.env.SITE_ID;
+  const token = process.env.NETLIFY_AUTH_TOKEN;
+  
+  if (!siteID || !token) {
+    throw new Error(`Blob store not configured: missing ${!siteID ? 'SITE_ID' : 'NETLIFY_AUTH_TOKEN'}`);
+  }
+  
+  return getStore({
+    name: storeName,
+    siteID: siteID,
+    token: token,
+    consistency: 'strong'
+  });
+}
 exports.handler = async (event, context) => {
   try {
     const tour = event.queryStringParameters?.tour || 'pga';
@@ -24,18 +45,7 @@ exports.handler = async (event, context) => {
     
     if (!forceRefresh) {
       try {
-      const { getStore } = require('@netlify/blobs');
-      const siteID = process.env.SITE_ID;
-      const token = process.env.NETLIFY_AUTH_TOKEN;
-      
-      if (siteID && token) {
-        const store = getStore({
-          name: 'cache',
-          siteID: siteID,
-          token: token,
-          consistency: 'strong'
-        });
-        
+        const store = getBlobStore('cache');
         const cached = await store.get(cacheKey, { type: 'json' });
         
         if (cached && cached.timestamp) {
@@ -54,7 +64,6 @@ exports.handler = async (event, context) => {
         } else {
           console.log(`[CACHE] No cache found, fetching fresh data`);
         }
-      }
       } catch (cacheError) {
         console.log(`[CACHE] Error reading cache: ${cacheError.message}`);
       }
@@ -116,28 +125,16 @@ exports.handler = async (event, context) => {
       
       // Step 2g: Save to cache
       try {
-        const { getStore } = require('@netlify/blobs');
-        const siteID = process.env.SITE_ID;
-        const token = process.env.NETLIFY_AUTH_TOKEN;
+        const store = getBlobStore('cache');
+        await store.set(cacheKey, JSON.stringify({
+          timestamp: Date.now(),
+          players: playersWithData,
+          tournament: tournament,
+          weather: weatherData,
+          courseInfo: courseInfo
+        }));
         
-        if (siteID && token) {
-          const store = getStore({
-            name: 'cache',
-            siteID: siteID,
-            token: token,
-            consistency: 'strong'
-          });
-          
-          await store.set(cacheKey, JSON.stringify({
-            timestamp: Date.now(),
-            players: playersWithData,
-            tournament: tournament,
-            weather: weatherData,
-            courseInfo: courseInfo
-          }));
-          
-          console.log(`[CACHE] ✅ Saved fresh data to cache`);
-        }
+        console.log(`[CACHE] ✅ Saved fresh data to cache`);
       } catch (cacheError) {
         console.log(`[CACHE] ⚠️  Failed to save cache: ${cacheError.message}`);
       }
@@ -147,7 +144,7 @@ exports.handler = async (event, context) => {
     // Testing if this completes under 28 seconds for Netlify timeout
     const topPlayers = playersWithData
       .sort((a, b) => a.odds - b.odds)
-      .slice(0, 100);
+      .slice(0, 80);
     
     console.log(`[CLAUDE] Analyzing top ${topPlayers.length} players (optimized from ${playersWithData.length})`);
 
@@ -239,18 +236,18 @@ exports.handler = async (event, context) => {
     // Step 9: Save predictions to Netlify Blobs for results tracking
     try {
       console.log('[SAVE] Attempting to save to Netlify Blobs...');
-      console.log('[SAVE] Environment check:', {
-        hasDeployId: !!process.env.DEPLOY_ID,
-        hasSiteId: !!process.env.SITE_ID,
-        hasContext: !!process.env.CONTEXT,
-        nodeVersion: process.version
-      });
       
-      await savePredictionsToBlobs(responseData, context);
+      // Wrap save in timeout to prevent blocking request
+      await Promise.race([
+        savePredictionsToBlobs(responseData, context),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Blob save timeout after 3s')), 3000)
+        )
+      ]);
+      
       console.log('[SAVE] ✅ Predictions saved for results tracking');
     } catch (saveError) {
       console.error('[SAVE] Failed to save predictions:', saveError.message);
-      console.error('[SAVE] Error stack:', saveError.stack);
       console.log('[SAVE] This is not critical - predictions still returned successfully');
       // Don't fail the request if save fails
     }
@@ -334,7 +331,13 @@ async function fetchWeather(location) {
  * Fetch recent form and course history for players
  */
 async function fetchRecentFormAndHistory(playerNames, courseName, tour) {
-  const apiKey = process.env.DATAGOLF_API_KEY || '07b56aee1a02854e9513b06af5cd';
+  const apiKey = process.env.DATAGOLF_API_KEY;
+  
+  if (!apiKey) {
+    console.log('[FORM] DataGolf API key not configured, skipping form data');
+    return { players: [] };
+  }
+  
   const apiTour = tour === 'dp' ? 'euro' : (tour || 'pga');
   
   try {
@@ -392,14 +395,7 @@ async function fetchRecentFormAndHistory(playerNames, courseName, tour) {
         
         // Tournament is completed if it ended at least 1 day ago
         const oneDayAgo = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000);
-        const isCompleted = tourneyEndDate < oneDayAgo;
-        
-        if (tournaments.indexOf(t) < 5) {
-          const dateSource = t.end_date ? 'end_date' : t.start_date ? 'start_date+4' : 'date+4';
-          console.log(`[FORM] "${t.event_name}" - ${dateSource}: ${tourneyEndDate.toISOString().split('T')[0]}, completed: ${isCompleted}`);
-        }
-        
-        return isCompleted;
+        return tourneyEndDate < oneDayAgo;
       })
       .sort((a, b) => {
         const aDate = new Date(a.end_date || a.start_date || a.date);
@@ -883,20 +879,7 @@ function analyzeCourseSkillDemands(courseInfo) {
  * Save predictions to Netlify Blobs for results tracking
  */
 async function savePredictionsToBlobs(responseData, context) {
-  // Manually configure store with siteID and token from environment
-  const siteID = process.env.SITE_ID || context?.site?.id;
-  const token = process.env.NETLIFY_AUTH_TOKEN;
-  
-  if (!siteID || !token) {
-    throw new Error('SITE_ID or NETLIFY_AUTH_TOKEN not configured. Please add NETLIFY_AUTH_TOKEN to your environment variables.');
-  }
-  
-  const store = getStore({
-    name: 'predictions',
-    siteID: siteID,
-    token: token,
-    consistency: 'strong'
-  });
+  const store = getBlobStore('predictions');
 
   // Generate key from tournament name and date + timestamp for uniqueness
   // Add tour prefix for filtering later
