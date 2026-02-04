@@ -598,6 +598,43 @@ const PredictionsView = ({ data, requestId }) => {
   const now = Date.now();
   const isCached = (now - generatedTime) > 60000; // More than 1 minute old = cached
   
+  // Helper function to format reasoning with proper structure
+  const formatReasoning = (reasoning) => {
+    // Split by double newlines OR by section headers
+    const sections = reasoning
+      .split(/\n\n+/)
+      .filter(s => s.trim())
+      .map(s => s.trim());
+    
+    // If we have multiple sections, render them as separate paragraphs
+    if (sections.length > 1) {
+      return sections.map((section, i) => {
+        // Check if section starts with a label
+        const hasLabel = /^(Course fit|History|Form|Weather|Value):/i.test(section);
+        return (
+          <p 
+            key={i} 
+            style={{
+              marginBottom: hasLabel ? '0.75rem' : '0.5rem',
+              lineHeight: '1.6',
+              fontSize: '0.95rem',
+              fontWeight: hasLabel ? '500' : '400'
+            }}
+          >
+            {section}
+          </p>
+        );
+      });
+    }
+    
+    // Fallback: split by periods for backwards compatibility
+    return reasoning.split('. ').filter(s => s.trim()).map((sentence, i, arr) => (
+      <p key={i} style={{marginBottom: '0.5rem', lineHeight: '1.6', fontSize: '0.95rem'}}>
+        {sentence.trim()}{i < arr.length - 1 || !sentence.endsWith('.') ? '.' : ''}
+      </p>
+    ));
+  };
+  
   return (
     <div className="predictions-container loaded" key={`predictions-${requestId}-${data.generatedAt}`}>
       <div className={`cache-indicator ${isCached ? 'cached' : 'fresh'}`}>
@@ -623,11 +660,7 @@ const PredictionsView = ({ data, requestId }) => {
             <h3 className="pick-name">{pick.player}</h3>
             <OddsBreakdown pick={pick} />
             <div className="pick-reasoning">
-              {pick.reasoning.split('. ').filter(s => s.trim()).map((sentence, i, arr) => (
-                <p key={i} style={{marginBottom: '0.5rem', lineHeight: '1.6', fontSize: '0.95rem'}}>
-                  {sentence.trim()}{i < arr.length - 1 || !sentence.endsWith('.') ? '.' : ''}
-                </p>
-              ))}
+              {formatReasoning(pick.reasoning)}
             </div>
           </div>
         ))}
@@ -644,6 +677,43 @@ const AvoidPicksView = ({ data, requestId }) => {
   const generatedTime = new Date(data.generatedAt).getTime();
   const now = Date.now();
   const isCached = (now - generatedTime) > 60000;
+  
+  // Helper function to format reasoning with proper structure
+  const formatReasoning = (reasoning) => {
+    // Split by double newlines OR by section headers (Course fit:, History:, etc.)
+    const sections = reasoning
+      .split(/\n\n+/)
+      .filter(s => s.trim())
+      .map(s => s.trim());
+    
+    // If we have multiple sections, render them as separate paragraphs
+    if (sections.length > 1) {
+      return sections.map((section, i) => {
+        // Check if section starts with a label (Course fit:, History:, etc.)
+        const hasLabel = /^(Course fit|History|Form|Weather|Value):/i.test(section);
+        return (
+          <p 
+            key={i} 
+            style={{
+              marginBottom: hasLabel ? '0.75rem' : '0.5rem',
+              lineHeight: '1.6',
+              fontSize: '0.95rem',
+              fontWeight: hasLabel ? '500' : '400'
+            }}
+          >
+            {section}
+          </p>
+        );
+      });
+    }
+    
+    // Fallback: split by periods for backwards compatibility
+    return reasoning.split('. ').filter(s => s.trim()).map((sentence, i, arr) => (
+      <p key={i} style={{marginBottom: '0.5rem', lineHeight: '1.6', fontSize: '0.95rem'}}>
+        {sentence.trim()}{i < arr.length - 1 || !sentence.endsWith('.') ? '.' : ''}
+      </p>
+    ));
+  };
   
   return (
     <div className="avoid-picks-container loaded" key={`avoid-${requestId}-${data.generatedAt}`}>
@@ -664,7 +734,9 @@ const AvoidPicksView = ({ data, requestId }) => {
               <span className="avoid-odds">{formatAmericanOdds(avoid.odds)}</span>
             </div>
             <h4 className="avoid-name">{avoid.player}</h4>
-            <p className="avoid-reasoning">{avoid.reasoning}</p>
+            <div className="avoid-reasoning">
+              {formatReasoning(avoid.reasoning)}
+            </div>
           </div>
         ))}
       </div>
@@ -736,6 +808,42 @@ const MatchupsView = ({ data, requestId }) => {
   const now = Date.now();
   const isCached = (now - generatedTime) > 60000;
   
+  // Helper function to format reasoning
+  const formatReasoning = (reasoning) => {
+    // Split by double newlines OR by section headers
+    const sections = reasoning
+      .split(/\n\n+/)
+      .filter(s => s.trim())
+      .map(s => s.trim());
+    
+    // If we have multiple sections, render them as separate paragraphs
+    if (sections.length > 1) {
+      return sections.map((section, i) => {
+        const hasLabel = /^(Course fit|History|Form|Weather|Probability):/i.test(section);
+        return (
+          <p 
+            key={i} 
+            style={{
+              marginBottom: hasLabel ? '0.75rem' : '0.5rem',
+              lineHeight: '1.6',
+              fontSize: '0.95rem',
+              fontWeight: hasLabel ? '500' : '400'
+            }}
+          >
+            {section}
+          </p>
+        );
+      });
+    }
+    
+    // Fallback: split by periods
+    return reasoning.split('. ').filter(s => s.trim()).map((sentence, i, arr) => (
+      <p key={i} style={{marginBottom: '0.5rem', lineHeight: '1.6', fontSize: '0.95rem'}}>
+        {sentence.trim()}{i < arr.length - 1 || !sentence.endsWith('.') ? '.' : ''}
+      </p>
+    ));
+  };
+  
   return (
     <div className="matchup-container loaded" key={`matchup-${requestId}-${data.generatedAt}`}>
       <div className={`cache-indicator ${isCached ? 'cached' : 'fresh'}`}>
@@ -766,7 +874,9 @@ const MatchupsView = ({ data, requestId }) => {
               <div className="win-probability">
                 Win Probability: <strong>{matchup.winProbability}%</strong>
               </div>
-              <p className="matchup-reasoning">{matchup.reasoning}</p>
+              <div className="matchup-reasoning">
+                {formatReasoning(matchup.reasoning)}
+              </div>
             </div>
           </div>
         ))}
