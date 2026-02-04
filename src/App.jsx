@@ -2,18 +2,29 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import './App.css';
 
 /**
- * OPTIMIZED App.jsx
+ * OPTIMIZED App.jsx v2
  * - Extracted reusable components
- * - Reduced code duplication
+ * - Reduced code duplication with helper functions
  * - Better state management
  * - Cleaner structure
  * - FIXED: Value picks and avoid picks now render independently
+ * - OPTIMIZED: Removed requestId dependency loop in fetchData
+ * - OPTIMIZED: Eliminated redundant state updates
+ * - OPTIMIZED: Centralized cache indicator logic
  */
 
 // Helper function to format American odds
 const formatAmericanOdds = (odds) => {
   if (!odds || odds === 0) return 'N/A';
   return odds > 0 ? `+${odds}` : `${odds}`;
+};
+
+// Helper to check if data is cached (older than 60 seconds)
+const isCachedData = (generatedAt) => {
+  if (!generatedAt) return false;
+  const now = Date.now();
+  const then = new Date(generatedAt).getTime();
+  return (now - then) > 60000;
 };
 
 // Reusable timestamp header component
@@ -76,8 +87,7 @@ function App() {
 
   // Generic fetch function to avoid duplication
   const fetchData = useCallback(async (endpoint, method = 'GET', body = null, dataKey) => {
-    const newRequestId = requestId + 1;
-    setRequestId(newRequestId);
+    setRequestId(prev => prev + 1);
     setError(null);
     setLoading(true);
     
@@ -130,7 +140,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [requestId]);
+  }, []); // Empty deps - uses setters which are stable
 
   const handleGetPredictions = () => 
     fetchData(`/.netlify/functions/get-predictions?tour=${tour}`, 'GET', null, 'predictions');
@@ -156,7 +166,6 @@ function App() {
   const handleTourChange = (newTour) => {
     setTour(newTour);
     setError(null);
-    setRequestId(prev => prev + 1);
     
     // Clear all data when switching tours
     setData({
@@ -619,8 +628,7 @@ const PredictionsView = ({ data, requestId }) => {
   }
 
   const generatedTime = data.predictions?.generatedAt || data.avoidPicks?.generatedAt;
-  const now = Date.now();
-  const isCached = generatedTime ? (now - new Date(generatedTime).getTime()) > 60000 : false;
+  const isCached = isCachedData(generatedTime);
   
   return (
     <div className="predictions-container loaded" key={`predictions-${requestId}-${generatedTime}`}>
@@ -679,9 +687,7 @@ const PredictionsView = ({ data, requestId }) => {
 
 // ==================== AVOID PICKS VIEW ====================
 const AvoidPicksView = ({ data, requestId }) => {
-  const generatedTime = new Date(data.generatedAt).getTime();
-  const now = Date.now();
-  const isCached = (now - generatedTime) > 60000;
+  const isCached = isCachedData(data.generatedAt);
   
   return (
     <div className="avoid-picks-container loaded" key={`avoid-${requestId}-${data.generatedAt}`}>
@@ -734,9 +740,7 @@ const AvoidPicksView = ({ data, requestId }) => {
 
 // ==================== NEWS PREVIEW VIEW ====================
 const NewsPreviewView = ({ data, requestId }) => {
-  const generatedTime = new Date(data.generatedAt).getTime();
-  const now = Date.now();
-  const isCached = (now - generatedTime) > 60000;
+  const isCached = isCachedData(data.generatedAt);
   
   return (
     <div className="news-preview-container loaded" key={`news-${requestId}-${data.generatedAt}`}>
@@ -789,9 +793,7 @@ const NewsPreviewView = ({ data, requestId }) => {
 
 // ==================== MATCHUPS VIEW ====================
 const MatchupsView = ({ data, requestId }) => {
-  const generatedTime = new Date(data.generatedAt).getTime();
-  const now = Date.now();
-  const isCached = (now - generatedTime) > 60000;
+  const isCached = isCachedData(data.generatedAt);
   
   return (
     <div className="matchup-container loaded" key={`matchup-${requestId}-${data.generatedAt}`}>
