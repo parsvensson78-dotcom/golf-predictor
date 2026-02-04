@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import './App.css';
 
 /**
@@ -71,7 +71,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [requestId, setRequestId] = useState(0);
-  const [hasLoadedInitial, setHasLoadedInitial] = useState(false);
+  const hasAutoLoadedRef = useRef(false);
 
   // Generic fetch function to avoid duplication
   const fetchData = useCallback(async (endpoint, method = 'GET', body = null, dataKey) => {
@@ -145,17 +145,16 @@ function App() {
     setRequestId(prev => prev + 1);
   };
 
-  // Auto-load ALL cached data when component mounts
-  // Auto-load predictions on mount (FIXED: proper dependencies)
+  // Auto-load predictions on mount (runs once using ref)
   useEffect(() => {
-    if (!hasLoadedInitial && !loading) {
+    if (!hasAutoLoadedRef.current && !loading) {
       console.log('[AUTO-LOAD] Loading initial data');
-      setHasLoadedInitial(true);
+      hasAutoLoadedRef.current = true;
       
       // Load predictions immediately (has 6-hour cache)
       handleGetPredictions();
     }
-  }, [hasLoadedInitial, loading, handleGetPredictions]);
+  }, []); // Empty array is safe with ref - truly runs once
 
   const currentData = data[
     activeTab === 'predictions' ? 'predictions' :
