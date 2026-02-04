@@ -1,9 +1,10 @@
-const { getStore } = require('@netlify/blobs');
+const { getBlobStore, normalizePlayerName, americanToDecimal } = require('./shared-utils');
 const axios = require('axios');
 
 /**
  * Analyze prediction performance by comparing picks with actual results
  * Reads saved predictions from Netlify Blobs
+ * OPTIMIZED VERSION - Uses shared-utils
  */
 exports.handler = async (event, context) => {
   try {
@@ -12,22 +13,10 @@ exports.handler = async (event, context) => {
 
     console.log(`[ANALYSIS] Fetching saved predictions for ${tour} tour from Netlify Blobs...`);
 
-    // Get Netlify Blobs store - wrap in try-catch for better error handling
+    // Get Netlify Blobs store using shared helper
     let store, blobs;
     try {
-      const siteID = process.env.SITE_ID || context?.site?.id;
-      const token = process.env.NETLIFY_AUTH_TOKEN;
-      
-      if (!siteID || !token) {
-        throw new Error('SITE_ID or NETLIFY_AUTH_TOKEN not configured');
-      }
-      
-      store = getStore({
-        name: 'predictions',
-        siteID: siteID,
-        token: token,
-        consistency: 'strong'
-      });
+      store = getBlobStore('predictions', context);
       
       // Filter by tour prefix
       const listResult = await store.list({ prefix: `${tour}-` });
@@ -94,7 +83,7 @@ exports.handler = async (event, context) => {
           results: resultsData.results || [],
           analysis,
           status: resultsData.status || 'unknown',
-          generatedAt: predictionJson.metadata.generatedAt,
+          generatedAt: predictionJson.metadata?.generatedAt || predictionJson.generatedAt,
           blobKey: blob.key
         });
 
@@ -124,6 +113,7 @@ exports.handler = async (event, context) => {
 
 /**
  * Analyze prediction performance
+ * Now uses normalizePlayerName from shared-utils
  */
 function analyzePredictionPerformance(predictions, results) {
   const analysis = {
@@ -140,6 +130,7 @@ function analyzePredictionPerformance(predictions, results) {
 
   for (const pick of predictions) {
     // Find player in results (normalize names for matching)
+    // NOW USES shared-utils normalizePlayerName
     const playerResult = results.find(r => 
       normalizePlayerName(r.player) === normalizePlayerName(pick.player)
     );
@@ -203,33 +194,28 @@ function analyzePredictionPerformance(predictions, results) {
 /**
  * Calculate ROI for a pick
  * Assumes $100 bet on each pick
+ * Now uses americanToDecimal from shared-utils for proper odds conversion
  */
 function calculateROI(odds, performance) {
   const stake = 100;
   
   if (performance === 'win') {
-    // Win: get back stake + (odds * stake)
-    const payout = stake * odds;
-    return payout - stake;
+    // Convert American odds to decimal for proper payout calculation
+    const decimalOdds = americanToDecimal(odds);
+    if (decimalOdds) {
+      // Decimal odds include stake, so payout = stake * decimal odds
+      // Profit = payout - stake
+      const payout = stake * decimalOdds;
+      return payout - stake;
+    } else {
+      // Fallback to simple calculation if conversion fails
+      const payout = stake * (odds / 100);
+      return payout;
+    }
   }
   
   // Loss: lose stake
   return -stake;
-}
-
-/**
- * Normalize player name for matching
- */
-function normalizePlayerName(name) {
-  if (!name) return '';
-  
-  const normalized = name
-    .toLowerCase()
-    .replace(/[^a-z\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  
-  return normalized.split(' ').sort().join(' ');
 }
 
 /**
