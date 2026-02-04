@@ -43,9 +43,9 @@ exports.handler = async (event, context) => {
         
         if (cached && cached.timestamp) {
           const cacheAge = Date.now() - cached.timestamp;
-          const sixHours = 6 * 60 * 60 * 1000;
+          const twelveHours = 12 * 60 * 60 * 1000;
           
-          if (cacheAge < sixHours) {
+          if (cacheAge < twelveHours) {
             console.log(`[CACHE] Using cached player data (${Math.round(cacheAge / 1000 / 60)} minutes old)`);
             playersWithData = cached.players;
             tournament = cached.tournament;
