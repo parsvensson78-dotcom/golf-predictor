@@ -2,10 +2,6 @@ const Anthropic = require('@anthropic-ai/sdk');
 const axios = require('axios');
 const { getStore } = require('@netlify/blobs');
 
-/**
- * Matchup Predictor Endpoint
- * Generates AI-powered head-to-head matchup predictions
- */
 exports.handler = async (event, context) => {
   try {
     const body = JSON.parse(event.body || '{}');
@@ -92,7 +88,7 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // Step 7: Prepare player data with stats and odds (American format)
+    // Step 7: Prepare player data with stats and odds
     const playersWithData = statsData.players
       .map(stat => {
         const oddsEntry = oddsData.odds.find(o => 
@@ -104,9 +100,9 @@ exports.handler = async (event, context) => {
         return {
           name: stat.player,
           rank: stat.stats.rank,
-          odds: oddsEntry.odds, // American odds
-          minOdds: oddsEntry.minOdds, // Decimal
-          maxOdds: oddsEntry.maxOdds, // Decimal
+          odds: oddsEntry.odds,
+          minOdds: oddsEntry.minOdds,
+          maxOdds: oddsEntry.maxOdds,
           bookmakerCount: oddsEntry.bookmakerCount || 0,
           sgTotal: stat.stats.sgTotal,
           sgOTT: stat.stats.sgOTT,
@@ -193,14 +189,37 @@ exports.handler = async (event, context) => {
 
     // Save to Netlify Blobs for caching
     try {
-      await saveMatchupsToBlobs(responseData, context);
-      console.log('[MATCHUP] ✅ Saved to Blobs for caching');
+      const siteID = process.env.SITE_ID || context?.site?.id;
+      const token = process.env.NETLIFY_AUTH_TOKEN;
+      
+      if (siteID && token) {
+        const store = getStore({
+          name: 'matchups',
+          siteID: siteID,
+          token: token,
+          consistency: 'strong'
+        });
+
+        const tournamentSlug = responseData.tournament.name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '');
+        
+        const tourKey = responseData.tournament.tour || 'pga';
+        const date = new Date(responseData.generatedAt);
+        const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        const timeStr = `${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}`;
+        
+        const key = `${tourKey}-${tournamentSlug}-${dateStr}-${timeStr}`;
+
+        await store.set(key, JSON.stringify(responseData));
+        console.log(`[MATCHUP] Saved to blob: ${key}`);
+      }
     } catch (saveError) {
       console.error('[MATCHUP] Failed to save to Blobs:', saveError.message);
-      // Don't fail the request if save fails
     }
 
-    // Step 9: Return matchup predictions
+    // Return matchup predictions
     return {
       statusCode: 200,
       headers: {
@@ -223,9 +242,6 @@ exports.handler = async (event, context) => {
   }
 };
 
-/**
- * Normalize player name for matching
- */
 function normalizePlayerName(name) {
   let normalized = name
     .toLowerCase()
@@ -237,13 +253,9 @@ function normalizePlayerName(name) {
   return parts.sort().join(' ');
 }
 
-/**
- * Build prompt for Claude's matchup analysis - using American odds
- */
 function buildMatchupPrompt(tournament, players, weatherSummary, courseInfo, customMatchup) {
   const formatAmericanOdds = (odds) => odds > 0 ? `+${odds}` : `${odds}`;
   
-  // Format top 50 players for analysis
   const topPlayers = players.slice(0, 50);
   const playerList = topPlayers.map(p => 
     `${p.name} [${formatAmericanOdds(p.odds)}] - R${p.rank} | SG:${p.sgTotal?.toFixed(2) || 'N/A'} (OTT:${p.sgOTT?.toFixed(2) || 'N/A'} APP:${p.sgAPP?.toFixed(2) || 'N/A'} ARG:${p.sgARG?.toFixed(2) || 'N/A'} P:${p.sgPutt?.toFixed(2) || 'N/A'})`
@@ -312,7 +324,7 @@ Return JSON:
       "pick": "Player Name",
       "winProbability": 58,
       "confidence": "Medium",
-      "reasoning": "3-4 sentences comparing stats and explaining edge. Example: 'Player A's elite SG:APP (+1.2, ranks #8) creates massive advantage on precision course with small greens. Player B's superior driving (#5 in SG:OTT at +1.1) is negated by wide fairways. Weather forecast of calm winds favors accurate ball strikers over bombers.'"
+      "reasoning": "3-4 sentences comparing stats and explaining edge."
     }
   ]${customMatchup ? `,
   "customMatchup": {
@@ -339,37 +351,3 @@ Return JSON:
   }` : ''}
 }`;
 }
-
-/**
- * Save matchup predictions to Netlify Blobs for caching
- */
-async function saveMatchupsToBlobs(responseData, context) {
-  const siteID = process.env.SITE_ID || context?.site?.id;
-  const token = process.env.NETLIFY_AUTH_TOKEN;
-  
-  if (!siteID || !token) {
-    throw new Error('SITE_ID or NETLIFY_AUTH_TOKEN not configured');
-  }
-  
-  const store = getStore({
-    name: 'matchups',
-    siteID: siteID,
-    token: token,
-    consistency: 'strong'
-  });
-
-  // Generate key from tournament name and date + timestamp
-  const tournamentSlug = responseData.tournament.name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-  
-  const tour = responseData.tournament.tour || 'pga';
-  const date = new Date(responseData.generatedAt);
-  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  const timeStr = `${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}`;
-  
-  const key = `${tour}-${tournamentSlug}-${dateStr}-${timeStr}`;
-
-  await store.set(key, JSON.stringify(responseData));
-  console.log(`[MATCHUP] Saved to blob: ${key}`);
