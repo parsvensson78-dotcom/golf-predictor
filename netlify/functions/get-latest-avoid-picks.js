@@ -1,8 +1,9 @@
-const { getStore } = require('@netlify/blobs');
+const { getBlobStore } = require('./shared-utils');
 
 /**
- * Get Latest Avoid Picks from Blobs
+ * Get Latest Avoid Picks from Blobs - OPTIMIZED
  * Returns the most recent saved avoid picks for a tour
+ * NOW USES: shared-utils getBlobStore()
  */
 exports.handler = async (event, context) => {
   try {
@@ -10,17 +11,13 @@ exports.handler = async (event, context) => {
     
     console.log(`[LATEST-AVOID] Fetching latest avoid picks for ${tour}`);
     
-    // Get Netlify Blobs store
-    const siteID = process.env.SITE_ID || context.site?.id;
-    const token = process.env.NETLIFY_AUTH_TOKEN;
-    
-    console.log(`[LATEST-AVOID] Config check:`, {
-      hasSiteID: !!siteID,
-      hasToken: !!token
-    });
-    
-    if (!siteID || !token) {
-      console.error('[LATEST-AVOID] Missing SITE_ID or NETLIFY_AUTH_TOKEN');
+    // Use shared getBlobStore helper
+    let store;
+    try {
+      store = getBlobStore('avoid-picks', context);
+      console.log(`[LATEST-AVOID] Store created successfully`);
+    } catch (storeError) {
+      console.error(`[LATEST-AVOID] Failed to create store:`, storeError);
       return {
         statusCode: 404,
         headers: { 'Content-Type': 'application/json' },
@@ -31,18 +28,23 @@ exports.handler = async (event, context) => {
       };
     }
     
-    const store = getStore({
-      name: 'avoid-picks',
-      siteID: siteID,
-      token: token,
-      consistency: 'strong'
-    });
-    
-    console.log(`[LATEST-AVOID] Store created successfully`);
-    
     // List all blobs for this tour
-    const { blobs } = await store.list({ prefix: `${tour}-` });
-    console.log(`[LATEST-AVOID] Found ${blobs?.length || 0} blobs for prefix "${tour}-"`);
+    let blobs;
+    try {
+      const { blobs: blobList } = await store.list({ prefix: `${tour}-` });
+      blobs = blobList;
+      console.log(`[LATEST-AVOID] Found ${blobs?.length || 0} blobs for prefix "${tour}-"`);
+    } catch (listError) {
+      console.error(`[LATEST-AVOID] Failed to list blobs:`, listError);
+      return {
+        statusCode: 404,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          error: 'No cached avoid picks found',
+          message: listError.message
+        })
+      };
+    }
     
     if (!blobs || blobs.length === 0) {
       console.log(`[LATEST-AVOID] No cached avoid picks found for ${tour}`);
