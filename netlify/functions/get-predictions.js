@@ -912,18 +912,14 @@ async function savePredictionsToBlobs(responseData, context) {
   
   const key = `${tour}-${tournamentSlug}-${dateStr}-${timeStr}`;
 
-  // Prepare data to save (simplified version for tracking)
+  // Prepare data to save (full version including all course details)
   const predictionData = {
     tournament: {
       ...responseData.tournament,
       eventId: responseData.tournament.eventId,
       tour: responseData.tournament.tour
     },
-    courseInfo: {
-      par: responseData.courseInfo?.par,
-      yardage: responseData.courseInfo?.yardage,
-      difficulty: responseData.courseInfo?.difficulty
-    },
+    courseInfo: responseData.courseInfo, // Save FULL courseInfo
     weather: responseData.weather,
     predictions: responseData.predictions.map(pick => ({
       player: pick.player,
