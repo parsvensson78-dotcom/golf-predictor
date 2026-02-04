@@ -678,7 +678,6 @@ const PredictionsView = ({ data, requestId }) => {
 };
 
 // ==================== AVOID PICKS VIEW ====================
-// ==================== AVOID PICKS VIEW ====================
 const AvoidPicksView = ({ data, requestId }) => {
   const generatedTime = new Date(data.generatedAt).getTime();
   const now = Date.now();
@@ -698,17 +697,32 @@ const AvoidPicksView = ({ data, requestId }) => {
           {data.avoidPicks?.map((avoid, index) => (
             <div key={`avoid-${requestId}-${index}`} className="avoid-card">
               <div className="avoid-header">
-                <span className="avoid-icon">⚠️</span>
+                <span className="avoid-number">#{index + 1}</span>
                 <span className="avoid-odds">{formatAmericanOdds(avoid.odds)}</span>
               </div>
               <h4 className="avoid-name">{avoid.player}</h4>
-              <p className="avoid-reasoning">{avoid.reasoning}</p>
+              <div className="avoid-reasoning">
+                {avoid.reasoning.split('. ').filter(s => s.trim()).map((sentence, i, arr) => (
+                  <p key={i} style={{marginBottom: '0.5rem', lineHeight: '1.6', fontSize: '0.9rem'}}>
+                    {sentence.trim()}{i < arr.length - 1 || !sentence.endsWith('.') ? '.' : ''}
+                  </p>
+                ))}
+              </div>
             </div>
           ))}
         </div>
         {data.reasoning && (
-          <div style={{marginTop: '1.5rem', padding: '1rem', background: '#f8f9fa', borderRadius: '8px', fontSize: '0.95rem', color: '#666'}}>
-            <strong>Course Analysis:</strong> {data.reasoning}
+          <div style={{
+            marginTop: '2rem', 
+            padding: '1.5rem', 
+            background: 'linear-gradient(135deg, #fff5f5 0%, #ffe5e5 100%)',
+            borderRadius: '12px', 
+            fontSize: '0.95rem', 
+            color: '#666',
+            border: '2px solid #ffcccc'
+          }}>
+            <strong style={{color: '#c62828', fontSize: '1.05rem'}}>📋 Overall Course Analysis:</strong>
+            <p style={{marginTop: '0.5rem', lineHeight: '1.6'}}>{data.reasoning}</p>
           </div>
         )}
       </div>
