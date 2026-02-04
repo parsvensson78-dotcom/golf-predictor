@@ -1,5 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const axios = require('axios');
+const { getStore } = require('@netlify/blobs');
 
 /**
  * Avoid Picks Endpoint - Separate from main predictions
@@ -186,6 +187,41 @@ exports.handler = async (event, context) => {
     const outputCost = (outputTokens / 1000000) * 15.00;
     const totalCost = inputCost + outputCost;
 
+    // Prepare response data
+    const responseData = {
+      tournament: {
+        name: tournament.name,
+        course: tournament.course,
+        location: tournament.location,
+        dates: tournament.dates,
+        tour: tournament.tour
+      },
+      weather: weatherSummary,
+      avoidPicks: avoidData.avoid || [],
+      reasoning: avoidData.reasoning || '',
+      generatedAt: new Date().toISOString(),
+      tokensUsed: inputTokens + outputTokens,
+      tokenBreakdown: {
+        input: inputTokens,
+        output: outputTokens
+      },
+      estimatedCost: {
+        inputCost: inputCost,
+        outputCost: outputCost,
+        totalCost: totalCost,
+        formatted: `$${totalCost.toFixed(4)}`
+      }
+    };
+
+    // Save to Netlify Blobs for caching
+    try {
+      await saveAvoidPicksToBlobs(responseData, context);
+      console.log('[AVOID] ✅ Saved to Blobs for caching');
+    } catch (saveError) {
+      console.error('[AVOID] Failed to save to Blobs:', saveError.message);
+      // Don't fail the request if save fails
+    }
+
     // Return avoid picks
     return {
       statusCode: 200,
@@ -193,30 +229,7 @@ exports.handler = async (event, context) => {
         'Content-Type': 'application/json',
         'Cache-Control': 'no-cache, no-store, must-revalidate'
       },
-      body: JSON.stringify({
-        tournament: {
-          name: tournament.name,
-          course: tournament.course,
-          location: tournament.location,
-          dates: tournament.dates,
-          tour: tournament.tour
-        },
-        weather: weatherSummary,
-        avoidPicks: avoidData.avoid || [],
-        reasoning: avoidData.reasoning || '',
-        generatedAt: new Date().toISOString(),
-        tokensUsed: inputTokens + outputTokens,
-        tokenBreakdown: {
-          input: inputTokens,
-          output: outputTokens
-        },
-        estimatedCost: {
-          inputCost: inputCost,
-          outputCost: outputCost,
-          totalCost: totalCost,
-          formatted: `$${totalCost.toFixed(4)}`
-        }
-      })
+      body: JSON.stringify(responseData)
     };
 
   } catch (error) {
@@ -456,4 +469,39 @@ Return JSON with exactly 3 avoid picks:
     }
   ]
 }`;
+}
+
+/**
+ * Save avoid picks to Netlify Blobs for caching
+ */
+async function saveAvoidPicksToBlobs(responseData, context) {
+  const siteID = process.env.SITE_ID || context?.site?.id;
+  const token = process.env.NETLIFY_AUTH_TOKEN;
+  
+  if (!siteID || !token) {
+    throw new Error('SITE_ID or NETLIFY_AUTH_TOKEN not configured');
+  }
+  
+  const store = getStore({
+    name: 'avoid-picks',
+    siteID: siteID,
+    token: token,
+    consistency: 'strong'
+  });
+
+  // Generate key from tournament name and date + timestamp
+  const tournamentSlug = responseData.tournament.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  
+  const tour = responseData.tournament.tour || 'pga';
+  const date = new Date(responseData.generatedAt);
+  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const timeStr = `${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}`;
+  
+  const key = `${tour}-${tournamentSlug}-${dateStr}-${timeStr}`;
+
+  await store.set(key, JSON.stringify(responseData));
+  console.log(`[AVOID] Saved to blob: ${key}`);
 }
