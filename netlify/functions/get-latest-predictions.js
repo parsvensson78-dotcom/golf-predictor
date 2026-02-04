@@ -1,49 +1,23 @@
-const { getStore } = require('@netlify/blobs');
+const { getBlobStore } = require('./shared-utils');
 
 /**
- * Get Latest Predictions from Blobs
+ * Get Latest Predictions from Blobs - OPTIMIZED
  * Returns the most recent saved predictions for a tour
+ * NOW USES: shared-utils getBlobStore()
  */
 exports.handler = async (event, context) => {
   try {
     const { tour = 'pga' } = event.queryStringParameters || {};
     
-    console.log(`[LATEST] Fetching latest predictions for ${tour}`);
+    console.log(`[LATEST-PRED] Fetching latest predictions for ${tour}`);
     
-    // Get Netlify Blobs store (same approach as get-predictions.js)
-    // Note: We don't check process.env.NETLIFY as it's not always set
-    const siteID = process.env.SITE_ID || context.site?.id;
-    const token = process.env.NETLIFY_AUTH_TOKEN;
-    
-    console.log(`[LATEST] Config check:`, {
-      hasSiteID: !!siteID,
-      hasToken: !!token,
-      deployId: context.deployId || 'N/A'
-    });
-    
-    if (!siteID || !token) {
-      console.error('[LATEST] Missing SITE_ID or NETLIFY_AUTH_TOKEN');
-      return {
-        statusCode: 503,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          error: 'Blobs not configured',
-          message: 'SITE_ID or NETLIFY_AUTH_TOKEN not configured'
-        })
-      };
-    }
-    
+    // Use shared getBlobStore helper (eliminates 15 lines of duplicate code)
     let store;
     try {
-      store = getStore({
-        name: 'predictions',
-        siteID: siteID,
-        token: token,
-        consistency: 'strong'
-      });
-      console.log(`[LATEST] Store created successfully`);
+      store = getBlobStore('predictions', context);
+      console.log(`[LATEST-PRED] Store created successfully`);
     } catch (storeError) {
-      console.error(`[LATEST] Failed to create store:`, storeError);
+      console.error(`[LATEST-PRED] Failed to create store:`, storeError);
       return {
         statusCode: 503,
         headers: { 'Content-Type': 'application/json' },
@@ -60,9 +34,9 @@ exports.handler = async (event, context) => {
     try {
       const listResult = await store.list({ prefix: `${tour}-` });
       blobs = listResult.blobs;
-      console.log(`[LATEST] Found ${blobs?.length || 0} blobs for prefix "${tour}-"`);
+      console.log(`[LATEST-PRED] Found ${blobs?.length || 0} blobs for prefix "${tour}-"`);
     } catch (listError) {
-      console.error(`[LATEST] Failed to list blobs:`, listError);
+      console.error(`[LATEST-PRED] Failed to list blobs:`, listError);
       return {
         statusCode: 503,
         headers: { 'Content-Type': 'application/json' },
@@ -74,9 +48,9 @@ exports.handler = async (event, context) => {
     }
     
     if (!blobs || blobs.length === 0) {
-      console.log(`[LATEST] No cached predictions found for ${tour}`);
+      console.log(`[LATEST-PRED] No cached predictions found for ${tour}`);
       return {
-        statusCode: 404, // 404 so frontend knows it's just "not found" not "error"
+        statusCode: 404,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           error: 'No cached predictions found',
@@ -89,7 +63,7 @@ exports.handler = async (event, context) => {
     const sortedBlobs = blobs.sort((a, b) => b.key.localeCompare(a.key));
     const latestKey = sortedBlobs[0].key;
     
-    console.log(`[LATEST] Found latest: ${latestKey}`);
+    console.log(`[LATEST-PRED] Found latest: ${latestKey}`);
     
     // Get the blob data
     const latestData = await store.get(latestKey, { type: 'json' });
@@ -104,9 +78,9 @@ exports.handler = async (event, context) => {
       };
     }
     
-    console.log(`[LATEST] Returning cached data from ${latestKey}`);
+    console.log(`[LATEST-PRED] Returning cached data from ${latestKey}`);
     
-    // Return the cached predictions with generatedAt at top level for frontend
+    // Return the cached predictions
     return {
       statusCode: 200,
       headers: {
@@ -115,14 +89,14 @@ exports.handler = async (event, context) => {
       },
       body: JSON.stringify({
         ...latestData,
-        generatedAt: latestData.metadata?.generatedAt || latestData.generatedAt, // Ensure generatedAt at top level
+        generatedAt: latestData.metadata?.generatedAt || latestData.generatedAt,
         fromCache: true,
         cacheKey: latestKey
       })
     };
     
   } catch (error) {
-    console.error('[LATEST] Error:', error);
+    console.error('[LATEST-PRED] Error:', error);
     return {
       statusCode: 500,
       headers: { 'Content-Type': 'application/json' },
