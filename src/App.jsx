@@ -2,29 +2,17 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import './App.css';
 
 /**
- * OPTIMIZED App.jsx v2
+ * OPTIMIZED App.jsx
  * - Extracted reusable components
- * - Reduced code duplication with helper functions
+ * - Reduced code duplication
  * - Better state management
  * - Cleaner structure
- * - FIXED: Value picks and avoid picks now render independently
- * - OPTIMIZED: Removed requestId dependency loop in fetchData
- * - OPTIMIZED: Eliminated redundant state updates
- * - OPTIMIZED: Centralized cache indicator logic
  */
 
 // Helper function to format American odds
 const formatAmericanOdds = (odds) => {
   if (!odds || odds === 0) return 'N/A';
   return odds > 0 ? `+${odds}` : `${odds}`;
-};
-
-// Helper to check if data is cached (older than 60 seconds)
-const isCachedData = (generatedAt) => {
-  if (!generatedAt) return false;
-  const now = Date.now();
-  const then = new Date(generatedAt).getTime();
-  return (now - then) > 60000;
 };
 
 // Reusable timestamp header component
@@ -87,7 +75,8 @@ function App() {
 
   // Generic fetch function to avoid duplication
   const fetchData = useCallback(async (endpoint, method = 'GET', body = null, dataKey) => {
-    setRequestId(prev => prev + 1);
+    const newRequestId = requestId + 1;
+    setRequestId(newRequestId);
     setError(null);
     setLoading(true);
     
@@ -115,9 +104,9 @@ function App() {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
         
-        // Special handling for get-latest-* endpoints (cached data)
-        if (url.includes('get-latest-')) {
-          // 503 = Blobs not configured, 404 = No saved data yet
+        // Special handling for get-latest-predictions 
+        if (url.includes('get-latest-predictions')) {
+          // 503 = Blobs not configured, 404 = No saved predictions yet
           if (response.status === 503 || response.status === 404) {
             console.log(`[FETCH] No cached data available (${response.status}), will use fallback`);
             throw new Error('NO_CACHED_DATA');
@@ -140,7 +129,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, []); // Empty deps - uses setters which are stable
+  }, [requestId]);
 
   const handleGetPredictions = () => 
     fetchData(`/.netlify/functions/get-predictions?tour=${tour}`, 'GET', null, 'predictions');
@@ -161,20 +150,12 @@ function App() {
     fetchData(`/.netlify/functions/get-matchup-predictions`, 'POST', { tour }, 'matchups');
 
   const handleGetResults = () => 
-    fetchData(`/.netlify/functions/get-prediction-results?tour=${tour}`, 'GET', null, 'results');
+    fetchData(`/.netlify/functions/get-prediction-results`, 'GET', null, 'results');
 
   const handleTourChange = (newTour) => {
     setTour(newTour);
     setError(null);
-    
-    // Clear all data when switching tours
-    setData({
-      predictions: null,
-      avoidPicks: null,
-      newsPreview: null,
-      matchups: null,
-      results: null
-    });
+    setRequestId(prev => prev + 1);
     
     // Try to load all cached data for new tour from Blobs
     console.log(`[TOUR] Switching to ${newTour}, checking for cached data...`);
@@ -207,13 +188,20 @@ function App() {
         fetchData(`/.netlify/functions/get-latest-matchups?tour=${tour}`, 'GET', null, 'matchups'),
         
         // Results
-        fetchData(`/.netlify/functions/get-prediction-results?tour=${tour}`, 'GET', null, 'results')
+        fetchData(`/.netlify/functions/get-prediction-results`, 'GET', null, 'results')
       ]).then(results => {
         const loaded = results.filter(r => r.status === 'fulfilled').length;
         console.log(`[AUTO-LOAD] Successfully loaded ${loaded}/4 cached datasets`);
       });
     }
   }, []); // Empty array is safe with ref - truly runs once
+
+  const currentData = data[
+    activeTab === 'predictions' ? 'predictions' :
+    activeTab === 'avoid' ? 'avoidPicks' :
+    activeTab === 'news' ? 'newsPreview' : 
+    activeTab === 'results' ? 'results' : 'matchups'
+  ];
 
   return (
     <div className="app">
@@ -237,13 +225,13 @@ function App() {
       
       {error && !loading && <ErrorState error={error} onRetry={handleGetPredictions} requestId={requestId} />}
 
-      {!loading && !error && (
+      {currentData && !loading && !error && (
         <>
-          {activeTab === 'predictions' && (data.predictions || data.avoidPicks) && <PredictionsView data={data} requestId={requestId} />}
-          {activeTab === 'avoid' && data.avoidPicks && <AvoidPicksView data={data.avoidPicks} requestId={requestId} />}
-          {activeTab === 'news' && data.newsPreview && <NewsPreviewView data={data.newsPreview} requestId={requestId} />}
-          {activeTab === 'matchups' && data.matchups && <MatchupsView data={data.matchups} requestId={requestId} />}
-          {activeTab === 'results' && data.results && <ResultsView data={data.results} requestId={requestId} />}
+          {activeTab === 'predictions' && <PredictionsView data={currentData} requestId={requestId} />}
+          {activeTab === 'avoid' && <AvoidPicksView data={currentData} requestId={requestId} />}
+          {activeTab === 'news' && <NewsPreviewView data={currentData} requestId={requestId} />}
+          {activeTab === 'matchups' && <MatchupsView data={currentData} requestId={requestId} />}
+          {activeTab === 'results' && <ResultsView data={currentData} requestId={requestId} />}
         </>
       )}
     </div>
@@ -315,7 +303,7 @@ const ActionButton = ({ activeTab, loading, onGetPredictions, onGetAvoidPicks, o
   return (
     <div className="action-section">
       <button 
-        className="btn btn-success get-predictions-btn"
+        className="get-predictions-btn"
         onClick={config.handler}
         disabled={loading}
       >
@@ -603,144 +591,86 @@ const FooterInfo = ({ data }) => {
   );
 };
 
-const StatItem = ({ label, value, color }) => (
-  <div className="stat-item">
-    <span className="stat-label">{label}</span>
-    <span className="stat-value" style={color ? { color } : {}}>{value}</span>
-  </div>
-);
-
-// ==================== PREDICTIONS VIEW (FIXED) ====================
+// ==================== PREDICTIONS VIEW ====================
 const PredictionsView = ({ data, requestId }) => {
-  const hasPredictions = data.predictions?.predictions?.length > 0;
-  const hasAvoidPicks = data.avoidPicks?.avoidPicks?.length > 0;
-  
-  // If neither predictions nor avoid picks exist, show empty state
-  if (!hasPredictions && !hasAvoidPicks) {
-    return (
-      <div className="container" key={`predictions-${requestId}`}>
-        <div style={{textAlign: 'center', padding: '4rem 2rem'}}>
-          <h3>No Cached Data Found</h3>
-          <p>Click "Get Predictions" to generate value picks and avoid recommendations</p>
-        </div>
-      </div>
-    );
-  }
-
-  const generatedTime = data.predictions?.generatedAt || data.avoidPicks?.generatedAt;
-  const isCached = isCachedData(generatedTime);
+  // Check if data is from cache (generated more than 1 minute ago)
+  const generatedTime = new Date(data.generatedAt).getTime();
+  const now = Date.now();
+  const isCached = (now - generatedTime) > 60000; // More than 1 minute old = cached
   
   return (
-    <div className="container loaded" key={`predictions-${requestId}-${generatedTime}`}>
-      <div className={`cache-indicator ${isCached ? 'cached' : 'fresh'}`}>
-        {isCached ? 'Cached' : 'Fresh'}
-      </div>
-      
-      {/* VALUE PICKS SECTION */}
-      {hasPredictions && (
-        <>
-          <TimestampHeader generatedAt={data.predictions.generatedAt} />
-          <TournamentInfo tournament={data.predictions.tournament} />
-          <WeatherForecast dailyForecast={data.predictions.dailyForecast} />
-          <CourseDetails courseInfo={data.predictions.courseInfo} courseAnalysis={data.predictions.courseAnalysis} />
-          <CourseAnalysis courseAnalysis={data.predictions.courseAnalysis} />
-          
-          <div className="picks-section">
-            <h3>💎 Value Picks</h3>
-            <div className="picks-grid">
-              {data.predictions.predictions.map((pick, index) => (
-                <div key={`pick-${requestId}-${index}`} className="card pick-card">
-                  <div className="pick-header">
-                    <span className="pick-number">#{index + 1}</span>
-                    <div className="odds-container">
-                      <span className="pick-odds">{formatAmericanOdds(pick.odds)}</span>
-                    </div>
-                  </div>
-                  <h3 className="pick-name">{pick.player}</h3>
-                  <OddsBreakdown pick={pick} />
-                  <div className="pick-reasoning">
-                    {pick.reasoning.split('. ').filter(s => s.trim()).map((sentence, i, arr) => (
-                      <p key={i} style={{marginBottom: '0.5rem', lineHeight: '1.6', fontSize: '0.95rem'}}>
-                        {sentence.trim()}{i < arr.length - 1 || !sentence.endsWith('.') ? '.' : ''}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          
-          <FooterInfo data={data.predictions} />
-        </>
-      )}
-
-      {/* Show empty state if no predictions */}
-      {!hasPredictions && !hasAvoidPicks && (
-        <div style={{textAlign: 'center', padding: '4rem 2rem'}}>
-          <h3>No Cached Data Found</h3>
-          <p>Click "Get Predictions" to generate value picks</p>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ==================== AVOID PICKS VIEW ====================
-const AvoidPicksView = ({ data, requestId }) => {
-  const isCached = isCachedData(data.generatedAt);
-  
-  return (
-    <div className="container loaded" key={`avoid-${requestId}-${data.generatedAt}`}>
+    <div className="predictions-container loaded" key={`predictions-${requestId}-${data.generatedAt}`}>
       <div className={`cache-indicator ${isCached ? 'cached' : 'fresh'}`}>
         {isCached ? 'Cached' : 'Fresh'}
       </div>
       <TimestampHeader generatedAt={data.generatedAt} />
       <TournamentInfo tournament={data.tournament} />
-      
-      <div className="avoid-section">
-        <h3>❌ Players to Avoid (Poor Course Fit)</h3>
-        <div className="avoid-grid">
-          {data.avoidPicks?.map((avoid, index) => (
-            <div key={`avoid-${requestId}-${index}`} className="card avoid-card">
-              <div className="avoid-header">
-                <span className="avoid-number">#{index + 1}</span>
-                <span className="avoid-odds">{formatAmericanOdds(avoid.odds)}</span>
-              </div>
-              <h4 className="avoid-name">{avoid.player}</h4>
-              <div className="avoid-reasoning">
-                {avoid.reasoning.split('. ').filter(s => s.trim()).map((sentence, i, arr) => (
-                  <p key={i} style={{marginBottom: '0.5rem', lineHeight: '1.6', fontSize: '0.9rem'}}>
-                    {sentence.trim()}{i < arr.length - 1 || !sentence.endsWith('.') ? '.' : ''}
-                  </p>
-                ))}
+    <WeatherForecast dailyForecast={data.dailyForecast} />
+    <CourseDetails courseInfo={data.courseInfo} courseAnalysis={data.courseAnalysis} />
+    <CourseAnalysis courseAnalysis={data.courseAnalysis} />
+    
+    <div className="picks-section">
+      <h3>💎 Value Picks</h3>
+      <div className="picks-grid">
+        {data.predictions?.map((pick, index) => (
+          <div key={`pick-${requestId}-${index}`} className="pick-card">
+            <div className="pick-header">
+              <span className="pick-number">#{index + 1}</span>
+              <div className="odds-container">
+                <span className="pick-odds">{formatAmericanOdds(pick.odds)}</span>
               </div>
             </div>
-          ))}
-        </div>
-        {data.reasoning && (
-          <div style={{
-            marginTop: '2rem', 
-            padding: '1.5rem', 
-            background: 'linear-gradient(135deg, #fff5f5 0%, #ffe5e5 100%)',
-            borderRadius: '12px', 
-            fontSize: '0.95rem', 
-            color: '#666',
-            border: '2px solid #ffcccc'
-          }}>
-            <strong style={{color: '#c62828', fontSize: '1.05rem'}}>📋 Overall Course Analysis:</strong>
-            <p style={{marginTop: '0.5rem', lineHeight: '1.6'}}>{data.reasoning}</p>
+            <h3 className="pick-name">{pick.player}</h3>
+            <OddsBreakdown pick={pick} />
+            <div className="pick-reasoning">
+              {pick.reasoning.split('. ').filter(s => s.trim()).map((sentence, i, arr) => (
+                <p key={i} style={{marginBottom: '0.5rem', lineHeight: '1.6', fontSize: '0.95rem'}}>
+                  {sentence.trim()}{i < arr.length - 1 || !sentence.endsWith('.') ? '.' : ''}
+                </p>
+              ))}
+            </div>
           </div>
-        )}
+        ))}
       </div>
-      
-      <FooterInfo data={data} />
     </div>
+    
+    <FooterInfo data={data} />
+  </div>
   );
 };
 
+// ==================== AVOID PICKS VIEW ====================
+const AvoidPicksView = ({ data, requestId }) => (
+  <div className="avoid-picks-container" key={`avoid-${requestId}-${data.generatedAt}`}>
+    <TimestampHeader generatedAt={data.generatedAt} />
+    <TournamentInfo tournament={data.tournament} />
+    
+    <div className="avoid-section">
+      <h3>❌ Players to Avoid (Poor Course Fit)</h3>
+      <p className="avoid-subtitle">{data.reasoning}</p>
+      <div className="avoid-grid">
+        {data.avoidPicks?.map((avoid, index) => (
+          <div key={`avoid-${requestId}-${index}`} className="avoid-card">
+            <div className="avoid-header">
+              <span className="avoid-icon">⚠️</span>
+              <span className="avoid-odds">{formatAmericanOdds(avoid.odds)}</span>
+            </div>
+            <h4 className="avoid-name">{avoid.player}</h4>
+            <p className="avoid-reasoning">{avoid.reasoning}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+    
+    <FooterInfo data={data} />
+  </div>
+);
+
 // ==================== NEWS PREVIEW VIEW ====================
 const NewsPreviewView = ({ data, requestId }) => {
-  const isCached = isCachedData(data.generatedAt);
+  const generatedTime = new Date(data.generatedAt).getTime();
+  const now = Date.now();
+  const isCached = (now - generatedTime) > 60000;
   
   return (
     <div className="news-preview-container loaded" key={`news-${requestId}-${data.generatedAt}`}>
@@ -793,7 +723,9 @@ const NewsPreviewView = ({ data, requestId }) => {
 
 // ==================== MATCHUPS VIEW ====================
 const MatchupsView = ({ data, requestId }) => {
-  const isCached = isCachedData(data.generatedAt);
+  const generatedTime = new Date(data.generatedAt).getTime();
+  const now = Date.now();
+  const isCached = (now - generatedTime) > 60000;
   
   return (
     <div className="matchup-container loaded" key={`matchup-${requestId}-${data.generatedAt}`}>
@@ -857,7 +789,7 @@ const PlayerBox = ({ player, isPick }) => (
 const ResultsView = ({ data, requestId }) => {
   if (!data.tournaments || data.tournaments.length === 0) {
     return (
-      <div className="container" key={`results-${requestId}`}>
+      <div className="predictions-container" key={`results-${requestId}`}>
         <div style={{textAlign: 'center', padding: '4rem 2rem'}}>
           <h3>No Predictions Saved Yet</h3>
           <p>Generate some predictions first, and they'll automatically be saved for results tracking!</p>
@@ -867,7 +799,7 @@ const ResultsView = ({ data, requestId }) => {
   }
 
   return (
-    <div className="container" key={`results-${requestId}`}>
+    <div className="predictions-container" key={`results-${requestId}`}>
       {data.generatedAt && <TimestampHeader generatedAt={data.generatedAt} />}
       
       <div style={{textAlign: 'center', marginBottom: '2rem'}}>
