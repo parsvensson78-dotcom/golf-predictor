@@ -103,8 +103,11 @@ exports.handler = async (event, context) => {
     const enrichedCourseInfo = {
       ...dataGolfInfo,
       
+      // Use DataGolf data if available, fallback to course database if DataGolf has null
+      par: dataGolfInfo.par || courseDetails?.par || null,
+      yardage: dataGolfInfo.yardage || courseDetails?.yardage || null,
+      
       // Add detailed course characteristics from database if available
-      // But always prefer DataGolf's par and yardage since you have paid access
       width: courseDetails?.width || 'Information not available',
       greens: courseDetails?.greens || 'Information not available',
       rough: courseDetails?.rough || 'Information not available',
@@ -283,6 +286,19 @@ function getCourseDetails(courseNameFromDataGolf, tournamentName) {
       difficulty: 'Difficult',
       rewards: ['Wind play', 'Links strategy', 'Ball control', 'Course management'],
       avgScore: 71.8
+    },
+    
+    'doha': {
+      name: 'Doha Golf Club',
+      yardage: 7317,
+      par: 72,
+      width: 'Wide desert fairways',
+      greens: 'Large paspalum greens',
+      rough: 'Light desert rough',
+      keyFeatures: ['Desert golf', 'Water features', 'Modern design', 'Strategic bunkering'],
+      difficulty: 'Moderate',
+      rewards: ['Distance off tee', 'Iron accuracy', 'Putting', 'Course management'],
+      avgScore: 71.0
     },
 
     // ===== DP WORLD TOUR - AUSTRALIA & AFRICA (2026) =====
@@ -498,6 +514,8 @@ function getCourseDetailsByTournamentName(tournamentName) {
     'dubai invitational': 'dubai creek',
     'dp world tour championship': 'earth course',
     'abu dhabi': 'yas links',
+    'qatar': 'doha',
+    'qatar masters': 'doha',
     
     // DP WORLD TOUR - Australia & Africa
     'australian pga': 'royal queensland',
