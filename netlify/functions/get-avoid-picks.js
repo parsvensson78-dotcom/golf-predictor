@@ -288,14 +288,31 @@ ${excludePlayers.length > 0 ? `- You CANNOT select: ${excludePlayers.join(', ')}
 
 EXAMPLES OF GOOD AVOID REASONING:
 
-GOOD: "Despite being 4th favorite at +800, his SG:APP (+0.25) ranks #85 on tour - far below elite level needed for this precision course with small, elevated greens. Course demands show 'SG:APP CRITICAL' but his approach game is merely average. Recent form shows inconsistency (T45, MC, T22 in Last5). Weather analysis indicates winds favor ball-strikers, which isn't his strength. At +800, public overvalues name recognition over statistical course fit."
+GOOD: 
+"Course fit: His SG:APP (+0.25, ranks #85) is far below the elite level needed for this precision course with small, elevated greens - course demands show 'SG:APP CRITICAL' but his approach game is merely average.
+
+History: No previous appearances at this venue.
+
+Form: Recent inconsistency with T45, MC, T22 in last 5 starts shows lack of momentum.
+
+Weather: Wind analysis favors ball-strikers, which isn't his primary strength.
+
+Value: At +800 (4th favorite), public overvalues name recognition over statistical course fit."
 
 BAD: "Good stats but overpriced" ← NO! Must show SPECIFIC stat mismatch with course demands!
 
 WEIGHTS: Course Fit 40%, History 20%, Form 15%, Weather 15%, Value 10%
 
-REASONING FORMAT (3-4 sentences covering ALL factors):
-"Course fit: [Specific SG weakness vs course demands]. History: [Poor results here or context]. Form: [Recent struggles]. Weather: [How conditions hurt]. Value: [Why odds too short given above]."
+REASONING FORMAT - Use this EXACT structure with line breaks between sections:
+"Course fit: [Specific SG weakness vs course demands with numbers].
+
+History: [Poor results here or no history context].
+
+Form: [Recent struggles with specific finishes].
+
+Weather: [How conditions hurt their game].
+
+Value: [Why odds too short given above factors]."
 
 Return JSON with exactly 3 avoid picks:
 {
@@ -304,7 +321,7 @@ Return JSON with exactly 3 avoid picks:
     {
       "player": "Must be from top ${players.length} list (NOT excluded list)",
       "odds": 800,
-      "reasoning": "Full analysis: Course fit mismatch, history, form, weather, why overvalued. Use specific SG numbers and rankings."
+      "reasoning": "STRUCTURED FORMAT with line breaks:\n\nCourse fit: [Specific analysis].\n\nHistory: [Results].\n\nForm: [Recent finishes].\n\nWeather: [Impact].\n\nValue: [Assessment]."
     }
   ]
 }`;
