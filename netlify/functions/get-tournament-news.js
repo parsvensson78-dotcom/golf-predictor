@@ -1,16 +1,29 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const axios = require('axios');
 const xml2js = require('xml2js');
+const {
+  getBlobStore,
+  normalizePlayerName,
+  formatAmericanOdds,
+  analyzeCourseSkillDemands,
+  analyzeWeatherConditions,
+  calculateClaudeCost,
+  generateBlobKey
+} = require('./shared-utils');
 
 /**
- * Tournament News & Preview Endpoint - Robust Version
- * Handles GET requests, POST requests, and query parameters
+ * Tournament News & Preview Endpoint - UPGRADED VERSION v2
+ * NOW WITH INTELLIGENT ANALYSIS:
+ * - Course skill demands analysis
+ * - Weather conditions analysis with actual forecast data
+ * - Top players stats and recent form
+ * - RSS news feeds
+ * - Comprehensive preview generation
+ * - Blob storage for caching
  */
 exports.handler = async (event, context) => {
   console.log('[NEWS] Function invoked');
   console.log('[NEWS] Method:', event.httpMethod);
-  console.log('[NEWS] Query params:', JSON.stringify(event.queryStringParameters));
-  console.log('[NEWS] Has body:', !!event.body);
 
   try {
     // Determine tour from multiple possible sources
@@ -30,12 +43,12 @@ exports.handler = async (event, context) => {
           console.log('[NEWS] Tour from body:', tour);
         }
       } catch (parseError) {
-        console.log('[NEWS] Body parse failed, using default tour:', parseError.message);
+        console.log('[NEWS] Body parse failed, using default tour');
       }
     }
     
     const baseUrl = process.env.URL || 'http://localhost:8888';
-    console.log(`[NEWS] Starting news fetch for ${tour} tour`);
+    console.log(`[NEWS] Starting comprehensive preview for ${tour} tour`);
 
     // Step 1: Get current tournament info
     let tournament;
@@ -51,29 +64,159 @@ exports.handler = async (event, context) => {
       throw new Error('Could not fetch tournament information');
     }
 
-    // Step 2: Fetch golf news from RSS feeds (with error handling)
-    let newsArticles = [];
+    // Step 2: Fetch golf news from RSS feeds (in parallel with other data)
+    const newsPromise = fetchGolfNews(tournament.name, tour);
+
+    // Step 3: Get course info
+    let courseInfo;
     try {
-      console.log('[NEWS] Fetching news articles...');
-      newsArticles = await fetchGolfNews(tournament.name, tour);
-      console.log(`[NEWS] Fetched ${newsArticles.length} news articles`);
-    } catch (newsError) {
-      console.error('[NEWS] Failed to fetch news:', newsError.message);
-      // Continue without news - Claude can still generate preview
-      newsArticles = [];
+      const courseResponse = await axios.get(`${baseUrl}/.netlify/functions/fetch-course-info?tour=${tour}&tournament=${encodeURIComponent(tournament.name)}`, {
+        timeout: 10000
+      });
+      courseInfo = courseResponse.data;
+      console.log(`[NEWS] Course: ${courseInfo.courseName}, ${courseInfo.yardage}y, Par ${courseInfo.par}`);
+    } catch (courseError) {
+      console.log('[NEWS] Course info fetch failed, using basic info');
+      courseInfo = {
+        courseName: tournament.course,
+        eventName: tournament.name
+      };
     }
 
-    // Step 3: Get top players from tournament field
-    const topPlayers = tournament.field ? tournament.field.slice(0, 20).map(p => p.name) : [];
-    console.log(`[NEWS] Top ${topPlayers.length} players identified`);
+    // Step 4: Get weather forecast with detailed analysis
+    let weatherData = null;
+    try {
+      const weatherApiKey = process.env.WEATHER_API_KEY;
+      if (weatherApiKey && tournament.location) {
+        const location = tournament.location.split(',')[0].trim();
+        
+        console.log('[NEWS] Fetching weather forecast...');
+        const weatherResponse = await axios.get('https://api.weatherapi.com/v1/forecast.json', {
+          params: {
+            key: weatherApiKey,
+            q: location,
+            days: 4,
+            aqi: 'no'
+          },
+          timeout: 8000
+        });
 
-    // Step 4: Call Claude API for preview analysis
-    console.log('[NEWS] Calling Claude API...');
+        if (weatherResponse.data?.forecast) {
+          const dayNames = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
+          const daily = weatherResponse.data.forecast.forecastday.map((day, index) => ({
+            day: dayNames[index] || new Date(day.date).toLocaleDateString('en-US', { weekday: 'long' }),
+            date: day.date,
+            tempHigh: Math.round(day.day.maxtemp_f),
+            tempLow: Math.round(day.day.mintemp_f),
+            condition: day.day.condition.text,
+            windSpeed: Math.round(day.day.maxwind_mph),
+            chanceOfRain: day.day.daily_chance_of_rain,
+            humidity: day.day.avghumidity
+          }));
+
+          const summary = daily.map(d => 
+            `${d.day}: ${d.tempHigh}°F, ${d.condition}, Wind: ${d.windSpeed}mph, Rain: ${d.chanceOfRain}%`
+          ).join(' | ');
+
+          weatherData = { summary, daily };
+          console.log(`[NEWS] Weather: Avg wind ${Math.round(daily.reduce((s, d) => s + d.windSpeed, 0) / daily.length)}mph`);
+        }
+      }
+    } catch (weatherError) {
+      console.error('[NEWS] Weather fetch failed:', weatherError.message);
+    }
+
+    const weatherSummary = weatherData?.summary || 'Weather data not available';
+
+    // Step 5: Analyze course demands and weather (using shared-utils)
+    const courseDemands = analyzeCourseSkillDemands(courseInfo);
+    const weatherAnalysis = analyzeWeatherConditions(weatherSummary);
+    
+    console.log('[NEWS] Course demands analyzed');
+    console.log('[NEWS] Weather impact analyzed');
+
+    // Step 6: Get top players from tournament field with stats and odds
+    const playerNames = tournament.field ? tournament.field.slice(0, 30).map(p => p.name) : [];
+    console.log(`[NEWS] Analyzing top ${playerNames.length} players`);
+
+    let playersWithData = [];
+    if (playerNames.length > 0) {
+      try {
+        // Fetch stats and odds in parallel
+        const [statsResponse, oddsResponse] = await Promise.all([
+          axios.post(`${baseUrl}/.netlify/functions/fetch-stats`, 
+            { players: playerNames }, 
+            { timeout: 25000 }
+          ),
+          axios.post(`${baseUrl}/.netlify/functions/fetch-odds`, 
+            { tournamentName: tournament.name, players: playerNames, tour: tournament.tour }, 
+            { timeout: 20000 }
+          )
+        ]);
+
+        const statsData = statsResponse.data;
+        const oddsData = oddsResponse.data;
+
+        // Get recent form data
+        const formData = await fetchRecentFormAndHistory(playerNames, tournament.course, tour);
+
+        // Merge player data
+        playersWithData = statsData.players
+          .map(stat => {
+            const oddsEntry = oddsData.odds.find(o => 
+              normalizePlayerName(o.player) === normalizePlayerName(stat.player)
+            );
+            
+            const formEntry = formData.players.find(f => 
+              f.normalizedName === normalizePlayerName(stat.player)
+            );
+
+            if (!oddsEntry) return null;
+            
+            return {
+              name: stat.player,
+              rank: stat.stats.rank,
+              odds: oddsEntry.odds,
+              sgTotal: stat.stats.sgTotal,
+              sgOTT: stat.stats.sgOTT,
+              sgAPP: stat.stats.sgAPP,
+              sgARG: stat.stats.sgARG,
+              sgPutt: stat.stats.sgPutt,
+              recentForm: formEntry?.recentResults?.slice(0, 3) || [],
+              courseHistory: formEntry?.courseHistory || [],
+              momentum: formEntry?.momentum || 'unknown'
+            };
+          })
+          .filter(p => p !== null)
+          .sort((a, b) => a.odds - b.odds)
+          .slice(0, 20); // Top 20 for preview
+
+        console.log(`[NEWS] ${playersWithData.length} players with complete data`);
+      } catch (playerDataError) {
+        console.error('[NEWS] Failed to fetch player data:', playerDataError.message);
+        // Continue with just player names
+      }
+    }
+
+    // Step 7: Wait for news articles
+    const newsArticles = await newsPromise;
+    console.log(`[NEWS] ${newsArticles.length} news articles fetched`);
+
+    // Step 8: Call Claude API for comprehensive preview
+    console.log('[NEWS] Calling Claude API for comprehensive preview...');
     const anthropic = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY
     });
 
-    const prompt = buildPreviewPrompt(tournament, newsArticles, topPlayers);
+    const prompt = buildEnhancedPreviewPrompt(
+      tournament,
+      newsArticles,
+      playersWithData,
+      courseInfo,
+      courseDemands,
+      weatherSummary,
+      weatherAnalysis
+    );
 
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
@@ -99,58 +242,76 @@ exports.handler = async (event, context) => {
       throw new Error('Invalid response format from AI');
     }
 
-    // Calculate cost
-    const inputTokens = message.usage.input_tokens;
-    const outputTokens = message.usage.output_tokens;
-    const inputCost = (inputTokens / 1000000) * 3.00;
-    const outputCost = (outputTokens / 1000000) * 15.00;
-    const totalCost = inputCost + outputCost;
+    // Calculate cost using shared utility
+    const cost = calculateClaudeCost(message.usage);
 
-    console.log(`[NEWS] Success! Returning preview with ${newsArticles.length} articles`);
+    // Prepare response data
+    const responseData = {
+      tournament: {
+        name: tournament.name,
+        course: tournament.course,
+        location: tournament.location,
+        dates: tournament.dates,
+        tour: tournament.tour
+      },
+      weather: weatherSummary,
+      dailyForecast: weatherData?.daily || [],
+      courseInfo: {
+        name: courseInfo.courseName || courseInfo.eventName,
+        courseName: courseInfo.courseName,
+        par: courseInfo.par,
+        yardage: courseInfo.yardage,
+        width: courseInfo.width,
+        greens: courseInfo.greens,
+        rough: courseInfo.rough,
+        difficulty: courseInfo.difficulty
+      },
+      courseAnalysis: {
+        demands: courseDemands,
+        weatherImpact: weatherAnalysis
+      },
+      news: newsArticles,
+      preview: {
+        overview: preview.overview || '',
+        storylines: preview.storylines || [],
+        playersToWatch: preview.playersToWatch || [],
+        bettingAngles: preview.bettingAngles || [],
+        weatherImpact: preview.weatherImpact || ''
+      },
+      generatedAt: new Date().toISOString(),
+      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
+      tokenBreakdown: {
+        input: message.usage.input_tokens,
+        output: message.usage.output_tokens
+      },
+      estimatedCost: cost
+    };
 
-    // Step 5: Return news and preview
+    // Step 9: Save to Netlify Blobs for caching
+    try {
+      const store = getBlobStore('news', context);
+      const key = generateBlobKey(responseData.tournament.name, responseData.tournament.tour, responseData.generatedAt);
+
+      await store.set(key, JSON.stringify(responseData));
+      console.log(`[NEWS] Saved to blob: ${key}`);
+    } catch (saveError) {
+      console.error('[NEWS] Failed to save to Blobs:', saveError.message);
+    }
+
+    console.log(`[NEWS] Success! Returning comprehensive preview`);
+
+    // Return news and preview
     return {
       statusCode: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
       },
-      body: JSON.stringify({
-        tournament: {
-          name: tournament.name,
-          course: tournament.course,
-          location: tournament.location,
-          dates: tournament.dates,
-          tour: tournament.tour
-        },
-        news: newsArticles,
-        preview: {
-          overview: preview.overview || '',
-          storylines: preview.storylines || [],
-          playersToWatch: preview.playersToWatch || [],
-          bettingAngles: preview.bettingAngles || [],
-          weatherImpact: preview.weatherImpact || ''
-        },
-        generatedAt: new Date().toISOString(),
-        tokensUsed: inputTokens + outputTokens,
-        tokenBreakdown: {
-          input: inputTokens,
-          output: outputTokens
-        },
-        estimatedCost: {
-          inputCost: inputCost,
-          outputCost: outputCost,
-          totalCost: totalCost,
-          formatted: `$${totalCost.toFixed(4)}`
-        }
-      })
+      body: JSON.stringify(responseData)
     };
 
   } catch (error) {
     console.error('[NEWS] Fatal error:', error.message);
-    console.error('[NEWS] Error type:', error.constructor.name);
     console.error('[NEWS] Stack trace:', error.stack);
     
     return {
@@ -160,12 +321,153 @@ exports.handler = async (event, context) => {
       },
       body: JSON.stringify({ 
         error: 'Failed to generate news preview',
-        message: error.message,
-        type: error.constructor.name
+        message: error.message
       })
     };
   }
 };
+
+/**
+ * Fetch recent form and course history for players
+ */
+async function fetchRecentFormAndHistory(playerNames, courseName, tour) {
+  const apiKey = process.env.DATAGOLF_API_KEY;
+  
+  if (!apiKey) {
+    console.log('[NEWS-FORM] DataGolf API key not configured, skipping form data');
+    return { players: [] };
+  }
+  
+  const apiTour = tour === 'dp' ? 'euro' : (tour || 'pga');
+  
+  try {
+    // Fetch schedule
+    const scheduleUrl = `https://feeds.datagolf.com/get-schedule?tour=${apiTour}&file_format=json&key=${apiKey}`;
+    const scheduleResponse = await axios.get(scheduleUrl, {
+      timeout: 15000,
+      headers: {
+        'User-Agent': 'Golf-Predictor-App/1.0',
+        'Accept': 'application/json'
+      }
+    });
+
+    const tournaments = Array.isArray(scheduleResponse.data.schedule) 
+      ? scheduleResponse.data.schedule 
+      : Object.values(scheduleResponse.data.schedule);
+
+    const now = new Date();
+    
+    // Get completed tournaments
+    const completedTournaments = tournaments
+      .filter(t => {
+        let tourneyEndDate;
+        
+        if (t.end_date) {
+          tourneyEndDate = new Date(t.end_date);
+        } else if (t.start_date) {
+          tourneyEndDate = new Date(t.start_date);
+          tourneyEndDate.setDate(tourneyEndDate.getDate() + 4);
+        } else if (t.date) {
+          tourneyEndDate = new Date(t.date);
+          tourneyEndDate.setDate(tourneyEndDate.getDate() + 4);
+        } else {
+          return false;
+        }
+        
+        const oneDayAgo = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000);
+        return tourneyEndDate < oneDayAgo;
+      })
+      .sort((a, b) => {
+        const aDate = new Date(a.end_date || a.start_date || a.date);
+        const bDate = new Date(b.end_date || b.start_date || b.date);
+        return bDate - aDate;
+      })
+      .slice(0, 8);
+
+    const playerFormData = {};
+    
+    for (const player of playerNames) {
+      playerFormData[normalizePlayerName(player)] = {
+        recentResults: [],
+        courseHistory: [],
+        momentum: 'unknown'
+      };
+    }
+
+    // Fetch results for recent tournaments (first 5 to save time)
+    for (const tournament of completedTournaments.slice(0, 5)) {
+      try {
+        const fieldUrl = `https://feeds.datagolf.com/field-updates?tour=${apiTour}&file_format=json&key=${apiKey}`;
+        const fieldResponse = await axios.get(fieldUrl, {
+          timeout: 10000,
+          headers: {
+            'User-Agent': 'Golf-Predictor-App/1.0',
+            'Accept': 'application/json'
+          }
+        });
+
+        if (fieldResponse.data?.field) {
+          const isCourseMatch = tournament.course?.toLowerCase().includes(courseName?.toLowerCase().split(' ')[0]) ||
+                                courseName?.toLowerCase().includes(tournament.course?.toLowerCase().split(' ')[0]);
+
+          for (const playerResult of fieldResponse.data.field) {
+            if (!playerResult.player_name) continue;
+            
+            const normalizedName = normalizePlayerName(playerResult.player_name);
+            if (playerFormData[normalizedName]) {
+              const result = {
+                tournament: tournament.event_name,
+                position: playerResult.finish_position || playerResult.position,
+                madeCut: playerResult.made_cut !== false
+              };
+
+              playerFormData[normalizedName].recentResults.push(result);
+
+              if (isCourseMatch) {
+                playerFormData[normalizedName].courseHistory.push(result);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        // Continue on error
+      }
+    }
+
+    // Calculate momentum
+    for (const normalizedName in playerFormData) {
+      const recent = playerFormData[normalizedName].recentResults;
+      if (recent.length >= 3) {
+        const recentPositions = recent.slice(0, 3).map(r => parseInt(r.position) || 999);
+        const olderPositions = recent.slice(3, 6).map(r => parseInt(r.position) || 999);
+        
+        if (recentPositions.length > 0 && olderPositions.length > 0) {
+          const recentAvg = recentPositions.reduce((a, b) => a + b, 0) / recentPositions.length;
+          const olderAvg = olderPositions.reduce((a, b) => a + b, 0) / olderPositions.length;
+          
+          if (recentAvg < olderAvg - 10) {
+            playerFormData[normalizedName].momentum = '📈 Hot';
+          } else if (recentAvg > olderAvg + 10) {
+            playerFormData[normalizedName].momentum = '📉 Cold';
+          } else {
+            playerFormData[normalizedName].momentum = '➡️ Steady';
+          }
+        }
+      }
+    }
+
+    return {
+      players: Object.keys(playerFormData).map(normalizedName => ({
+        normalizedName,
+        ...playerFormData[normalizedName]
+      }))
+    };
+
+  } catch (error) {
+    console.error('[NEWS-FORM] Error fetching form data:', error.message);
+    return { players: [] };
+  }
+}
 
 /**
  * Fetch golf news from RSS feeds with robust error handling
@@ -192,8 +494,6 @@ async function fetchGolfNews(tournamentName, tour) {
 
   for (const feed of feeds) {
     try {
-      console.log(`[NEWS] Fetching RSS feed: ${feed.url}`);
-      
       const response = await axios.get(feed.url, {
         timeout: 10000,
         headers: {
@@ -203,29 +503,20 @@ async function fetchGolfNews(tournamentName, tour) {
         validateStatus: (status) => status === 200
       });
 
-      console.log(`[NEWS] RSS feed fetched: ${feed.source}, length: ${response.data.length}`);
-
-      // Parse XML
       const result = await parser.parseStringPromise(response.data);
-      console.log(`[NEWS] RSS feed parsed: ${feed.source}`);
       
-      // Extract items from RSS feed (handle different RSS formats)
+      // Extract items from RSS feed
       let items = [];
       if (result.rss && result.rss.channel) {
-        // Standard RSS 2.0
         const channel = Array.isArray(result.rss.channel) ? result.rss.channel[0] : result.rss.channel;
         items = channel.item || [];
       } else if (result.feed && result.feed.entry) {
-        // Atom feed
         items = result.feed.entry || [];
       }
 
-      // Ensure items is an array
       if (!Array.isArray(items)) {
         items = [items];
       }
-
-      console.log(`[NEWS] Found ${items.length} items in ${feed.source}`);
 
       // Extract articles (take first 5 from each feed)
       for (const item of items.slice(0, 5)) {
@@ -238,7 +529,7 @@ async function fetchGolfNews(tournamentName, tour) {
             source: feed.source
           };
 
-          // Clean up description (remove HTML tags)
+          // Clean up description
           if (article.description) {
             article.description = article.description
               .replace(/<[^>]*>/g, '')
@@ -253,20 +544,18 @@ async function fetchGolfNews(tournamentName, tour) {
 
           if (article.title && article.title.length > 5) {
             articles.push(article);
-            console.log(`[NEWS] Added article: ${article.title.substring(0, 50)}...`);
           }
         } catch (itemError) {
-          console.error(`[NEWS] Error parsing item:`, itemError.message);
+          // Continue on error
         }
       }
 
     } catch (feedError) {
       console.error(`[NEWS] Failed to fetch feed ${feed.url}:`, feedError.message);
-      // Continue to next feed
     }
   }
 
-  // Sort by date (newest first) and return top 8
+  // Sort by date and return top 8
   articles.sort((a, b) => {
     try {
       return new Date(b.pubDate) - new Date(a.pubDate);
@@ -275,24 +564,19 @@ async function fetchGolfNews(tournamentName, tour) {
     }
   });
 
-  console.log(`[NEWS] Returning ${articles.length} total articles`);
   return articles.slice(0, 8);
 }
 
 /**
- * Extract text from XML element (handles various formats)
+ * Extract text from XML element
  */
 function extractText(element) {
   if (!element) return '';
-  
   if (typeof element === 'string') return element;
-  
   if (element._) return element._;
-  
   if (element['#text']) return element['#text'];
   
   if (typeof element === 'object') {
-    // Try to find text in common properties
     if (element.content) return extractText(element.content);
     if (element.value) return extractText(element.value);
     if (element.text) return extractText(element.text);
@@ -302,69 +586,91 @@ function extractText(element) {
 }
 
 /**
- * Build prompt for Claude's preview analysis
+ * Build enhanced prompt with all tournament data
  */
-function buildPreviewPrompt(tournament, newsArticles, topPlayers) {
+function buildEnhancedPreviewPrompt(tournament, newsArticles, players, courseInfo, courseDemands, weatherSummary, weatherAnalysis) {
   const newsText = newsArticles.map(a => 
     `Title: ${a.title}\nSource: ${a.source}\nSummary: ${a.description}\n`
   ).join('\n');
 
-  return `You are a professional golf analyst creating a tournament preview and betting guide.
+  const playersText = players.slice(0, 15).map(p => {
+    const form = p.recentForm?.map(r => r.position ? `T${r.position}` : 'MC').join(', ') || 'No data';
+    const courseHist = p.courseHistory?.length > 0 
+      ? p.courseHistory.map(r => `T${r.position}`).join(', ')
+      : 'No history';
+
+    return `${p.name} [${formatAmericanOdds(p.odds)}] - R${p.rank} | SG:${p.sgTotal?.toFixed(2) || '?'} (OTT:${p.sgOTT?.toFixed(2) || '?'} APP:${p.sgAPP?.toFixed(2) || '?'} ARG:${p.sgARG?.toFixed(2) || '?'} P:${p.sgPutt?.toFixed(2) || '?'}) | Last3: ${form} | Course: ${courseHist} | ${p.momentum}`;
+  }).join('\n');
+
+  return `You are a professional golf analyst creating a comprehensive tournament preview and betting guide.
 
 TOURNAMENT:
 Name: ${tournament.name}
-Course: ${tournament.course}
+Course: ${courseInfo.courseName || courseInfo.eventName} | ${courseInfo.yardage || '?'}y Par ${courseInfo.par || '?'}
 Location: ${tournament.location}
 Dates: ${tournament.dates}
 
-TOP PLAYERS IN FIELD:
-${topPlayers.slice(0, 15).join(', ')}
+COURSE DEMANDS ANALYSIS:
+${courseDemands}
+
+WEATHER ANALYSIS:
+${weatherAnalysis}
+
+TOP PLAYERS IN FIELD (with stats and form):
+${playersText || 'Player data not available'}
 
 RECENT NEWS ARTICLES:
-${newsText || 'No recent news available - use your golf knowledge to provide insights'}
+${newsText || 'No recent news available'}
 
 YOUR TASK:
-Create a comprehensive tournament preview that synthesizes the news (if available) and provides betting insights.
+Create a comprehensive tournament preview that synthesizes ALL available data - course characteristics, weather impact, player stats, recent form, and news.
 
 Return ONLY valid JSON (no markdown):
 {
-  "overview": "2-3 sentence tournament overview. Include course difficulty, field strength, and what makes this tournament unique or interesting this year.",
+  "overview": "2-3 sentences. Synthesize course difficulty (from course demands), field strength (top players), weather impact, and what makes this tournament interesting. Be specific with course characteristics and weather conditions.",
   
   "storylines": [
-    "Storyline 1: Major narrative or talking point (e.g., 'Defending champion returns after injury')",
-    "Storyline 2: Another key storyline",
-    "Storyline 3: Third important storyline",
-    "Storyline 4: Fourth storyline if relevant"
+    "Storyline 1: Based on player form, course history, or news. Be specific with names and stats.",
+    "Storyline 2: Another key storyline from the data",
+    "Storyline 3: Weather or course-related storyline",
+    "Storyline 4: Field strength or betting angle storyline"
   ],
   
   "playersToWatch": [
     {
-      "name": "Player Name",
-      "reason": "Why this player is worth watching this week - recent form, course history, or news-related angle. 1-2 sentences."
+      "name": "Player Name (from player list)",
+      "reason": "Why this player is worth watching - reference their SG stats, course fit from demands analysis, recent form (Last3), momentum, or course history. 2-3 sentences with specific data."
     },
     {
       "name": "Player Name",
-      "reason": "Another player's story"
+      "reason": "Another player with data-driven reasoning"
     },
     {
       "name": "Player Name",
-      "reason": "Third player"
+      "reason": "Third player analysis"
+    },
+    {
+      "name": "Player Name",
+      "reason": "Fourth player if relevant"
     }
   ],
   
   "bettingAngles": [
-    "Betting angle 1: Specific insight for betting value (e.g., 'Course rewards accurate iron players - look for high SG:APP')",
-    "Betting angle 2: Another betting consideration",
-    "Betting angle 3: Third betting angle"
+    "Angle 1: Specific insight from course demands (e.g., 'SG:OTT CRITICAL - target players with +0.5 or better OTT')",
+    "Angle 2: Weather-based angle from weather analysis",
+    "Angle 3: Form-based angle from momentum trends",
+    "Angle 4: Value angle from odds vs stats mismatch"
   ],
   
-  "weatherImpact": "Brief note on how weather this week affects play and betting strategy. 1-2 sentences."
+  "weatherImpact": "2-3 sentences on how the weather analysis affects play and betting strategy this week. Reference specific conditions from the weather analysis."
 }
 
-GUIDELINES:
-- Base analysis on the news articles if provided
-- Be specific with player names from the field
-- Focus on actionable betting insights
-- Keep each section concise but informative
-- If news is limited, use your golf knowledge to fill in context`;
+CRITICAL REQUIREMENTS:
+- Use SPECIFIC player names from the player list
+- Reference ACTUAL SG stats when discussing players
+- Cite COURSE DEMANDS when explaining what matters
+- Use WEATHER ANALYSIS for conditions impact
+- Include RECENT FORM (Last3) and MOMENTUM when available
+- Base analysis on DATA, not generic golf knowledge
+- Be actionable for betting decisions`;
 }
