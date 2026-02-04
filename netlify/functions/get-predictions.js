@@ -147,7 +147,7 @@ exports.handler = async (event, context) => {
     // Testing if this completes under 28 seconds for Netlify timeout
     const topPlayers = playersWithData
       .sort((a, b) => a.odds - b.odds)
-      .slice(0, 80);
+      .slice(0, 100);
     
     console.log(`[CLAUDE] Analyzing top ${topPlayers.length} players (optimized from ${playersWithData.length})`);
 
