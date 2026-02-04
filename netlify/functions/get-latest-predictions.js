@@ -118,7 +118,7 @@ exports.handler = async (event, context) => {
     
     console.log(`[LATEST] Returning cached data from ${latestKey}`);
     
-    // Return the cached predictions
+    // Return the cached predictions with generatedAt at top level for frontend
     return {
       statusCode: 200,
       headers: {
@@ -127,6 +127,7 @@ exports.handler = async (event, context) => {
       },
       body: JSON.stringify({
         ...latestData,
+        generatedAt: latestData.metadata?.generatedAt || latestData.generatedAt, // Ensure generatedAt at top level
         fromCache: true,
         cacheKey: latestKey
       })
