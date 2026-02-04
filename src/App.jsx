@@ -157,32 +157,42 @@ function App() {
     setError(null);
     setRequestId(prev => prev + 1);
     
-    // Try to load latest predictions for new tour from Blobs
+    // Try to load all cached data for new tour from Blobs
     console.log(`[TOUR] Switching to ${newTour}, checking for cached data...`);
-    fetchData(`/.netlify/functions/get-latest-predictions?tour=${newTour}`, 'GET', null, 'predictions')
-      .catch(() => {
-        // Data is already null if fetch failed - no need to clear manually
-        console.log(`[TOUR] No cached predictions for ${newTour}, showing empty state`);
-      });
+    
+    Promise.allSettled([
+      fetchData(`/.netlify/functions/get-latest-predictions?tour=${newTour}`, 'GET', null, 'predictions'),
+      fetchData(`/.netlify/functions/get-latest-avoid-picks?tour=${newTour}`, 'GET', null, 'avoidPicks'),
+      fetchData(`/.netlify/functions/get-latest-matchups?tour=${newTour}`, 'GET', null, 'matchups')
+    ]).then(results => {
+      const loaded = results.filter(r => r.status === 'fulfilled').length;
+      console.log(`[TOUR] Loaded ${loaded}/3 cached datasets for ${newTour}`);
+    });
   };
 
-  // Auto-load latest predictions and results from Netlify Blobs on mount
+  // Auto-load all cached data from Netlify Blobs on mount
   useEffect(() => {
     if (!hasAutoLoadedRef.current && !loading) {
       console.log('[AUTO-LOAD] Checking for cached data in Blobs');
       hasAutoLoadedRef.current = true;
       
-      // Load predictions (for Value Predictions tab)
-      fetchData(`/.netlify/functions/get-latest-predictions?tour=${tour}`, 'GET', null, 'predictions')
-        .catch((error) => {
-          console.log('[AUTO-LOAD] No cached predictions available');
-        });
-      
-      // Load results (for Results tab)
-      fetchData(`/.netlify/functions/get-prediction-results`, 'GET', null, 'results')
-        .catch((error) => {
-          console.log('[AUTO-LOAD] No results available yet');
-        });
+      // Load all data in parallel for instant tab switching
+      Promise.allSettled([
+        // Value Predictions
+        fetchData(`/.netlify/functions/get-latest-predictions?tour=${tour}`, 'GET', null, 'predictions'),
+        
+        // Avoid Picks
+        fetchData(`/.netlify/functions/get-latest-avoid-picks?tour=${tour}`, 'GET', null, 'avoidPicks'),
+        
+        // Matchups
+        fetchData(`/.netlify/functions/get-latest-matchups?tour=${tour}`, 'GET', null, 'matchups'),
+        
+        // Results
+        fetchData(`/.netlify/functions/get-prediction-results`, 'GET', null, 'results')
+      ]).then(results => {
+        const loaded = results.filter(r => r.status === 'fulfilled').length;
+        console.log(`[AUTO-LOAD] Successfully loaded ${loaded}/4 cached datasets`);
+      });
     }
   }, []); // Empty array is safe with ref - truly runs once
 
