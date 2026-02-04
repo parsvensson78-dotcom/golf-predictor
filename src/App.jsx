@@ -158,6 +158,15 @@ function App() {
     setError(null);
     setRequestId(prev => prev + 1);
     
+    // Clear all data when switching tours
+    setData({
+      predictions: null,
+      avoidPicks: null,
+      newsPreview: null,
+      matchups: null,
+      results: null
+    });
+    
     // Try to load all cached data for new tour from Blobs
     console.log(`[TOUR] Switching to ${newTour}, checking for cached data...`);
     
@@ -706,7 +715,6 @@ const AvoidPicksView = ({ data, requestId }) => (
     
     <div className="avoid-section">
       <h3>❌ Players to Avoid (Poor Course Fit)</h3>
-      <p className="avoid-subtitle">{data.reasoning}</p>
       <div className="avoid-grid">
         {data.avoidPicks?.map((avoid, index) => (
           <div key={`avoid-${requestId}-${index}`} className="avoid-card">
@@ -719,6 +727,11 @@ const AvoidPicksView = ({ data, requestId }) => (
           </div>
         ))}
       </div>
+      {data.reasoning && (
+        <div style={{marginTop: '1.5rem', padding: '1rem', background: '#f8f9fa', borderRadius: '8px', fontSize: '0.95rem', color: '#666'}}>
+          <strong>Course Analysis:</strong> {data.reasoning}
+        </div>
+      )}
     </div>
     
     <FooterInfo data={data} />
