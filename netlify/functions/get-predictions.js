@@ -143,11 +143,11 @@ exports.handler = async (event, context) => {
       }
     }
 
-    // Step 3: Select top 50 players by odds (lower odds = higher ranked)
-    // Optimized for speed - must complete under 28 seconds for Netlify timeout
+    // Step 3: Select top 80 players by odds (lower odds = higher ranked)
+    // Testing if this completes under 28 seconds for Netlify timeout
     const topPlayers = playersWithData
       .sort((a, b) => a.odds - b.odds)
-      .slice(0, 50);
+      .slice(0, 80);
     
     console.log(`[CLAUDE] Analyzing top ${topPlayers.length} players (optimized from ${playersWithData.length})`);
 
