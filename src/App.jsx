@@ -640,10 +640,16 @@ const PredictionsView = ({ data, requestId }) => {
 };
 
 // ==================== AVOID PICKS VIEW ====================
-const AvoidPicksView = ({ data, requestId }) => (
-  <div className="avoid-picks-container" key={`avoid-${requestId}-${data.generatedAt}`}>
-    <TimestampHeader generatedAt={data.generatedAt} />
-    <TournamentInfo tournament={data.tournament} />
+const AvoidPicksView = ({ data, requestId }) => {
+  const isCached = isCachedData(data.generatedAt);
+  
+  return (
+    <div className="avoid-picks-container loaded" key={`avoid-${requestId}-${data.generatedAt}`}>
+      <div className={`cache-indicator ${isCached ? 'cached' : 'fresh'}`}>
+        {isCached ? 'Cached' : 'Fresh'}
+      </div>
+      <TimestampHeader generatedAt={data.generatedAt} />
+      <TournamentInfo tournament={data.tournament} />
     
     <div className="avoid-section">
       <h3>❌ Players to Avoid (Poor Course Fit)</h3>
@@ -664,7 +670,8 @@ const AvoidPicksView = ({ data, requestId }) => (
     
     <FooterInfo data={data} />
   </div>
-);
+  );
+};
 
 // ==================== NEWS PREVIEW VIEW ====================
 const NewsPreviewView = ({ data, requestId }) => {
