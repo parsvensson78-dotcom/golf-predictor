@@ -708,35 +708,45 @@ const PredictionsView = ({ data, requestId }) => {
 };
 
 // ==================== AVOID PICKS VIEW ====================
-const AvoidPicksView = ({ data, requestId }) => (
-  <div className="avoid-picks-container" key={`avoid-${requestId}-${data.generatedAt}`}>
-    <TimestampHeader generatedAt={data.generatedAt} />
-    <TournamentInfo tournament={data.tournament} />
-    
-    <div className="avoid-section">
-      <h3>❌ Players to Avoid (Poor Course Fit)</h3>
-      <div className="avoid-grid">
-        {data.avoidPicks?.map((avoid, index) => (
-          <div key={`avoid-${requestId}-${index}`} className="avoid-card">
-            <div className="avoid-header">
-              <span className="avoid-icon">⚠️</span>
-              <span className="avoid-odds">{formatAmericanOdds(avoid.odds)}</span>
-            </div>
-            <h4 className="avoid-name">{avoid.player}</h4>
-            <p className="avoid-reasoning">{avoid.reasoning}</p>
-          </div>
-        ))}
+// ==================== AVOID PICKS VIEW ====================
+const AvoidPicksView = ({ data, requestId }) => {
+  const generatedTime = new Date(data.generatedAt).getTime();
+  const now = Date.now();
+  const isCached = (now - generatedTime) > 60000;
+  
+  return (
+    <div className="avoid-picks-container loaded" key={`avoid-${requestId}-${data.generatedAt}`}>
+      <div className={`cache-indicator ${isCached ? 'cached' : 'fresh'}`}>
+        {isCached ? 'Cached' : 'Fresh'}
       </div>
-      {data.reasoning && (
-        <div style={{marginTop: '1.5rem', padding: '1rem', background: '#f8f9fa', borderRadius: '8px', fontSize: '0.95rem', color: '#666'}}>
-          <strong>Course Analysis:</strong> {data.reasoning}
+      <TimestampHeader generatedAt={data.generatedAt} />
+      <TournamentInfo tournament={data.tournament} />
+      
+      <div className="avoid-section">
+        <h3>❌ Players to Avoid (Poor Course Fit)</h3>
+        <div className="avoid-grid">
+          {data.avoidPicks?.map((avoid, index) => (
+            <div key={`avoid-${requestId}-${index}`} className="avoid-card">
+              <div className="avoid-header">
+                <span className="avoid-icon">⚠️</span>
+                <span className="avoid-odds">{formatAmericanOdds(avoid.odds)}</span>
+              </div>
+              <h4 className="avoid-name">{avoid.player}</h4>
+              <p className="avoid-reasoning">{avoid.reasoning}</p>
+            </div>
+          ))}
         </div>
-      )}
+        {data.reasoning && (
+          <div style={{marginTop: '1.5rem', padding: '1rem', background: '#f8f9fa', borderRadius: '8px', fontSize: '0.95rem', color: '#666'}}>
+            <strong>Course Analysis:</strong> {data.reasoning}
+          </div>
+        )}
+      </div>
+      
+      <FooterInfo data={data} />
     </div>
-    
-    <FooterInfo data={data} />
-  </div>
-);
+  );
+};
 
 // ==================== NEWS PREVIEW VIEW ====================
 const NewsPreviewView = ({ data, requestId }) => {
