@@ -151,7 +151,7 @@ function App() {
     fetchData(`/.netlify/functions/get-matchup-predictions`, 'POST', { tour }, 'matchups');
 
   const handleGetResults = () => 
-    fetchData(`/.netlify/functions/get-prediction-results`, 'GET', null, 'results');
+    fetchData(`/.netlify/functions/get-prediction-results?tour=${tour}`, 'GET', null, 'results');
 
   const handleTourChange = (newTour) => {
     setTour(newTour);
@@ -198,7 +198,7 @@ function App() {
         fetchData(`/.netlify/functions/get-latest-matchups?tour=${tour}`, 'GET', null, 'matchups'),
         
         // Results
-        fetchData(`/.netlify/functions/get-prediction-results`, 'GET', null, 'results')
+        fetchData(`/.netlify/functions/get-prediction-results?tour=${tour}`, 'GET', null, 'results')
       ]).then(results => {
         const loaded = results.filter(r => r.status === 'fulfilled').length;
         console.log(`[AUTO-LOAD] Successfully loaded ${loaded}/4 cached datasets`);
