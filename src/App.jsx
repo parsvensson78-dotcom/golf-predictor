@@ -105,9 +105,9 @@ function App() {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
         
-        // Special handling for get-latest-predictions 
-        if (url.includes('get-latest-predictions')) {
-          // 503 = Blobs not configured, 404 = No saved predictions yet
+        // Special handling for get-latest-* endpoints (cached data)
+        if (url.includes('get-latest-')) {
+          // 503 = Blobs not configured, 404 = No saved data yet
           if (response.status === 503 || response.status === 404) {
             console.log(`[FETCH] No cached data available (${response.status}), will use fallback`);
             throw new Error('NO_CACHED_DATA');
