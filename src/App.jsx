@@ -7,6 +7,7 @@ import './App.css';
  * - Reduced code duplication
  * - Better state management
  * - Cleaner structure
+ * - FIXED: Value picks and avoid picks now render independently
  */
 
 // Helper function to format American odds
@@ -227,7 +228,7 @@ function App() {
 
       {currentData && !loading && !error && (
         <>
-          {activeTab === 'predictions' && <PredictionsView data={currentData} requestId={requestId} />}
+          {activeTab === 'predictions' && <PredictionsView data={data} requestId={requestId} />}
           {activeTab === 'avoid' && <AvoidPicksView data={currentData} requestId={requestId} />}
           {activeTab === 'news' && <NewsPreviewView data={currentData} requestId={requestId} />}
           {activeTab === 'matchups' && <MatchupsView data={currentData} requestId={requestId} />}
@@ -591,51 +592,116 @@ const FooterInfo = ({ data }) => {
   );
 };
 
-// ==================== PREDICTIONS VIEW ====================
+const StatItem = ({ label, value, color }) => (
+  <div className="stat-item">
+    <span className="stat-label">{label}</span>
+    <span className="stat-value" style={color ? { color } : {}}>{value}</span>
+  </div>
+);
+
+// ==================== PREDICTIONS VIEW (FIXED) ====================
 const PredictionsView = ({ data, requestId }) => {
-  // Check if data is from cache (generated more than 1 minute ago)
-  const generatedTime = new Date(data.generatedAt).getTime();
+  const hasPredictions = data.predictions?.predictions?.length > 0;
+  const hasAvoidPicks = data.avoidPicks?.avoidPicks?.length > 0;
+  
+  // If neither predictions nor avoid picks exist, show empty state
+  if (!hasPredictions && !hasAvoidPicks) {
+    return (
+      <div className="predictions-container" key={`predictions-${requestId}`}>
+        <div style={{textAlign: 'center', padding: '4rem 2rem'}}>
+          <h3>No Cached Data Found</h3>
+          <p>Click "Get Predictions" to generate value picks and avoid recommendations</p>
+        </div>
+      </div>
+    );
+  }
+
+  const generatedTime = data.predictions?.generatedAt || data.avoidPicks?.generatedAt;
   const now = Date.now();
-  const isCached = (now - generatedTime) > 60000; // More than 1 minute old = cached
+  const isCached = generatedTime ? (now - new Date(generatedTime).getTime()) > 60000 : false;
   
   return (
-    <div className="predictions-container loaded" key={`predictions-${requestId}-${data.generatedAt}`}>
+    <div className="predictions-container loaded" key={`predictions-${requestId}-${generatedTime}`}>
       <div className={`cache-indicator ${isCached ? 'cached' : 'fresh'}`}>
         {isCached ? 'Cached' : 'Fresh'}
       </div>
-      <TimestampHeader generatedAt={data.generatedAt} />
-      <TournamentInfo tournament={data.tournament} />
-    <WeatherForecast dailyForecast={data.dailyForecast} />
-    <CourseDetails courseInfo={data.courseInfo} courseAnalysis={data.courseAnalysis} />
-    <CourseAnalysis courseAnalysis={data.courseAnalysis} />
-    
-    <div className="picks-section">
-      <h3>💎 Value Picks</h3>
-      <div className="picks-grid">
-        {data.predictions?.map((pick, index) => (
-          <div key={`pick-${requestId}-${index}`} className="pick-card">
-            <div className="pick-header">
-              <span className="pick-number">#{index + 1}</span>
-              <div className="odds-container">
-                <span className="pick-odds">{formatAmericanOdds(pick.odds)}</span>
-              </div>
-            </div>
-            <h3 className="pick-name">{pick.player}</h3>
-            <OddsBreakdown pick={pick} />
-            <div className="pick-reasoning">
-              {pick.reasoning.split('. ').filter(s => s.trim()).map((sentence, i, arr) => (
-                <p key={i} style={{marginBottom: '0.5rem', lineHeight: '1.6', fontSize: '0.95rem'}}>
-                  {sentence.trim()}{i < arr.length - 1 || !sentence.endsWith('.') ? '.' : ''}
-                </p>
+      
+      {/* VALUE PICKS SECTION - Independent of avoid picks */}
+      {hasPredictions && (
+        <>
+          <TimestampHeader generatedAt={data.predictions.generatedAt} />
+          <TournamentInfo tournament={data.predictions.tournament} />
+          <WeatherForecast dailyForecast={data.predictions.dailyForecast} />
+          <CourseDetails courseInfo={data.predictions.courseInfo} courseAnalysis={data.predictions.courseAnalysis} />
+          <CourseAnalysis courseAnalysis={data.predictions.courseAnalysis} />
+          
+          <div className="picks-section">
+            <h3>💎 Value Picks</h3>
+            <div className="picks-grid">
+              {data.predictions.predictions.map((pick, index) => (
+                <div key={`pick-${requestId}-${index}`} className="pick-card">
+                  <div className="pick-header">
+                    <span className="pick-number">#{index + 1}</span>
+                    <div className="odds-container">
+                      <span className="pick-odds">{formatAmericanOdds(pick.odds)}</span>
+                    </div>
+                  </div>
+                  <h3 className="pick-name">{pick.player}</h3>
+                  <OddsBreakdown pick={pick} />
+                  <div className="pick-reasoning">
+                    {pick.reasoning.split('. ').filter(s => s.trim()).map((sentence, i, arr) => (
+                      <p key={i} style={{marginBottom: '0.5rem', lineHeight: '1.6', fontSize: '0.95rem'}}>
+                        {sentence.trim()}{i < arr.length - 1 || !sentence.endsWith('.') ? '.' : ''}
+                      </p>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
-        ))}
-      </div>
+          
+          <FooterInfo data={data.predictions} />
+        </>
+      )}
+
+      {/* AVOID PICKS SECTION - Independent of value picks */}
+      {hasAvoidPicks && (
+        <>
+          {!hasPredictions && <TimestampHeader generatedAt={data.avoidPicks.generatedAt} />}
+          {!hasPredictions && <TournamentInfo tournament={data.avoidPicks.tournament} />}
+          
+          <div className="avoid-picks-section" style={{marginTop: hasPredictions ? '3rem' : '0'}}>
+            <h3 style={{color: '#d32f2f'}}>🚫 Avoid Picks - Players to Skip</h3>
+            <p className="avoid-subtitle">{data.avoidPicks.reasoning}</p>
+            
+            <div className="avoid-picks-grid">
+              {data.avoidPicks.avoidPicks.map((pick, index) => (
+                <div key={index} className="avoid-card">
+                  <div className="avoid-rank">#{index + 1}</div>
+                  <h4 className="player-name">{pick.player}</h4>
+                  <div className="odds-container">
+                    <span className="odds-label">Odds</span>
+                    <span className="odds-value">{formatAmericanOdds(pick.odds)}</span>
+                  </div>
+                  <div className="stats-grid">
+                    <StatItem label="Win %" value={`${pick.winProbability}%`} />
+                    <StatItem label="SG:OTT" value={pick.sgOTT} />
+                    <StatItem label="SG:APP" value={pick.sgAPP} />
+                    <StatItem label="SG:ARG" value={pick.sgARG} />
+                    <StatItem label="SG:Putt" value={pick.sgPutt} />
+                  </div>
+                  <div className="avoid-reasoning">
+                    <strong>Why Avoid:</strong> {pick.reasoning}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {!hasPredictions && <FooterInfo data={data.avoidPicks} />}
+        </>
+      )}
     </div>
-    
-    <FooterInfo data={data} />
-  </div>
   );
 };
 
