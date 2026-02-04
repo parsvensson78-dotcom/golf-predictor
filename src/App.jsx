@@ -167,9 +167,10 @@ function App() {
       
       // Try to load latest from Blobs first
       fetchData(`/.netlify/functions/get-latest-predictions?tour=${tour}`, 'GET', null, 'predictions')
-        .catch(() => {
-          // If no cached predictions found, that's OK - user will click button
-          console.log('[AUTO-LOAD] No cached predictions, waiting for user action');
+        .catch((error) => {
+          // If Blobs not configured or no cache, fall back to regular get-predictions
+          console.log('[AUTO-LOAD] Blobs not available, falling back to get-predictions');
+          handleGetPredictions();
         });
     }
   }, []); // Empty array is safe with ref - truly runs once
