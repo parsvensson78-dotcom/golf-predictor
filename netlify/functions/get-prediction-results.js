@@ -7,9 +7,10 @@ const axios = require('axios');
  */
 exports.handler = async (event, context) => {
   try {
+    const tour = event.queryStringParameters?.tour || 'pga';
     const baseUrl = process.env.URL || 'http://localhost:8888';
 
-    console.log(`[ANALYSIS] Fetching saved predictions from Netlify Blobs...`);
+    console.log(`[ANALYSIS] Fetching saved predictions for ${tour} tour from Netlify Blobs...`);
 
     // Get Netlify Blobs store - wrap in try-catch for better error handling
     let store, blobs;
@@ -27,7 +28,9 @@ exports.handler = async (event, context) => {
         token: token,
         consistency: 'strong'
       });
-      const listResult = await store.list();
+      
+      // Filter by tour prefix
+      const listResult = await store.list({ prefix: `${tour}-` });
       blobs = listResult.blobs;
     } catch (blobError) {
       console.error('[ANALYSIS] Blob storage error:', blobError.message);
@@ -42,16 +45,16 @@ exports.handler = async (event, context) => {
     }
 
     if (!blobs || blobs.length === 0) {
-      console.log('[ANALYSIS] No predictions found in blob storage');
+      console.log(`[ANALYSIS] No predictions found in blob storage for ${tour} tour`);
       return createSuccessResponse({
         tournaments: [],
-        message: 'No predictions saved yet. Generate some predictions and they will automatically be saved for results tracking!',
+        message: `No predictions saved yet for ${tour.toUpperCase()} tour. Generate some predictions and they will automatically be saved for results tracking!`,
         totalPredictions: 0,
         completedTournaments: 0
       });
     }
 
-    console.log(`[ANALYSIS] Found ${blobs.length} saved prediction blobs`);
+    console.log(`[ANALYSIS] Found ${blobs.length} saved prediction blobs for ${tour} tour`);
 
     // Process each prediction
     const tournaments = [];
@@ -105,7 +108,7 @@ exports.handler = async (event, context) => {
       new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime()
     );
 
-    console.log(`[ANALYSIS] ✅ Processed ${tournaments.length} tournaments`);
+    console.log(`[ANALYSIS] ✅ Processed ${tournaments.length} tournaments for ${tour} tour`);
 
     return createSuccessResponse({
       tournaments,
