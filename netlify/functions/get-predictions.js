@@ -246,7 +246,7 @@ exports.handler = async (event, context) => {
         nodeVersion: process.version
       });
       
-      await savePredictionsToBlobs(responseData);
+      await savePredictionsToBlobs(responseData, context);
       console.log('[SAVE] ✅ Predictions saved for results tracking');
     } catch (saveError) {
       console.error('[SAVE] Failed to save predictions:', saveError.message);
@@ -882,9 +882,9 @@ function analyzeCourseSkillDemands(courseInfo) {
 /**
  * Save predictions to Netlify Blobs for results tracking
  */
-async function savePredictionsToBlobs(responseData) {
+async function savePredictionsToBlobs(responseData, context) {
   // Manually configure store with siteID and token from environment
-  const siteID = process.env.SITE_ID;
+  const siteID = process.env.SITE_ID || context?.site?.id;
   const token = process.env.NETLIFY_AUTH_TOKEN;
   
   if (!siteID || !token) {
