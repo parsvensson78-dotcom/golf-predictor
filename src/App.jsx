@@ -158,33 +158,26 @@ function App() {
     setRequestId(prev => prev + 1);
     
     // Try to load latest predictions for new tour from Blobs
-    console.log(`[TOUR] Switching to ${newTour}, loading latest from Blobs...`);
+    console.log(`[TOUR] Switching to ${newTour}, checking for cached data...`);
     fetchData(`/.netlify/functions/get-latest-predictions?tour=${newTour}`, 'GET', null, 'predictions')
       .catch(() => {
-        // If no cached predictions, clear data and wait for user to click
-        setData({
-          predictions: null,
-          avoidPicks: null,
-          newsPreview: null,
-          matchups: null,
-          results: null
-        });
-        console.log(`[TOUR] No cached predictions for ${newTour}`);
+        // Data is already null if fetch failed - no need to clear manually
+        console.log(`[TOUR] No cached predictions for ${newTour}, showing empty state`);
       });
   };
 
   // Auto-load latest predictions from Netlify Blobs on mount
   useEffect(() => {
     if (!hasAutoLoadedRef.current && !loading) {
-      console.log('[AUTO-LOAD] Loading latest predictions from Blobs');
+      console.log('[AUTO-LOAD] Checking for cached predictions in Blobs');
       hasAutoLoadedRef.current = true;
       
-      // Try to load latest from Blobs first
+      // Try to load latest from Blobs
       fetchData(`/.netlify/functions/get-latest-predictions?tour=${tour}`, 'GET', null, 'predictions')
         .catch((error) => {
-          // If Blobs not configured or no cache, fall back to regular get-predictions
-          console.log('[AUTO-LOAD] Blobs not available, falling back to get-predictions');
-          handleGetPredictions();
+          // If no cached data, just show empty state - DON'T generate new predictions
+          console.log('[AUTO-LOAD] No cached predictions available. User needs to click "Get Predictions"');
+          // Do nothing - let user click button manually
         });
     }
   }, []); // Empty array is safe with ref - truly runs once
