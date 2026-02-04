@@ -10,11 +10,8 @@ exports.handler = async (event, context) => {
     
     console.log(`[LATEST] Fetching latest predictions for ${tour}`);
     
-    const store = getStore({
-      name: 'predictions',
-      siteID: process.env.SITE_ID,
-      token: process.env.NETLIFY_TOKEN
-    });
+    // Get Netlify Blobs store (same as save-predictions.js)
+    const store = getStore('predictions');
     
     // List all blobs for this tour
     const { blobs } = await store.list({ prefix: `${tour}-` });
