@@ -656,10 +656,27 @@ PICK REQUIREMENTS:
 - Pick #1: <+1900 (best VALUE favorite, NOT lowest odds)
 - Picks #2-6: +1900+ (at least 3 picks +4000+)
 
-REASONING FORMAT (2-3 sentences):
-"Course fit: [Specific SG stat]. History: [Result or why OK without]. Form: [Last5]. Weather: [Impact]. Value: [Why underpriced]."
+REASONING FORMAT - Use this EXACT structure with line breaks:
+"Course fit: [Specific SG stat matching course demands].
 
-Example: "Elite SG:APP (0.59) matches precision course. Won here 2021, T4 in 2023. Hot form with T3, T8, 2nd in Last5. Light winds suit accurate striking. At +1400, market undervalues track record."
+History: [Result at this venue or why OK without history].
+
+Form: [Last 3-5 tournaments with specific finishes].
+
+Weather: [How conditions favor their game].
+
+Value: [Why odds undervalue given above factors]."
+
+Example: 
+"Course fit: Elite SG:APP (+0.59, #12 on tour) perfectly matches this precision course with small greens.
+
+History: Won here in 2021 (−12), T4 in 2023 (−9) proves strong course fit.
+
+Form: Hot streak with T3, T8, 2nd in last 5 starts shows excellent momentum.
+
+Weather: Light winds (8mph avg) suit his accurate, high-trajectory ball striking.
+
+Value: At +1400, market undervalues his elite course history and current form."
 
 CHECK BEFORE RETURNING:
 - Pick #1 < +1900? Picks #2-6 all +1900+? 3+ picks +4000+?
@@ -671,7 +688,7 @@ Return JSON:
   "keyFactors": ["Factor 1", "Factor 2", "Factor 3"],
   "courseNotes": "Betting insights (2 sentences)",
   "picks": [
-    {"player": "Name", "odds": 1400, "reasoning": "2-3 sentences covering fit/history/form/weather/value"}
+    {"player": "Name", "odds": 1400, "reasoning": "STRUCTURED FORMAT with line breaks:\n\nCourse fit: [Analysis].\n\nHistory: [Results].\n\nForm: [Finishes].\n\nWeather: [Impact].\n\nValue: [Assessment]."}
   ]
 }`;
 }
