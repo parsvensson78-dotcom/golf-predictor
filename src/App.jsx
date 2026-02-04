@@ -102,16 +102,30 @@ function App() {
       const response = await fetch(url, options);
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Request failed');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        
+        // Special handling for get-latest-predictions 
+        if (url.includes('get-latest-predictions')) {
+          // 503 = Blobs not configured, 404 = No saved predictions yet
+          if (response.status === 503 || response.status === 404) {
+            console.log(`[FETCH] No cached data available (${response.status}), will use fallback`);
+            throw new Error('NO_CACHED_DATA');
+          }
+        }
+        
+        throw new Error(errorData.message || errorData.error || 'Request failed');
       }
       
       const responseData = await response.json();
       setData(prev => ({ ...prev, [dataKey]: responseData }));
       
     } catch (err) {
-      setError(err.message);
+      // Don't show error to user if it's just no cached data available
+      if (err.message !== 'NO_CACHED_DATA' && err.message !== 'BLOBS_NOT_AVAILABLE') {
+        setError(err.message);
+      }
       console.error('Fetch error:', err);
+      throw err; // Re-throw so catch handlers can handle it
     } finally {
       setLoading(false);
     }
