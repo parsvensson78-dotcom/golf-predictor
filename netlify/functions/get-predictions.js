@@ -912,25 +912,19 @@ async function savePredictionsToBlobs(responseData, context) {
   
   const key = `${tour}-${tournamentSlug}-${dateStr}-${timeStr}`;
 
-  // Prepare data to save (full version including all course details)
+  // Save EXACTLY the same data structure as returned to user
   const predictionData = {
-    tournament: {
-      ...responseData.tournament,
-      eventId: responseData.tournament.eventId,
-      tour: responseData.tournament.tour
-    },
-    courseInfo: responseData.courseInfo, // Save FULL courseInfo
+    tournament: responseData.tournament,
     weather: responseData.weather,
-    predictions: responseData.predictions.map(pick => ({
-      player: pick.player,
-      odds: pick.odds,
-      minOdds: pick.minOdds,
-      maxOdds: pick.maxOdds,
-      bestBookmaker: pick.bestBookmaker,
-      reasoning: pick.reasoning
-    })),
+    dailyForecast: responseData.dailyForecast,
+    courseInfo: responseData.courseInfo,
+    courseAnalysis: responseData.courseAnalysis,
+    predictions: responseData.predictions,
+    generatedAt: responseData.generatedAt,
+    tokensUsed: responseData.tokensUsed,
+    tokenBreakdown: responseData.tokenBreakdown,
+    estimatedCost: responseData.estimatedCost,
     metadata: {
-      generatedAt: responseData.generatedAt,
       savedAt: new Date().toISOString(),
       pickCount: responseData.predictions.length,
       status: 'pending'
