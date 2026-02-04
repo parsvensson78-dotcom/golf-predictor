@@ -10,7 +10,7 @@ exports.handler = async (event, context) => {
     
     console.log(`[LATEST] Fetching latest predictions for ${tour}`);
     
-    // Check if Netlify Blobs is properly configured (same as save-predictions.js)
+    // Check if running on Netlify
     if (!process.env.NETLIFY) {
       console.log('[LATEST] Not running on Netlify - Blobs not available');
       return {
@@ -23,15 +23,36 @@ exports.handler = async (event, context) => {
       };
     }
     
-    console.log(`[LATEST] Context:`, {
-      deployId: context.deployId || 'N/A',
-      isNetlify: !!process.env.NETLIFY
+    // Get Netlify Blobs store (same approach as get-predictions.js)
+    const siteID = process.env.SITE_ID || context.site?.id;
+    const token = process.env.NETLIFY_AUTH_TOKEN;
+    
+    console.log(`[LATEST] Config check:`, {
+      hasSiteID: !!siteID,
+      hasToken: !!token,
+      deployId: context.deployId || 'N/A'
     });
     
-    // Get Netlify Blobs store (same as save-predictions.js)
+    if (!siteID || !token) {
+      console.error('[LATEST] Missing SITE_ID or NETLIFY_AUTH_TOKEN');
+      return {
+        statusCode: 503,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          error: 'Blobs not configured',
+          message: 'SITE_ID or NETLIFY_AUTH_TOKEN not configured'
+        })
+      };
+    }
+    
     let store;
     try {
-      store = getStore('predictions');
+      store = getStore({
+        name: 'predictions',
+        siteID: siteID,
+        token: token,
+        consistency: 'strong'
+      });
       console.log(`[LATEST] Store created successfully`);
     } catch (storeError) {
       console.error(`[LATEST] Failed to create store:`, storeError);
