@@ -1,15 +1,21 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const axios = require('axios');
-const { getStore } = require('@netlify/blobs');
+const {
+  getBlobStore,
+  normalizePlayerName,
+  formatAmericanOdds,
+  analyzeCourseSkillDemands,
+  analyzeWeatherConditions,
+  calculateClaudeCost,
+  generateBlobKey
+} = require('./shared-utils');
 
 /**
- * Avoid Picks Endpoint - Separate from main predictions
+ * Avoid Picks Endpoint - OPTIMIZED VERSION v2
+ * NOW USES SHARED-UTILS.JS
  * Identifies players to avoid based on poor course fit
  */
 exports.handler = async (event, context) => {
-  // Helper function - define at top
-  const formatAmericanOdds = (odds) => odds > 0 ? `+${odds}` : `${odds}`;
-  
   try {
     const body = JSON.parse(event.body || '{}');
     const { tour, excludePlayers = [] } = body;
@@ -180,12 +186,8 @@ exports.handler = async (event, context) => {
       throw new Error('Invalid response format from AI');
     }
 
-    // Calculate cost
-    const inputTokens = message.usage.input_tokens;
-    const outputTokens = message.usage.output_tokens;
-    const inputCost = (inputTokens / 1000000) * 3.00;
-    const outputCost = (outputTokens / 1000000) * 15.00;
-    const totalCost = inputCost + outputCost;
+    // Calculate cost using shared utility
+    const cost = calculateClaudeCost(message.usage);
 
     // Prepare response data
     const responseData = {
@@ -200,17 +202,12 @@ exports.handler = async (event, context) => {
       avoidPicks: avoidData.avoid || [],
       reasoning: avoidData.reasoning || '',
       generatedAt: new Date().toISOString(),
-      tokensUsed: inputTokens + outputTokens,
+      tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
       tokenBreakdown: {
-        input: inputTokens,
-        output: outputTokens
+        input: message.usage.input_tokens,
+        output: message.usage.output_tokens
       },
-      estimatedCost: {
-        inputCost: inputCost,
-        outputCost: outputCost,
-        totalCost: totalCost,
-        formatted: `$${totalCost.toFixed(4)}`
-      }
+      estimatedCost: cost
     };
 
     // Save to Netlify Blobs for caching
@@ -248,168 +245,10 @@ exports.handler = async (event, context) => {
 /**
  * Normalize player name for matching
  */
-function normalizePlayerName(name) {
-  let normalized = name
-    .toLowerCase()
-    .replace(/[^a-z\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  
-  const parts = normalized.split(' ');
-  return parts.sort().join(' ');
-}
-
-/**
- * Analyze course skill demands (EXACT COPY from get-predictions)
- */
-function analyzeCourseSkillDemands(courseInfo) {
-  const demands = [];
-
-  // Yardage analysis
-  if (courseInfo.yardage) {
-    if (courseInfo.yardage > 7500) {
-      demands.push('1. SG:OTT (PRIMARY) - Extreme length demands elite driving distance and accuracy');
-    } else if (courseInfo.yardage > 7300) {
-      demands.push('1. SG:OTT (CRITICAL) - Long course heavily favors driving distance');
-    } else if (courseInfo.yardage > 7100) {
-      demands.push('1. SG:OTT (Important) - Above-average length requires solid driving');
-    } else {
-      demands.push('1. SG:APP + SG:ARG (PRIMARY) - Shorter course emphasizes precision over power');
-    }
-  }
-
-  // Width analysis
-  if (courseInfo.width) {
-    const width = courseInfo.width.toLowerCase();
-    if (width.includes('narrow') || width.includes('tight')) {
-      demands.push('2. SG:APP (CRITICAL) - Narrow fairways require precision iron play and course management');
-      demands.push('3. SG:ARG (Important) - Tight course means more scrambling opportunities');
-    } else if (width.includes('wide') || width.includes('generous')) {
-      demands.push('2. SG:OTT (Enhanced) - Wide fairways reward aggressive driving for distance');
-      demands.push('3. SG:APP (Important) - Longer approaches from extra distance');
-    }
-  }
-
-  // Rough analysis
-  if (courseInfo.rough) {
-    const rough = courseInfo.rough.toLowerCase();
-    if (rough.includes('heavy') || rough.includes('thick') || rough.includes('penal')) {
-      demands.push('4. SG:OTT (Accuracy) - Heavy rough severely punishes offline drives');
-      demands.push('5. SG:ARG (Critical) - Recovery skills essential for scrambling');
-    }
-  }
-
-  // Green analysis
-  if (courseInfo.greens) {
-    const greens = courseInfo.greens.toLowerCase();
-    if (greens.includes('fast') || greens.includes('firm') || greens.includes('bentgrass')) {
-      demands.push('6. SG:Putt (Enhanced) - Fast greens amplify putting skill differences');
-    } else if (greens.includes('poa') || greens.includes('bumpy')) {
-      demands.push('6. SG:APP (Critical) - Inconsistent greens demand precise approach distance control');
-    }
-  }
-
-  // Difficulty analysis
-  if (courseInfo.difficulty) {
-    const difficulty = courseInfo.difficulty.toLowerCase();
-    if (difficulty.includes('very difficult') || difficulty.includes('extremely')) {
-      demands.push('7. SG:Total (Quality) - Difficult course requires well-rounded elite players');
-    }
-  }
-
-  // Default if no specific demands identified
-  if (demands.length === 0) {
-    demands.push('1. SG:OTT (Important) - Driving quality sets up scoring opportunities');
-    demands.push('2. SG:APP (Important) - Iron play for green-in-regulation');
-    demands.push('3. SG:ARG (Moderate) - Short game for scrambling');
-    demands.push('4. SG:Putt (Moderate) - Putting to convert scoring chances');
-  }
-
-  return demands.join('\n');
-}
-
-/**
- * Analyze weather conditions (EXACT COPY from get-predictions)
- */
-function analyzeWeatherConditions(weatherSummary) {
-  if (!weatherSummary || weatherSummary === 'Weather data not available') {
-    return 'Weather data not available - focus purely on course characteristics and historical stats.';
-  }
-
-  // Parse weather summary to extract conditions
-  const windSpeeds = [];
-  const rainChances = [];
-  let conditions = weatherSummary;
-
-  // Extract wind speeds
-  const windMatches = weatherSummary.match(/Wind:\s*(\d+)mph/g);
-  if (windMatches) {
-    windMatches.forEach(match => {
-      const speed = parseInt(match.match(/\d+/)[0]);
-      windSpeeds.push(speed);
-    });
-  }
-
-  // Extract rain chances
-  const rainMatches = weatherSummary.match(/Rain:\s*(\d+)%/g);
-  if (rainMatches) {
-    rainMatches.forEach(match => {
-      const chance = parseInt(match.match(/\d+/)[0]);
-      rainChances.push(chance);
-    });
-  }
-
-  const avgWind = windSpeeds.length > 0 
-    ? Math.round(windSpeeds.reduce((a, b) => a + b, 0) / windSpeeds.length) 
-    : 0;
-  const maxWind = windSpeeds.length > 0 ? Math.max(...windSpeeds) : 0;
-  const highRainDays = rainChances.filter(r => r > 50).length;
-  const anyRainDays = rainChances.filter(r => r > 30).length;
-
-  let analysis = [`Raw Conditions: ${conditions}`, ''];
-
-  // Wind analysis
-  if (maxWind >= 15) {
-    analysis.push(`⚠️ HIGH WIND ALERT (${maxWind}mph max, ${avgWind}mph avg):`);
-    analysis.push('- CRITICAL: Prioritize SG:OTT (ball flight control, trajectory management)');
-    analysis.push('- Secondary: SG:APP (wind-adjusted approach shots)');
-    analysis.push('- Deprioritize: SG:Putt (less important when scores are high)');
-    analysis.push('- Look for: Players with positive SG:OTT who are undervalued');
-  } else if (avgWind >= 10) {
-    analysis.push(`💨 MODERATE WIND (${avgWind}mph avg):`);
-    analysis.push('- Important: SG:OTT (trajectory control matters)');
-    analysis.push('- Balanced approach: All SG categories relevant');
-  } else {
-    analysis.push(`😌 CALM CONDITIONS (${avgWind}mph avg):`);
-    analysis.push('- CRITICAL: SG:Putt (low scores, putting wins)');
-    analysis.push('- Secondary: SG:APP (hitting greens for birdie chances)');
-    analysis.push('- Deprioritize: SG:OTT (length advantage reduced when conditions are easy)');
-  }
-
-  // Rain analysis
-  if (highRainDays >= 2) {
-    analysis.push('');
-    analysis.push(`🌧️ WET CONDITIONS (${highRainDays} days with 50%+ rain):`);
-    analysis.push('- CRITICAL: SG:OTT (length advantage on soft fairways/greens)');
-    analysis.push('- Important: SG:APP (wedge play, soft greens hold shots)');
-    analysis.push('- Consider: SG:ARG (soft conditions around greens)');
-    analysis.push('- Deprioritize: SG:Putt (soft greens are easier to putt)');
-  } else if (anyRainDays > 0) {
-    analysis.push('');
-    analysis.push(`🌦️ SOME RAIN POSSIBLE (${anyRainDays} days with 30%+ chance):`);
-    analysis.push('- Slight advantage: Longer hitters (SG:OTT)');
-    analysis.push('- Monitor: Conditions may soften as week progresses');
-  }
-
-  return analysis.join('\n');
-}
-
 /**
  * Build prompt for avoid picks - same analytical depth as get-predictions
  */
 function buildAvoidPicksPrompt(tournament, players, courseInfo, courseDemands, weatherAnalysis, excludePlayers = []) {
-  const formatAmericanOdds = (odds) => odds > 0 ? `+${odds}` : `${odds}`;
-  
   const playerList = players.map((p, i) => 
     `${p.player} [${formatAmericanOdds(p.odds)}] - R${p.stats.rank} | SG:${p.stats.sgTotal?.toFixed(2) || 'N/A'} (OTT:${p.stats.sgOTT?.toFixed(2) || 'N/A'} APP:${p.stats.sgAPP?.toFixed(2) || 'N/A'} ARG:${p.stats.sgARG?.toFixed(2) || 'N/A'} P:${p.stats.sgPutt?.toFixed(2) || 'N/A'})`
   ).join('\n');
@@ -475,32 +314,8 @@ Return JSON with exactly 3 avoid picks:
  * Save avoid picks to Netlify Blobs for caching
  */
 async function saveAvoidPicksToBlobs(responseData, context) {
-  const siteID = process.env.SITE_ID || context?.site?.id;
-  const token = process.env.NETLIFY_AUTH_TOKEN;
-  
-  if (!siteID || !token) {
-    throw new Error('SITE_ID or NETLIFY_AUTH_TOKEN not configured');
-  }
-  
-  const store = getStore({
-    name: 'avoid-picks',
-    siteID: siteID,
-    token: token,
-    consistency: 'strong'
-  });
-
-  // Generate key from tournament name and date + timestamp
-  const tournamentSlug = responseData.tournament.name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-  
-  const tour = responseData.tournament.tour || 'pga';
-  const date = new Date(responseData.generatedAt);
-  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  const timeStr = `${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}`;
-  
-  const key = `${tour}-${tournamentSlug}-${dateStr}-${timeStr}`;
+  const store = getBlobStore('avoid-picks', context);
+  const key = generateBlobKey(responseData.tournament.name, responseData.tournament.tour, responseData.generatedAt);
 
   await store.set(key, JSON.stringify(responseData));
   console.log(`[AVOID] Saved to blob: ${key}`);
