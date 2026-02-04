@@ -899,16 +899,18 @@ async function savePredictionsToBlobs(responseData) {
   });
 
   // Generate key from tournament name and date + timestamp for uniqueness
+  // Add tour prefix for filtering later
   const tournamentSlug = responseData.tournament.name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
   
+  const tour = responseData.tournament.tour || 'pga';
   const date = new Date(responseData.generatedAt);
   const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   const timeStr = `${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}`;
   
-  const key = `${tournamentSlug}-${dateStr}-${timeStr}`;
+  const key = `${tour}-${tournamentSlug}-${dateStr}-${timeStr}`;
 
   // Prepare data to save (simplified version for tracking)
   const predictionData = {
