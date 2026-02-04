@@ -628,7 +628,7 @@ const PredictionsView = ({ data, requestId }) => {
         {isCached ? 'Cached' : 'Fresh'}
       </div>
       
-      {/* VALUE PICKS SECTION - Independent of avoid picks */}
+      {/* VALUE PICKS SECTION */}
       {hasPredictions && (
         <>
           <TimestampHeader generatedAt={data.predictions.generatedAt} />
@@ -666,42 +666,12 @@ const PredictionsView = ({ data, requestId }) => {
         </>
       )}
 
-      {/* AVOID PICKS SECTION - Independent of value picks */}
-      {hasAvoidPicks && (
-        <>
-          {!hasPredictions && <TimestampHeader generatedAt={data.avoidPicks.generatedAt} />}
-          {!hasPredictions && <TournamentInfo tournament={data.avoidPicks.tournament} />}
-          
-          <div className="avoid-picks-section" style={{marginTop: hasPredictions ? '3rem' : '0'}}>
-            <h3 style={{color: '#d32f2f'}}>🚫 Avoid Picks - Players to Skip</h3>
-            <p className="avoid-subtitle">{data.avoidPicks.reasoning}</p>
-            
-            <div className="avoid-picks-grid">
-              {data.avoidPicks.avoidPicks.map((pick, index) => (
-                <div key={index} className="avoid-card">
-                  <div className="avoid-rank">#{index + 1}</div>
-                  <h4 className="player-name">{pick.player}</h4>
-                  <div className="odds-container">
-                    <span className="odds-label">Odds</span>
-                    <span className="odds-value">{formatAmericanOdds(pick.odds)}</span>
-                  </div>
-                  <div className="stats-grid">
-                    <StatItem label="Win %" value={`${pick.winProbability}%`} />
-                    <StatItem label="SG:OTT" value={pick.sgOTT} />
-                    <StatItem label="SG:APP" value={pick.sgAPP} />
-                    <StatItem label="SG:ARG" value={pick.sgARG} />
-                    <StatItem label="SG:Putt" value={pick.sgPutt} />
-                  </div>
-                  <div className="avoid-reasoning">
-                    <strong>Why Avoid:</strong> {pick.reasoning}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          
-          {!hasPredictions && <FooterInfo data={data.avoidPicks} />}
-        </>
+      {/* Show empty state if no predictions */}
+      {!hasPredictions && !hasAvoidPicks && (
+        <div style={{textAlign: 'center', padding: '4rem 2rem'}}>
+          <h3>No Cached Data Found</h3>
+          <p>Click "Get Predictions" to generate value picks</p>
+        </div>
       )}
     </div>
   );
