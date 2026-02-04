@@ -15,27 +15,6 @@ const formatAmericanOdds = (odds) => {
   return odds > 0 ? `+${odds}` : `${odds}`;
 };
 
-// Helper function to load cached data from localStorage
-const getInitialData = (currentTour) => {
-  try {
-    const savedData = localStorage.getItem(`golfPredictions_${currentTour}`);
-    if (savedData) {
-      const parsed = JSON.parse(savedData);
-      console.log(`[CACHE] Loaded ${currentTour} data from localStorage`);
-      return parsed;
-    }
-  } catch (error) {
-    console.error('[CACHE] Failed to load from localStorage:', error);
-  }
-  return {
-    predictions: null,
-    avoidPicks: null,
-    newsPreview: null,
-    matchups: null,
-    results: null
-  };
-};
-
 // Reusable timestamp header component
 const TimestampHeader = ({ generatedAt }) => {
   const getRelativeTime = (timestamp) => {
@@ -82,7 +61,13 @@ const TimestampHeader = ({ generatedAt }) => {
 function App() {
   const [tour, setTour] = useState('pga');
   const [activeTab, setActiveTab] = useState('predictions');
-  const [data, setData] = useState(() => getInitialData('pga'));
+  const [data, setData] = useState({
+    predictions: null,
+    avoidPicks: null,
+    newsPreview: null,
+    matchups: null,
+    results: null
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [requestId, setRequestId] = useState(0);
@@ -155,43 +140,39 @@ function App() {
 
   const handleTourChange = (newTour) => {
     setTour(newTour);
-    
-    // Load cached data for new tour from localStorage
-    const newTourData = getInitialData(newTour);
-    setData(newTourData);
-    
     setError(null);
     setRequestId(prev => prev + 1);
     
-    console.log(`[TOUR] Switched to ${newTour}, loaded cached data`);
+    // Try to load latest predictions for new tour from Blobs
+    console.log(`[TOUR] Switching to ${newTour}, loading latest from Blobs...`);
+    fetchData(`/.netlify/functions/get-latest-predictions?tour=${newTour}`, 'GET', null, 'predictions')
+      .catch(() => {
+        // If no cached predictions, clear data and wait for user to click
+        setData({
+          predictions: null,
+          avoidPicks: null,
+          newsPreview: null,
+          matchups: null,
+          results: null
+        });
+        console.log(`[TOUR] No cached predictions for ${newTour}`);
+      });
   };
 
-  // Auto-load predictions on mount (runs once using ref)
+  // Auto-load latest predictions from Netlify Blobs on mount
   useEffect(() => {
     if (!hasAutoLoadedRef.current && !loading) {
-      console.log('[AUTO-LOAD] Loading initial data');
+      console.log('[AUTO-LOAD] Loading latest predictions from Blobs');
       hasAutoLoadedRef.current = true;
       
-      // Only load if no cached data exists
-      if (!data.predictions) {
-        handleGetPredictions();
-      } else {
-        console.log('[AUTO-LOAD] Using cached data from localStorage');
-      }
+      // Try to load latest from Blobs first
+      fetchData(`/.netlify/functions/get-latest-predictions?tour=${tour}`, 'GET', null, 'predictions')
+        .catch(() => {
+          // If no cached predictions found, that's OK - user will click button
+          console.log('[AUTO-LOAD] No cached predictions, waiting for user action');
+        });
     }
   }, []); // Empty array is safe with ref - truly runs once
-
-  // Save data to localStorage whenever it changes (tour-specific)
-  useEffect(() => {
-    if (data.predictions || data.avoidPicks || data.newsPreview || data.matchups || data.results) {
-      try {
-        localStorage.setItem(`golfPredictions_${tour}`, JSON.stringify(data));
-        console.log(`[CACHE] Saved ${tour} data to localStorage`);
-      } catch (error) {
-        console.error('[CACHE] Failed to save to localStorage:', error);
-      }
-    }
-  }, [data, tour]);
 
   const currentData = data[
     activeTab === 'predictions' ? 'predictions' :
@@ -797,6 +778,8 @@ const ResultsView = ({ data, requestId }) => {
 
   return (
     <div className="predictions-container" key={`results-${requestId}`}>
+      {data.generatedAt && <TimestampHeader generatedAt={data.generatedAt} />}
+      
       <div style={{textAlign: 'center', marginBottom: '2rem'}}>
         <h2>🏆 Prediction Results History</h2>
         <div style={{display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '1rem', flexWrap: 'wrap'}}>
