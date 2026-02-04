@@ -52,10 +52,10 @@ exports.handler = async (event, context) => {
     const oddsData = oddsResponse.data;
     console.log(`[MATCHUP] Received odds for ${oddsData.odds.length} players`);
 
-    // Step 4: Get top 80 players by odds for detailed stats
+    // Step 4: Get top 40 players by odds for detailed stats (reduced from 80 for performance)
     const topPlayerNames = oddsData.odds
       .sort((a, b) => a.odds - b.odds)
-      .slice(0, 80)
+      .slice(0, 40)
       .map(o => o.player);
     
     console.log(`[MATCHUP] Fetching stats for top ${topPlayerNames.length} players`);
@@ -438,7 +438,7 @@ async function fetchRecentFormAndHistory(playerNames, courseName, tour) {
  * Build enhanced prompt with course analysis, weather analysis, and form data
  */
 function buildEnhancedMatchupPrompt(tournament, players, weatherSummary, weatherAnalysis, courseInfo, courseDemands, customMatchup) {
-  const topPlayers = players.slice(0, 50);
+  const topPlayers = players.slice(0, 40); // Use all 40 players we fetched
   const playerList = topPlayers.map(p => {
     const form = p.recentForm?.slice(0, 3).map(r => {
       const pos = r.position ? `T${r.position}` : 'MC';
@@ -485,7 +485,7 @@ ${courseDemands}
 WEATHER IMPACT ANALYSIS:
 ${weatherAnalysis}
 
-TOP 50 PLAYERS (with form and course history):
+TOP 40 PLAYERS (with form and course history):
 ${playerList}
 
 ${customMatchupPrompt}
