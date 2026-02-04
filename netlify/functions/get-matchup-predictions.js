@@ -52,10 +52,10 @@ exports.handler = async (event, context) => {
     const oddsData = oddsResponse.data;
     console.log(`[MATCHUP] Received odds for ${oddsData.odds.length} players`);
 
-    // Step 4: Get top 40 players by odds for detailed stats (reduced from 80 for performance)
+    // Step 4: Get top 30 players by odds for detailed stats (reduced for performance - avoid timeout)
     const topPlayerNames = oddsData.odds
       .sort((a, b) => a.odds - b.odds)
-      .slice(0, 40)
+      .slice(0, 30)
       .map(o => o.player);
     
     console.log(`[MATCHUP] Fetching stats for top ${topPlayerNames.length} players`);
@@ -63,7 +63,7 @@ exports.handler = async (event, context) => {
     const statsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-stats`, {
       players: topPlayerNames
     }, {
-      timeout: 30000
+      timeout: 15000  // Reduced from 30s to avoid function timeout
     });
     const statsData = statsResponse.data;
 
@@ -135,11 +135,7 @@ exports.handler = async (event, context) => {
     console.log('[MATCHUP] Course demands analyzed');
     console.log('[MATCHUP] Weather impact analyzed');
 
-    // Step 8: Fetch recent form and course history
-    const formData = await fetchRecentFormAndHistory(topPlayerNames, tournament.course, tour);
-    console.log(`[MATCHUP] Form data for ${formData.players.length} players`);
-
-    // Step 9: Prepare player data with stats, odds, and form
+    // Step 8: Prepare player data with stats and odds (skip form data for performance)
     const playersWithData = statsData.players
       .map(stat => {
         const oddsEntry = oddsData.odds.find(o => 
@@ -147,10 +143,6 @@ exports.handler = async (event, context) => {
         );
         
         if (!oddsEntry) return null;
-
-        const formEntry = formData.players.find(f => 
-          f.normalizedName === normalizePlayerName(stat.player)
-        );
         
         return {
           name: stat.player,
@@ -163,10 +155,7 @@ exports.handler = async (event, context) => {
           sgOTT: stat.stats.sgOTT,
           sgAPP: stat.stats.sgAPP,
           sgARG: stat.stats.sgARG,
-          sgPutt: stat.stats.sgPutt,
-          recentForm: formEntry?.recentResults || [],
-          courseHistory: formEntry?.courseHistory || [],
-          momentum: formEntry?.momentum || 'unknown'
+          sgPutt: stat.stats.sgPutt
         };
       })
       .filter(p => p !== null)
@@ -438,18 +427,9 @@ async function fetchRecentFormAndHistory(playerNames, courseName, tour) {
  * Build enhanced prompt with course analysis, weather analysis, and form data
  */
 function buildEnhancedMatchupPrompt(tournament, players, weatherSummary, weatherAnalysis, courseInfo, courseDemands, customMatchup) {
-  const topPlayers = players.slice(0, 40); // Use all 40 players we fetched
+  const topPlayers = players.slice(0, 30); // Use all 30 players we fetched
   const playerList = topPlayers.map(p => {
-    const form = p.recentForm?.slice(0, 3).map(r => {
-      const pos = r.position ? `T${r.position}` : 'MC';
-      return pos;
-    }).join(', ') || 'No data';
-    
-    const courseHist = p.courseHistory?.length > 0 
-      ? p.courseHistory.map(r => `T${r.position}`).join(', ')
-      : 'No history';
-
-    return `${p.name} [${formatAmericanOdds(p.odds)}] - R${p.rank} | SG:${p.sgTotal?.toFixed(2) || 'N/A'} (OTT:${p.sgOTT?.toFixed(2) || 'N/A'} APP:${p.sgAPP?.toFixed(2) || 'N/A'} ARG:${p.sgARG?.toFixed(2) || 'N/A'} P:${p.sgPutt?.toFixed(2) || 'N/A'}) | Last3: ${form} | Course: ${courseHist} | ${p.momentum}`;
+    return `${p.name} [${formatAmericanOdds(p.odds)}] - R${p.rank} | SG:${p.sgTotal?.toFixed(2) || 'N/A'} (OTT:${p.sgOTT?.toFixed(2) || 'N/A'} APP:${p.sgAPP?.toFixed(2) || 'N/A'} ARG:${p.sgARG?.toFixed(2) || 'N/A'} P:${p.sgPutt?.toFixed(2) || 'N/A'})`;
   }).join('\n');
 
   let customMatchupPrompt = '';
@@ -457,18 +437,13 @@ function buildEnhancedMatchupPrompt(tournament, players, weatherSummary, weather
     const playerA = players.find(p => p.name === customMatchup.playerA);
     const playerB = players.find(p => p.name === customMatchup.playerB);
     
-    const formA = playerA?.recentForm?.slice(0, 3).map(r => r.position ? `T${r.position}` : 'MC').join(', ') || 'No data';
-    const formB = playerB?.recentForm?.slice(0, 3).map(r => r.position ? `T${r.position}` : 'MC').join(', ') || 'No data';
-    
     customMatchupPrompt = `
 🎯 CUSTOM MATCHUP REQUESTED:
 Player A: ${playerA?.name || customMatchup.playerA} [${playerA ? formatAmericanOdds(playerA.odds) : '?'}]
 Stats: R${playerA?.rank || '?'} | SG:${playerA?.sgTotal?.toFixed(2) || '?'} (OTT:${playerA?.sgOTT?.toFixed(2) || '?'} APP:${playerA?.sgAPP?.toFixed(2) || '?'} ARG:${playerA?.sgARG?.toFixed(2) || '?'} P:${playerA?.sgPutt?.toFixed(2) || '?'})
-Form: ${formA} | ${playerA?.momentum || '?'}
 
 Player B: ${playerB?.name || customMatchup.playerB} [${playerB ? formatAmericanOdds(playerB.odds) : '?'}]
 Stats: R${playerB?.rank || '?'} | SG:${playerB?.sgTotal?.toFixed(2) || '?'} (OTT:${playerB?.sgOTT?.toFixed(2) || '?'} APP:${playerB?.sgAPP?.toFixed(2) || '?'} ARG:${playerB?.sgARG?.toFixed(2) || '?'} P:${playerB?.sgPutt?.toFixed(2) || '?'})
-Form: ${formB} | ${playerB?.momentum || '?'}
 
 YOU MUST analyze this specific matchup and include it in your response as "customMatchup".
 `;
@@ -485,7 +460,7 @@ ${courseDemands}
 WEATHER IMPACT ANALYSIS:
 ${weatherAnalysis}
 
-TOP 40 PLAYERS (with form and course history):
+TOP 30 PLAYERS (with SG stats):
 ${playerList}
 
 ${customMatchupPrompt}
@@ -505,9 +480,8 @@ ${customMatchup ? '4. Analyze the custom matchup requested above' : ''}
 
 CRITICAL REQUIREMENTS:
 - Compare SPECIFIC SG stats to the "Course Demands" section
-- Reference recent form (use Last3 data provided)
-- Note course history if available
 - Explain weather impact based on "Weather Impact Analysis"
+- Focus on statistical matchups and course fit
 - Be realistic with win probabilities (52-65% for competitive matchups)
 
 Return JSON:
