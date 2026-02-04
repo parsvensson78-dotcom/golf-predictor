@@ -533,7 +533,7 @@ Return JSON:
       "pick": "Player Name",
       "winProbability": 58,
       "confidence": "Medium",
-      "reasoning": "Course fit: [Compare specific SG stats to demands]. Form: [Recent results]. History: [Course performance]. Weather: [Impact on their game]. Probability reflects [edge explanation]."
+      "reasoning": "Course fit: [Compare specific SG stats to demands].\n\nForm: [Recent results].\n\nHistory: [Course performance].\n\nWeather: [Impact on their game].\n\nProbability: [Edge explanation]."
     }
   ]${customMatchup ? `,
   "customMatchup": {
@@ -556,7 +556,7 @@ Return JSON:
     "pick": "Player Name",
     "winProbability": 55,
     "confidence": "Medium",
-    "reasoning": "Detailed 3-4 sentence analysis covering all 5 factors"
+    "reasoning": "Course fit: [Analysis].\n\nForm: [Recent results].\n\nHistory: [Course performance].\n\nWeather: [Impact].\n\nProbability: [Edge explanation]."
   }` : ''}
 }`;
 }
