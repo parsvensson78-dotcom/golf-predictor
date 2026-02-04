@@ -85,20 +85,44 @@ exports.handler = async (event, context) => {
     });
     const statsData = statsResponse.data;
 
-    // Step 5: Get weather forecast (same as get-predictions)
+    // Step 5: Get weather forecast (fetch directly from Weather API like get-predictions)
     let weatherData = null;
     try {
       const weatherApiKey = process.env.WEATHER_API_KEY;
       if (weatherApiKey && tournament.location) {
         const location = tournament.location.split(',')[0].trim();
-        const weatherResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-weather-forecast`, {
-          location: location,
-          startDate: tournament.dates?.split('-')[0]?.trim()
-        }, {
+        
+        console.log('[AVOID] Fetching weather forecast...');
+        const weatherResponse = await axios.get('https://api.weatherapi.com/v1/forecast.json', {
+          params: {
+            key: weatherApiKey,
+            q: location,
+            days: 4,
+            aqi: 'no'
+          },
           timeout: 8000
         });
-        weatherData = weatherResponse.data;
-        console.log('[AVOID] Weather data retrieved');
+
+        if (weatherResponse.data?.forecast) {
+          const dayNames = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
+          const daily = weatherResponse.data.forecast.forecastday.map((day, index) => ({
+            day: dayNames[index] || new Date(day.date).toLocaleDateString('en-US', { weekday: 'long' }),
+            date: day.date,
+            tempHigh: Math.round(day.day.maxtemp_f),
+            tempLow: Math.round(day.day.mintemp_f),
+            condition: day.day.condition.text,
+            windSpeed: Math.round(day.day.maxwind_mph),
+            chanceOfRain: day.day.daily_chance_of_rain,
+            humidity: day.day.avghumidity
+          }));
+
+          const summary = daily.map(d => 
+            `${d.day}: ${d.tempHigh}°F, ${d.condition}, Wind: ${d.windSpeed}mph, Rain: ${d.chanceOfRain}%`
+          ).join(' | ');
+
+          weatherData = { summary, daily };
+          console.log('[AVOID] Weather data retrieved');
+        }
       }
     } catch (weatherError) {
       console.error('[AVOID] Weather fetch failed:', weatherError.message);
