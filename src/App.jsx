@@ -166,18 +166,22 @@ function App() {
       });
   };
 
-  // Auto-load latest predictions from Netlify Blobs on mount
+  // Auto-load latest predictions and results from Netlify Blobs on mount
   useEffect(() => {
     if (!hasAutoLoadedRef.current && !loading) {
-      console.log('[AUTO-LOAD] Checking for cached predictions in Blobs');
+      console.log('[AUTO-LOAD] Checking for cached data in Blobs');
       hasAutoLoadedRef.current = true;
       
-      // Try to load latest from Blobs
+      // Load predictions (for Value Predictions tab)
       fetchData(`/.netlify/functions/get-latest-predictions?tour=${tour}`, 'GET', null, 'predictions')
         .catch((error) => {
-          // If no cached data, just show empty state - DON'T generate new predictions
-          console.log('[AUTO-LOAD] No cached predictions available. User needs to click "Get Predictions"');
-          // Do nothing - let user click button manually
+          console.log('[AUTO-LOAD] No cached predictions available');
+        });
+      
+      // Load results (for Results tab)
+      fetchData(`/.netlify/functions/get-prediction-results`, 'GET', null, 'results')
+        .catch((error) => {
+          console.log('[AUTO-LOAD] No results available yet');
         });
     }
   }, []); // Empty array is safe with ref - truly runs once
