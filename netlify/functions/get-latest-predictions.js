@@ -10,20 +10,68 @@ exports.handler = async (event, context) => {
     
     console.log(`[LATEST] Fetching latest predictions for ${tour}`);
     
+    // Check if Netlify Blobs is properly configured (same as save-predictions.js)
+    if (!process.env.NETLIFY) {
+      console.log('[LATEST] Not running on Netlify - Blobs not available');
+      return {
+        statusCode: 503,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          error: 'Blobs not available',
+          message: 'Blob storage only available when deployed on Netlify'
+        })
+      };
+    }
+    
+    console.log(`[LATEST] Context:`, {
+      deployId: context.deployId || 'N/A',
+      isNetlify: !!process.env.NETLIFY
+    });
+    
     // Get Netlify Blobs store (same as save-predictions.js)
-    const store = getStore('predictions');
+    let store;
+    try {
+      store = getStore('predictions');
+      console.log(`[LATEST] Store created successfully`);
+    } catch (storeError) {
+      console.error(`[LATEST] Failed to create store:`, storeError);
+      return {
+        statusCode: 503,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          error: 'Blobs not available',
+          message: 'Failed to initialize Netlify Blobs storage',
+          details: storeError.message
+        })
+      };
+    }
     
     // List all blobs for this tour
-    const { blobs } = await store.list({ prefix: `${tour}-` });
+    let blobs;
+    try {
+      const listResult = await store.list({ prefix: `${tour}-` });
+      blobs = listResult.blobs;
+      console.log(`[LATEST] Found ${blobs?.length || 0} blobs for prefix "${tour}-"`);
+    } catch (listError) {
+      console.error(`[LATEST] Failed to list blobs:`, listError);
+      return {
+        statusCode: 503,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          error: 'Failed to list blobs',
+          message: listError.message
+        })
+      };
+    }
     
     if (!blobs || blobs.length === 0) {
       console.log(`[LATEST] No cached predictions found for ${tour}`);
       return {
-        statusCode: 404,
+        statusCode: 404, // 404 so frontend knows it's just "not found" not "error"
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           error: 'No cached predictions found',
-          message: 'Click "Get Predictions" to generate new predictions'
+          message: 'No predictions have been saved yet for this tour'
         })
       };
     }
