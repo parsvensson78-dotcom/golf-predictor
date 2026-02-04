@@ -197,13 +197,6 @@ function App() {
     }
   }, []); // Empty array is safe with ref - truly runs once
 
-  const currentData = data[
-    activeTab === 'predictions' ? 'predictions' :
-    activeTab === 'avoid' ? 'avoidPicks' :
-    activeTab === 'news' ? 'newsPreview' : 
-    activeTab === 'results' ? 'results' : 'matchups'
-  ];
-
   return (
     <div className="app">
       <Header />
@@ -226,13 +219,13 @@ function App() {
       
       {error && !loading && <ErrorState error={error} onRetry={handleGetPredictions} requestId={requestId} />}
 
-      {currentData && !loading && !error && (
+      {!loading && !error && (
         <>
-          {activeTab === 'predictions' && <PredictionsView data={data} requestId={requestId} />}
-          {activeTab === 'avoid' && <AvoidPicksView data={currentData} requestId={requestId} />}
-          {activeTab === 'news' && <NewsPreviewView data={currentData} requestId={requestId} />}
-          {activeTab === 'matchups' && <MatchupsView data={currentData} requestId={requestId} />}
-          {activeTab === 'results' && <ResultsView data={currentData} requestId={requestId} />}
+          {activeTab === 'predictions' && (data.predictions || data.avoidPicks) && <PredictionsView data={data} requestId={requestId} />}
+          {activeTab === 'avoid' && data.avoidPicks && <AvoidPicksView data={data.avoidPicks} requestId={requestId} />}
+          {activeTab === 'news' && data.newsPreview && <NewsPreviewView data={data.newsPreview} requestId={requestId} />}
+          {activeTab === 'matchups' && data.matchups && <MatchupsView data={data.matchups} requestId={requestId} />}
+          {activeTab === 'results' && data.results && <ResultsView data={data.results} requestId={requestId} />}
         </>
       )}
     </div>
