@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import './App.css';
 
 /**
@@ -15,6 +15,49 @@ const formatAmericanOdds = (odds) => {
   return odds > 0 ? `+${odds}` : `${odds}`;
 };
 
+// Reusable timestamp header component
+const TimestampHeader = ({ generatedAt }) => {
+  const getRelativeTime = (timestamp) => {
+    const now = new Date();
+    const then = new Date(timestamp);
+    const diffMs = now - then;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return new Date(timestamp).toLocaleDateString();
+  };
+
+  return (
+    <div style={{
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      color: 'white',
+      padding: '0.75rem 1.5rem',
+      borderRadius: '8px',
+      marginBottom: '1.5rem',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+    }}>
+      <span style={{fontSize: '0.95rem', fontWeight: '600'}}>
+        🕐 Last Updated: {new Date(generatedAt).toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        })}
+      </span>
+      <span style={{fontSize: '0.9rem', opacity: 0.9}}>
+        ({getRelativeTime(generatedAt)})
+      </span>
+    </div>
+  );
+};
+
 function App() {
   const [tour, setTour] = useState('pga');
   const [activeTab, setActiveTab] = useState('predictions');
@@ -28,6 +71,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [requestId, setRequestId] = useState(0);
+  const [hasLoadedInitial, setHasLoadedInitial] = useState(false);
 
   // Generic fetch function to avoid duplication
   const fetchData = useCallback(async (endpoint, method = 'GET', body = null, dataKey) => {
@@ -100,6 +144,18 @@ function App() {
     setError(null);
     setRequestId(prev => prev + 1);
   };
+
+  // Auto-load ALL cached data when component mounts
+  // Auto-load predictions on mount (FIXED: proper dependencies)
+  useEffect(() => {
+    if (!hasLoadedInitial && !loading) {
+      console.log('[AUTO-LOAD] Loading initial data');
+      setHasLoadedInitial(true);
+      
+      // Load predictions immediately (has 6-hour cache)
+      handleGetPredictions();
+    }
+  }, [hasLoadedInitial, loading, handleGetPredictions]);
 
   const currentData = data[
     activeTab === 'predictions' ? 'predictions' :
@@ -222,7 +278,7 @@ const ActionButton = ({ activeTab, loading, onGetPredictions, onGetAvoidPicks, o
 const LoadingState = ({ requestId }) => (
   <div className="loading" key={`loading-${requestId}`}>
     <div className="spinner"></div>
-    <p>Analyzing complete tournament field...</p>
+    <p className="loading-text">Analyzing complete tournament field...</p>
     <p className="loading-subtext">Evaluating 120+ players for value picks</p>
   </div>
 );
@@ -442,11 +498,36 @@ const OddsBreakdown = ({ pick }) => {
   );
 };
 
-const FooterInfo = ({ data }) => (
-  <div className="footer-info">
-    <p className="generated-time">
-      Generated: {new Date(data.generatedAt).toLocaleString()}
-    </p>
+const FooterInfo = ({ data }) => {
+  // Calculate relative time
+  const getRelativeTime = (timestamp) => {
+    const now = new Date();
+    const then = new Date(timestamp);
+    const diffMs = now - then;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} minute${diffMins === 1 ? '' : 's'} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+    return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
+  };
+
+  return (
+    <div className="footer-info">
+      <p className="generated-time" style={{fontSize: '1rem', fontWeight: '600', color: '#333', marginBottom: '0.5rem'}}>
+        🕐 Generated: {new Date(data.generatedAt).toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        })} 
+        <span style={{color: '#666', fontWeight: '400', marginLeft: '0.5rem'}}>
+          ({getRelativeTime(data.generatedAt)})
+        </span>
+      </p>
     {data.tokensUsed && (
       <div className="api-usage-info">
         <div className="token-info">
@@ -468,12 +549,23 @@ const FooterInfo = ({ data }) => (
       </div>
     )}
   </div>
-);
+  );
+};
 
 // ==================== PREDICTIONS VIEW ====================
-const PredictionsView = ({ data, requestId }) => (
-  <div className="predictions-container" key={`predictions-${requestId}-${data.generatedAt}`}>
-    <TournamentInfo tournament={data.tournament} />
+const PredictionsView = ({ data, requestId }) => {
+  // Check if data is from cache (generated more than 1 minute ago)
+  const generatedTime = new Date(data.generatedAt).getTime();
+  const now = Date.now();
+  const isCached = (now - generatedTime) > 60000; // More than 1 minute old = cached
+  
+  return (
+    <div className="predictions-container loaded" key={`predictions-${requestId}-${data.generatedAt}`}>
+      <div className={`cache-indicator ${isCached ? 'cached' : 'fresh'}`}>
+        {isCached ? 'Cached' : 'Fresh'}
+      </div>
+      <TimestampHeader generatedAt={data.generatedAt} />
+      <TournamentInfo tournament={data.tournament} />
     <WeatherForecast dailyForecast={data.dailyForecast} />
     <CourseDetails courseInfo={data.courseInfo} courseAnalysis={data.courseAnalysis} />
     <CourseAnalysis courseAnalysis={data.courseAnalysis} />
@@ -505,11 +597,13 @@ const PredictionsView = ({ data, requestId }) => (
     
     <FooterInfo data={data} />
   </div>
-);
+  );
+};
 
 // ==================== AVOID PICKS VIEW ====================
 const AvoidPicksView = ({ data, requestId }) => (
   <div className="avoid-picks-container" key={`avoid-${requestId}-${data.generatedAt}`}>
+    <TimestampHeader generatedAt={data.generatedAt} />
     <TournamentInfo tournament={data.tournament} />
     
     <div className="avoid-section">
@@ -534,8 +628,17 @@ const AvoidPicksView = ({ data, requestId }) => (
 );
 
 // ==================== NEWS PREVIEW VIEW ====================
-const NewsPreviewView = ({ data, requestId }) => (
-  <div className="news-preview-container" key={`news-${requestId}-${data.generatedAt}`}>
+const NewsPreviewView = ({ data, requestId }) => {
+  const generatedTime = new Date(data.generatedAt).getTime();
+  const now = Date.now();
+  const isCached = (now - generatedTime) > 60000;
+  
+  return (
+    <div className="news-preview-container loaded" key={`news-${requestId}-${data.generatedAt}`}>
+      <div className={`cache-indicator ${isCached ? 'cached' : 'fresh'}`}>
+        {isCached ? 'Cached' : 'Fresh'}
+      </div>
+      <TimestampHeader generatedAt={data.generatedAt} />
     <TournamentInfo tournament={data.tournament} />
     
     {data.preview && (
@@ -576,11 +679,21 @@ const NewsPreviewView = ({ data, requestId }) => (
     
     <FooterInfo data={data} />
   </div>
-);
+  );
+};
 
 // ==================== MATCHUPS VIEW ====================
-const MatchupsView = ({ data, requestId }) => (
-  <div className="matchup-container" key={`matchup-${requestId}-${data.generatedAt}`}>
+const MatchupsView = ({ data, requestId }) => {
+  const generatedTime = new Date(data.generatedAt).getTime();
+  const now = Date.now();
+  const isCached = (now - generatedTime) > 60000;
+  
+  return (
+    <div className="matchup-container loaded" key={`matchup-${requestId}-${data.generatedAt}`}>
+      <div className={`cache-indicator ${isCached ? 'cached' : 'fresh'}`}>
+        {isCached ? 'Cached' : 'Fresh'}
+      </div>
+      <TimestampHeader generatedAt={data.generatedAt} />
     <TournamentInfo tournament={data.tournament} />
     
     {data.suggestedMatchups?.length > 0 && (
@@ -614,7 +727,8 @@ const MatchupsView = ({ data, requestId }) => (
     
     <FooterInfo data={data} />
   </div>
-);
+  );
+};
 
 const PlayerBox = ({ player, isPick }) => (
   <div className={`player-box ${isPick ? 'winner' : ''}`}>
@@ -672,7 +786,15 @@ const ResultsView = ({ data, requestId }) => {
               <div style={{display: 'flex', gap: '1.5rem', color: '#666', fontSize: '0.9rem', flexWrap: 'wrap'}}>
                 <span>📍 {tournament.tournament.course}</span>
                 <span>📅 {tournament.tournament.dates}</span>
-                <span>🔮 {new Date(tournament.generatedAt).toLocaleDateString()}</span>
+                <span style={{fontWeight: '600', color: '#667eea'}}>
+                  🕐 Predicted: {new Date(tournament.generatedAt).toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                  })}
+                </span>
               </div>
             </div>
 
