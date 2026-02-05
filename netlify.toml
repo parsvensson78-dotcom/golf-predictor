@@ -1,6 +1,10 @@
 [build]
   functions = "netlify/functions"
 
+[build.environment]
+  # Suppress punycode deprecation warning
+  NODE_OPTIONS = "--no-deprecation"
+
 [functions]
   # Default timeout for all functions (10 seconds)
   # Personal plan allows up to 100 seconds
