@@ -1,22 +1,27 @@
 [build]
-  command = "npm run build"
-  publish = "dist"
   functions = "netlify/functions"
 
-[build.environment]
-  NODE_VERSION = "18"
-
-# Functions configuration
 [functions]
+  # Default timeout for all functions (10 seconds)
+  # Personal plan allows up to 100 seconds
   node_bundler = "esbuild"
-  external_node_modules = ["@netlify/blobs"]
 
-# Increase function timeout to 60 seconds (max for free tier, 26 seconds default)
+# Extended timeout for heavy functions
+[functions."get-matchup-predictions"]
+  timeout = 60
+
 [functions."get-predictions"]
   timeout = 60
 
-[functions."get-prediction-results"]
-  timeout = 30
+[functions."get-avoid-picks"]
+  timeout = 60
 
-[functions."fetch-tournament-results"]
-  timeout = 30
+[functions."get-tournament-news"]
+  timeout = 60
+
+# Quick functions keep default timeout
+[functions."get-latest-*"]
+  timeout = 10
+
+[functions."fetch-*"]
+  timeout = 15
