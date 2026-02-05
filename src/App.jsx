@@ -83,9 +83,9 @@ function App() {
     try {
       const timestamp = Date.now();
       
-      // Extended timeout for heavy operations (60 seconds)
+      // Extended timeout for heavy operations (90 seconds - longer than backend)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      const timeoutId = setTimeout(() => controller.abort(), 90000);
       
       const options = {
         method,
@@ -111,6 +111,12 @@ function App() {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
         
+        // Special handling for 504 Gateway Timeout
+        if (response.status === 504) {
+          console.log('[FETCH] 504 Gateway Timeout - function took too long');
+          throw new Error('BACKEND_TIMEOUT');
+        }
+        
         // Special handling for get-latest-predictions 
         if (url.includes('get-latest-predictions')) {
           // 503 = Blobs not configured, 404 = No saved predictions yet
@@ -130,7 +136,14 @@ function App() {
       // Handle abort/timeout errors
       if (err.name === 'AbortError') {
         setError('Request timed out. The operation took too long. Please try again.');
-        console.error('Request timeout after 60 seconds');
+        console.error('Request timeout after 90 seconds');
+        throw err;
+      }
+      
+      // Handle backend timeout with helpful message
+      if (err.message === 'BACKEND_TIMEOUT') {
+        setError('Analysis is still processing. Please refresh the page in a few seconds to see the cached results.');
+        console.error('Backend timeout - but results may be cached');
         throw err;
       }
       
@@ -160,8 +173,38 @@ function App() {
   const handleGetNews = () => 
     fetchData(`/.netlify/functions/get-tournament-news?tour=${tour}`, 'GET', null, 'newsPreview');
   
-  const handleGetMatchups = () => 
-    fetchData(`/.netlify/functions/get-matchup-predictions`, 'POST', { tour }, 'matchups');
+  const handleGetMatchups = async () => {
+    try {
+      await fetchData(`/.netlify/functions/get-matchup-predictions`, 'POST', { tour }, 'matchups');
+    } catch (err) {
+      // If backend timeout (504), the function is still running in background
+      // Wait a bit and load from cache when it's done
+      if (err.message === 'BACKEND_TIMEOUT') {
+        console.log('[MATCHUP] Backend timeout detected - function still processing in background');
+        setError('Generating matchups... This may take 30-40 seconds. Checking for results...');
+        
+        // Poll for cached results every 3 seconds for up to 30 seconds
+        let attempts = 0;
+        const maxAttempts = 10;
+        const pollInterval = setInterval(async () => {
+          attempts++;
+          console.log(`[MATCHUP] Polling cache attempt ${attempts}/${maxAttempts}`);
+          
+          try {
+            await fetchData(`/.netlify/functions/get-latest-matchups?tour=${tour}`, 'GET', null, 'matchups');
+            clearInterval(pollInterval);
+            setError(null); // Clear error message on success
+            console.log('[MATCHUP] Successfully loaded from cache!');
+          } catch (cacheErr) {
+            if (attempts >= maxAttempts) {
+              clearInterval(pollInterval);
+              setError('Matchup generation is taking longer than expected. Please try refreshing in a moment.');
+            }
+          }
+        }, 3000);
+      }
+    }
+  };
 
   const handleGetResults = () => 
     fetchData(`/.netlify/functions/get-prediction-results`, 'GET', null, 'results');
