@@ -82,13 +82,19 @@ function App() {
     
     try {
       const timestamp = Date.now();
+      
+      // Extended timeout for heavy operations (60 seconds)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      
       const options = {
         method,
         cache: 'no-store',
         headers: {
           'Content-Type': 'application/json',
           'Cache-Control': 'no-cache'
-        }
+        },
+        signal: controller.signal
       };
       
       if (body) {
@@ -100,6 +106,7 @@ function App() {
         : endpoint;
       
       const response = await fetch(url, options);
+      clearTimeout(timeoutId);
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -120,6 +127,13 @@ function App() {
       setData(prev => ({ ...prev, [dataKey]: responseData }));
       
     } catch (err) {
+      // Handle abort/timeout errors
+      if (err.name === 'AbortError') {
+        setError('Request timed out. The operation took too long. Please try again.');
+        console.error('Request timeout after 60 seconds');
+        throw err;
+      }
+      
       // Don't show error to user if it's just no cached data available
       if (err.message !== 'NO_CACHED_DATA' && err.message !== 'BLOBS_NOT_AVAILABLE') {
         setError(err.message);
