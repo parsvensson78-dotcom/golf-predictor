@@ -4,15 +4,13 @@ const {
   getBlobStore,
   normalizePlayerName,
   formatAmericanOdds,
-  analyzeCourseSkillDemands,
-  analyzeWeatherConditions,
   calculateClaudeCost,
   generateBlobKey
 } = require('./shared-utils');
 
 /**
- * Matchup Predictions Endpoint - OPTIMIZED VERSION v3
- * NOW WITH INTELLIGENT ANALYSIS:
+ * Matchup Predictions Endpoint - PERFORMANCE OPTIMIZED
+ * Focuses on SG stats + basic course/weather info for speed
  * - Course skill demands analysis
  * - Weather conditions analysis
  * - Recent form and course history data
@@ -52,10 +50,10 @@ exports.handler = async (event, context) => {
     const oddsData = oddsResponse.data;
     console.log(`[MATCHUP] Received odds for ${oddsData.odds.length} players`);
 
-    // Step 4: Get top 30 players by odds for detailed stats (reduced for performance - avoid timeout)
+    // Step 4: Get top 50 players by odds for detailed stats
     const topPlayerNames = oddsData.odds
       .sort((a, b) => a.odds - b.odds)
-      .slice(0, 30)
+      .slice(0, 50)
       .map(o => o.player);
     
     console.log(`[MATCHUP] Fetching stats for top ${topPlayerNames.length} players`);
@@ -128,12 +126,11 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // Step 7: Analyze course demands and weather (using shared-utils)
-    const courseDemands = analyzeCourseSkillDemands(courseInfo);
-    const weatherAnalysis = analyzeWeatherConditions(weatherSummary);
+    // Step 7: Skip detailed analysis for performance - matchups work fine with basic course info
+    const courseDemands = `${courseInfo.courseName || 'Course'} - ${courseInfo.yardage || '?'}y, Par ${courseInfo.par || '?'}`;
+    const weatherAnalysis = weatherSummary;
     
-    console.log('[MATCHUP] Course demands analyzed');
-    console.log('[MATCHUP] Weather impact analyzed');
+    console.log('[MATCHUP] Using basic course and weather info for faster processing');
 
     // Step 8: Prepare player data with stats and odds (skip form data for performance)
     const playersWithData = statsData.players
@@ -427,7 +424,7 @@ async function fetchRecentFormAndHistory(playerNames, courseName, tour) {
  * Build enhanced prompt with course analysis, weather analysis, and form data
  */
 function buildEnhancedMatchupPrompt(tournament, players, weatherSummary, weatherAnalysis, courseInfo, courseDemands, customMatchup) {
-  const topPlayers = players.slice(0, 30); // Use all 30 players we fetched
+  const topPlayers = players.slice(0, 50); // Use all 50 players we fetched
   const playerList = topPlayers.map(p => {
     return `${p.name} [${formatAmericanOdds(p.odds)}] - R${p.rank} | SG:${p.sgTotal?.toFixed(2) || 'N/A'} (OTT:${p.sgOTT?.toFixed(2) || 'N/A'} APP:${p.sgAPP?.toFixed(2) || 'N/A'} ARG:${p.sgARG?.toFixed(2) || 'N/A'} P:${p.sgPutt?.toFixed(2) || 'N/A'})`;
   }).join('\n');
@@ -452,25 +449,19 @@ YOU MUST analyze this specific matchup and include it in your response as "custo
   return `Golf analyst: Generate 4-5 intelligent head-to-head matchup predictions.
 
 TOURNAMENT: ${tournament.name}
-Course: ${courseInfo.courseName || courseInfo.eventName} | ${courseInfo.yardage || '?'}y Par ${courseInfo.par || '?'}
+Course: ${courseDemands}
+Weather: ${weatherAnalysis}
 
-COURSE DEMANDS ANALYSIS:
-${courseDemands}
-
-WEATHER IMPACT ANALYSIS:
-${weatherAnalysis}
-
-TOP 30 PLAYERS (with SG stats):
+TOP 50 PLAYERS (with SG stats):
 ${playerList}
 
 ${customMatchupPrompt}
 
 ANALYSIS FRAMEWORK:
-1. Course Fit (35%): Match SG stats to course demands above
-2. Recent Form (25%): Last 3 tournaments + momentum trend
-3. Course History (20%): Past performance at this venue
-4. Weather Impact (15%): How conditions favor their game
-5. Odds Value (5%): Ensuring interesting/competitive matchups
+1. SG Stats Match (50%): Compare player SG profiles to determine edge
+2. Course Fit (30%): How their stats match this course setup
+3. Weather (15%): How conditions favor one player's game
+4. Odds Value (5%): Ensuring interesting/competitive matchups
 
 YOUR TASK:
 1. Create 4-5 INTERESTING matchups between players with similar odds (within +500 of each other)
@@ -479,9 +470,8 @@ YOUR TASK:
 ${customMatchup ? '4. Analyze the custom matchup requested above' : ''}
 
 CRITICAL REQUIREMENTS:
-- Compare SPECIFIC SG stats to the "Course Demands" section
-- Explain weather impact based on "Weather Impact Analysis"
-- Focus on statistical matchups and course fit
+- Compare SPECIFIC SG stats between players
+- Keep it simple - SG stats + basic course/weather context
 - Be realistic with win probabilities (52-65% for competitive matchups)
 
 Return JSON:
