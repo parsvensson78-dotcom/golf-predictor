@@ -584,9 +584,9 @@ function buildClaudePrompt(tournament, players, weatherSummary, courseInfo) {
   // ========================================
   const WEIGHTS = {
     courseFit: 40,           // % - How well stats match course demands
-    recentForm: 15,          // % - Last 5 tournaments performance
-    courseHistory: 20,       // % - Past results at this venue (0% if no history)
-    weather: 15,             // % - Weather adaptation
+    recentForm: 20,          // % - Last 5 tournaments performance
+    courseHistory: 10,       // % - Past results at this venue (0% if no history)
+    weather: 20,             // % - Weather adaptation
     statisticalQuality: 10   // % - Overall player quality check
   };
   
