@@ -1,17 +1,16 @@
-const { getBlobStore } = require('./shared-utils');
+const { getBlobStore, getLatestBlobForTournament } = require('./shared-utils');
 
 /**
- * Get Latest Avoid Picks from Blobs - OPTIMIZED
+ * Get Latest Avoid Picks from Blobs - OPTIMIZED v2
  * Returns the most recent saved avoid picks for a tour
- * NOW USES: shared-utils getBlobStore()
+ * NOW SUPPORTS: ?tournament= filter for current tournament matching
  */
 exports.handler = async (event, context) => {
   try {
-    const { tour = 'pga' } = event.queryStringParameters || {};
+    const { tour = 'pga', tournament = '' } = event.queryStringParameters || {};
     
-    console.log(`[LATEST-AVOID] Fetching latest avoid picks for ${tour}`);
+    console.log(`[LATEST-AVOID] Fetching latest avoid picks for ${tour}${tournament ? ` (filter: "${tournament}")` : ''}`);
     
-    // Use shared getBlobStore helper
     let store;
     try {
       store = getBlobStore('avoid-picks', context);
@@ -28,25 +27,10 @@ exports.handler = async (event, context) => {
       };
     }
     
-    // List all blobs for this tour
-    let blobs;
-    try {
-      const { blobs: blobList } = await store.list({ prefix: `${tour}-` });
-      blobs = blobList;
-      console.log(`[LATEST-AVOID] Found ${blobs?.length || 0} blobs for prefix "${tour}-"`);
-    } catch (listError) {
-      console.error(`[LATEST-AVOID] Failed to list blobs:`, listError);
-      return {
-        statusCode: 404,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          error: 'No cached avoid picks found',
-          message: listError.message
-        })
-      };
-    }
+    // Use smart blob lookup that filters by tournament name
+    const result = await getLatestBlobForTournament(store, tour, tournament || null);
     
-    if (!blobs || blobs.length === 0) {
+    if (!result) {
       console.log(`[LATEST-AVOID] No cached avoid picks found for ${tour}`);
       return {
         statusCode: 404,
@@ -58,28 +42,14 @@ exports.handler = async (event, context) => {
       };
     }
     
-    // Sort by key to get most recent
-    const sortedBlobs = blobs.sort((a, b) => b.key.localeCompare(a.key));
-    const latestKey = sortedBlobs[0].key;
+    const { data: latestData, key: latestKey, fallback } = result;
     
-    console.log(`[LATEST-AVOID] Found latest: ${latestKey}`);
-    
-    // Get the blob data
-    const latestData = await store.get(latestKey, { type: 'json' });
-    
-    if (!latestData) {
-      return {
-        statusCode: 404,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          error: 'Failed to load cached avoid picks'
-        })
-      };
+    if (fallback) {
+      console.log(`[LATEST-AVOID] ⚠️ No match for "${tournament}", returning fallback from ${latestKey}`);
+    } else {
+      console.log(`[LATEST-AVOID] ✅ Returning cached data from ${latestKey}`);
     }
     
-    console.log(`[LATEST-AVOID] Returning cached data from ${latestKey}`);
-    
-    // Return the cached avoid picks
     return {
       statusCode: 200,
       headers: {
@@ -90,7 +60,8 @@ exports.handler = async (event, context) => {
         ...latestData,
         generatedAt: latestData.generatedAt,
         fromCache: true,
-        cacheKey: latestKey
+        cacheKey: latestKey,
+        isFallback: !!fallback
       })
     };
     
