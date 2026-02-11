@@ -255,6 +255,99 @@ function generateBlobKey(tournamentName, tour, timestamp) {
   return `${tour}-${tournamentSlug}-${dateStr}-${timeStr}`;
 }
 
+// ==================== CACHE VALIDATION ====================
+
+/**
+ * Generate a tournament-specific cache key for player data
+ * Ensures cache is automatically invalidated when tournament changes
+ */
+function generatePlayerDataCacheKey(tour, tournamentName) {
+  if (!tournamentName) return `player-data-${tour}`;
+  const slug = tournamentName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  return `player-data-${tour}-${slug}`;
+}
+
+/**
+ * Validate that cached data matches the current tournament
+ * Returns true if cache is valid (same tournament and not expired)
+ */
+function isCacheValidForTournament(cachedData, currentTournamentName, maxAgeMs = 12 * 60 * 60 * 1000) {
+  if (!cachedData || !cachedData.timestamp) return false;
+  
+  // Check age
+  const cacheAge = Date.now() - cachedData.timestamp;
+  if (cacheAge >= maxAgeMs) {
+    console.log(`[CACHE-VALIDATE] Cache expired (${Math.round(cacheAge / 1000 / 60 / 60)}h old)`);
+    return false;
+  }
+  
+  // Check tournament name match (if we have both)
+  if (currentTournamentName && cachedData.tournament?.name) {
+    const cachedName = cachedData.tournament.name.toLowerCase().trim();
+    const currentName = currentTournamentName.toLowerCase().trim();
+    if (cachedName !== currentName) {
+      console.log(`[CACHE-VALIDATE] Tournament mismatch! Cached: "${cachedData.tournament.name}" vs Current: "${currentTournamentName}"`);
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+/**
+ * Find the latest blob matching a specific tournament name
+ * Used by get-latest-* functions to return data for the CURRENT tournament
+ * Falls back to most recent blob if no tournament filter provided
+ */
+async function getLatestBlobForTournament(store, tour, tournamentName = null) {
+  const { blobs } = await store.list({ prefix: `${tour}-` });
+  
+  if (!blobs || blobs.length === 0) return null;
+  
+  // Sort by key descending (most recent first)
+  const sortedBlobs = blobs.sort((a, b) => b.key.localeCompare(a.key));
+  
+  // If no tournament filter, try each blob starting from newest
+  // and return the first one that has valid data
+  for (const blob of sortedBlobs) {
+    try {
+      const data = await store.get(blob.key, { type: 'json' });
+      if (!data) continue;
+      
+      // If tournament filter provided, check if it matches
+      if (tournamentName) {
+        const blobTournament = data.tournament?.name || data.tournamentName || '';
+        if (blobTournament.toLowerCase().trim() !== tournamentName.toLowerCase().trim()) {
+          console.log(`[BLOB-FILTER] Skipping "${blobTournament}" (looking for "${tournamentName}")`);
+          continue;
+        }
+      }
+      
+      return { data, key: blob.key };
+    } catch (err) {
+      console.log(`[BLOB-FILTER] Error reading blob ${blob.key}: ${err.message}`);
+      continue;
+    }
+  }
+  
+  // Fallback: return most recent blob regardless of tournament
+  // (better to show something than nothing)
+  if (tournamentName) {
+    console.log(`[BLOB-FILTER] No match for "${tournamentName}", falling back to most recent`);
+    try {
+      const data = await store.get(sortedBlobs[0].key, { type: 'json' });
+      return data ? { data, key: sortedBlobs[0].key, fallback: true } : null;
+    } catch (err) {
+      return null;
+    }
+  }
+  
+  return null;
+}
+
 // ==================== EXPORTS ====================
 
 module.exports = {
@@ -276,5 +369,10 @@ module.exports = {
   calculateClaudeCost,
   
   // Blob keys
-  generateBlobKey
+  generateBlobKey,
+  
+  // Cache validation (NEW)
+  generatePlayerDataCacheKey,
+  isCacheValidForTournament,
+  getLatestBlobForTournament
 };
