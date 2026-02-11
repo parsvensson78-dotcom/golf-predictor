@@ -220,24 +220,14 @@ async function fetchEventFinishes(tour, tournamentInfo, apiKey) {
       console.log(`[RESULTS] First item sample: ${JSON.stringify(firstItem).substring(0, 300)}`);
     }
     
-    // Handle response format - try multiple possible structures
+    // Handle response format - DataGolf returns players in event_stats field
     let players = [];
     if (Array.isArray(response.data)) {
       players = response.data;
     } else if (typeof response.data === 'object') {
-      // Try common field names
-      players = response.data.players || response.data.results || response.data.field || 
-                response.data.leaderboard || response.data.data || [];
-      
-      // If still empty, check if the data itself contains player-like objects
-      if (players.length === 0 && dataKeys.length > 0) {
-        // Maybe it's keyed by player ID or similar
-        const firstValue = response.data[dataKeys[0]];
-        if (typeof firstValue === 'object' && firstValue !== null && (firstValue.player_name || firstValue.fin_text)) {
-          players = Object.values(response.data);
-          console.log(`[RESULTS] Using object values as players: ${players.length} entries`);
-        }
-      }
+      // DataGolf uses 'event_stats' for historical-event-data/events
+      players = response.data.event_stats || response.data.players || response.data.results || 
+                response.data.field || response.data.leaderboard || response.data.data || [];
     }
     
     if (players.length === 0) {
@@ -246,6 +236,11 @@ async function fetchEventFinishes(tour, tournamentInfo, apiKey) {
     }
     
     console.log(`[RESULTS] Got ${players.length} players from event-data endpoint`);
+    
+    // Log first player's keys to understand field names
+    if (players[0]) {
+      console.log(`[RESULTS] Player fields: [${Object.keys(players[0]).join(', ')}]`);
+    }
     
     // Map to our standard format
     const results = players
@@ -293,11 +288,26 @@ async function fetchFromRounds(tour, tournamentInfo, apiKey) {
     const dataLength = Array.isArray(response.data) ? response.data.length : 'N/A';
     console.log(`[RESULTS] Rounds response type: ${dataType}, keys: [${dataKeys.join(', ')}], length: ${dataLength}`);
 
-    let rounds = Array.isArray(response.data) ? response.data : (response.data.rounds || response.data.scorecards || []);
+    let rounds = [];
+    if (Array.isArray(response.data)) {
+      rounds = response.data;
+    } else if (typeof response.data === 'object') {
+      // DataGolf uses 'scores' for historical-raw-data/rounds
+      rounds = response.data.scores || response.data.rounds || response.data.scorecards || [];
+    }
     
     if (rounds.length === 0) {
       console.log(`[RESULTS] No rounds found`);
+      // Log first item to debug
+      if (rounds.length === 0 && response.data.scores === undefined) {
+        console.log(`[RESULTS] Note: 'scores' field not found in response`);
+      }
       return [];
+    }
+    
+    // Log first round's keys
+    if (rounds[0]) {
+      console.log(`[RESULTS] Round fields: [${Object.keys(rounds[0]).join(', ')}]`);
     }
 
     console.log(`[RESULTS] Got ${rounds.length} round records`);
