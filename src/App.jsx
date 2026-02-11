@@ -15,6 +15,48 @@ const formatAmericanOdds = (odds) => {
   return odds > 0 ? `+${odds}` : `${odds}`;
 };
 
+// Helper to look up live odds for a player (handles name format differences)
+const getLiveOdds = (liveOdds, playerName) => {
+  if (!liveOdds || !playerName) return null;
+  // Try exact match first
+  if (liveOdds[playerName]) return liveOdds[playerName];
+  // Try normalized match (DataGolf uses "LastName, FirstName" format)
+  const normalized = playerName.toLowerCase().trim();
+  for (const [name, odds] of Object.entries(liveOdds)) {
+    if (name.toLowerCase().trim() === normalized) return odds;
+    // Handle "LastName, FirstName" vs "FirstName LastName"
+    const parts = name.split(', ');
+    if (parts.length === 2) {
+      const flipped = `${parts[1]} ${parts[0]}`.toLowerCase().trim();
+      if (flipped === normalized) return odds;
+    }
+    const playerParts = playerName.split(', ');
+    if (playerParts.length === 2) {
+      const flipped = `${playerParts[1]} ${playerParts[0]}`.toLowerCase().trim();
+      if (name.toLowerCase().trim() === flipped) return odds;
+    }
+  }
+  return null;
+};
+
+// Helper component to show odds with live update indicator
+const OddsDisplay = ({ originalOdds, liveOdds, playerName, style = {} }) => {
+  const live = getLiveOdds(liveOdds, playerName);
+  const displayOdds = live ? live.odds : originalOdds;
+  const isUpdated = live && originalOdds && live.odds !== originalOdds;
+  
+  return (
+    <span style={{ fontWeight: 600, color: '#667eea', ...style }}>
+      {formatAmericanOdds(displayOdds)}
+      {isUpdated && (
+        <span style={{ fontSize: '0.7rem', color: '#ff9800', marginLeft: '3px' }} title={`Was ${formatAmericanOdds(originalOdds)} at prediction time`}>
+          ⚡
+        </span>
+      )}
+    </span>
+  );
+};
+
 // Reusable timestamp header component
 const TimestampHeader = ({ generatedAt }) => {
   const getRelativeTime = (timestamp) => {
@@ -72,7 +114,22 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [requestId, setRequestId] = useState(0);
+  const [liveOdds, setLiveOdds] = useState(null);
   const hasAutoLoadedRef = useRef(false);
+
+  // Fetch live odds from DataGolf (refreshes every 5 min via cache header)
+  const fetchLiveOdds = useCallback(async (tourParam) => {
+    try {
+      const response = await fetch(`/.netlify/functions/get-live-odds?tour=${tourParam || tour}&_=${Math.floor(Date.now() / 300000)}`);
+      if (response.ok) {
+        const oddsData = await response.json();
+        setLiveOdds(oddsData.odds || {});
+        console.log(`[LIVE-ODDS] Loaded ${oddsData.count} player odds`);
+      }
+    } catch (err) {
+      console.log('[LIVE-ODDS] Failed to fetch:', err.message);
+    }
+  }, [tour]);
 
   // Generic fetch function to avoid duplication
   const fetchData = useCallback(async (endpoint, method = 'GET', body = null, dataKey) => {
@@ -365,6 +422,9 @@ function App() {
       
       const loaded = results.filter(r => r.status === 'fulfilled').length;
       console.log(`[TOUR] Loaded ${loaded}/2 cached datasets for ${newTour}`);
+      
+      // Also refresh live odds
+      fetchLiveOdds(newTour);
     };
     
     loadTourData();
@@ -408,6 +468,9 @@ function App() {
         
         const loaded = results.filter(r => r.status === 'fulfilled').length;
         console.log(`[AUTO-LOAD] Successfully loaded ${loaded}/3 additional cached datasets`);
+        
+        // Step 3: Fetch live odds in background
+        fetchLiveOdds(tour);
       };
       
       loadAllData();
@@ -461,10 +524,10 @@ function App() {
 
       {currentData && !loading && !error && activeTab !== 'playerAnalysis' && (
         <>
-          {activeTab === 'predictions' && <PredictionsView data={currentData} requestId={requestId} />}
-          {activeTab === 'avoid' && <AvoidPicksView data={currentData} requestId={requestId} />}
+          {activeTab === 'predictions' && <PredictionsView data={currentData} liveOdds={liveOdds} requestId={requestId} />}
+          {activeTab === 'avoid' && <AvoidPicksView data={currentData} liveOdds={liveOdds} requestId={requestId} />}
           {activeTab === 'news' && <NewsPreviewView data={currentData} requestId={requestId} />}
-          {activeTab === 'matchups' && <MatchupsView data={currentData} requestId={requestId} />}
+          {activeTab === 'matchups' && <MatchupsView data={currentData} liveOdds={liveOdds} requestId={requestId} />}
           {activeTab === 'results' && <ResultsView data={currentData} requestId={requestId} />}
         </>
       )}
@@ -827,7 +890,7 @@ const FooterInfo = ({ data }) => {
 };
 
 // ==================== PREDICTIONS VIEW ====================
-const PredictionsView = ({ data, requestId }) => {
+const PredictionsView = ({ data, liveOdds, requestId }) => {
   // Check if data is from cache (generated more than 1 minute ago)
   const generatedTime = new Date(data.generatedAt).getTime();
   const now = Date.now();
@@ -913,7 +976,7 @@ const PredictionsView = ({ data, requestId }) => {
             <div className="pick-header">
               <span className="pick-number">#{index + 1}</span>
               <div className="odds-container">
-                <span className="pick-odds">{formatAmericanOdds(pick.odds)}</span>
+                <OddsDisplay originalOdds={pick.odds} liveOdds={liveOdds} playerName={pick.player} className="pick-odds" />
               </div>
             </div>
             <h3 className="pick-name">{pick.player}</h3>
@@ -932,7 +995,7 @@ const PredictionsView = ({ data, requestId }) => {
 };
 
 // ==================== AVOID PICKS VIEW ====================
-const AvoidPicksView = ({ data, requestId }) => {
+const AvoidPicksView = ({ data, liveOdds, requestId }) => {
   const generatedTime = new Date(data.generatedAt).getTime();
   const now = Date.now();
   const isCached = (now - generatedTime) > 60000;
@@ -1006,7 +1069,7 @@ const AvoidPicksView = ({ data, requestId }) => {
           <div key={`avoid-${requestId}-${index}`} className="avoid-card">
             <div className="avoid-header">
               <span className="avoid-icon">⚠️</span>
-              <span className="avoid-odds">{formatAmericanOdds(avoid.odds)}</span>
+              <OddsDisplay originalOdds={avoid.odds} liveOdds={liveOdds} playerName={avoid.player} />
             </div>
             <h4 className="avoid-name">{avoid.player}</h4>
             <div className="avoid-reasoning">
@@ -1078,7 +1141,7 @@ const NewsPreviewView = ({ data, requestId }) => {
 };
 
 // ==================== MATCHUPS VIEW ====================
-const MatchupsView = ({ data, requestId }) => {
+const MatchupsView = ({ data, liveOdds, requestId }) => {
   const generatedTime = new Date(data.generatedAt).getTime();
   const now = Date.now();
   const isCached = (now - generatedTime) > 60000;
@@ -1157,9 +1220,9 @@ const MatchupsView = ({ data, requestId }) => {
               </span>
             </div>
             <div className="matchup-players">
-              <PlayerBox player={matchup.playerA} isPick={matchup.pick === matchup.playerA.name} />
+              <PlayerBox player={matchup.playerA} isPick={matchup.pick === matchup.playerA.name} liveOdds={liveOdds} />
               <div className="vs-divider">VS</div>
-              <PlayerBox player={matchup.playerB} isPick={matchup.pick === matchup.playerB.name} />
+              <PlayerBox player={matchup.playerB} isPick={matchup.pick === matchup.playerB.name} liveOdds={liveOdds} />
             </div>
             <div className="matchup-analysis">
               <div className="win-probability">
@@ -1179,10 +1242,12 @@ const MatchupsView = ({ data, requestId }) => {
   );
 };
 
-const PlayerBox = ({ player, isPick }) => (
+const PlayerBox = ({ player, isPick, liveOdds }) => (
   <div className={`player-box ${isPick ? 'winner' : ''}`}>
     <h4>{player.name}</h4>
-    <div className="player-odds">{formatAmericanOdds(player.odds)}</div>
+    <div className="player-odds">
+      <OddsDisplay originalOdds={player.odds} liveOdds={liveOdds} playerName={player.name} />
+    </div>
     <div className="player-stats">
       {['OTT', 'APP', 'ARG', 'Putt'].map(stat => (
         <div key={stat} className="stat-row">
