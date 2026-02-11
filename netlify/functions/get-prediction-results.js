@@ -151,28 +151,32 @@ exports.handler = async (event, context) => {
 
         const resultsData = resultsResponse.data;
         const results = resultsData.results || [];
-        const isCompleted = resultsData.status === 'completed' && results.length > 0;
+        const isCompleted = resultsData.status !== 'not_completed' && results.length > 0;
+
+        // Skip tournaments that haven't started or are still in progress
+        if (!isCompleted) {
+          console.log(`[RESULTS] Skipping "${tournamentName}" - not yet completed`);
+          continue;
+        }
 
         let valueAnalysis = null;
         let avoidAnalysis = null;
         let matchupAnalysis = null;
 
-        if (isCompleted) {
-          if (tData.predictions?.length > 0) {
-            valueAnalysis = analyzeValuePicks(tData.predictions, results);
-          }
-          if (tData.avoidPicks?.length > 0) {
-            avoidAnalysis = analyzeAvoidPicks(tData.avoidPicks, results);
-          }
-          if (tData.matchups?.length > 0) {
-            matchupAnalysis = analyzeMatchups(tData.matchups, results);
-          }
+        if (tData.predictions?.length > 0) {
+          valueAnalysis = analyzeValuePicks(tData.predictions, results);
+        }
+        if (tData.avoidPicks?.length > 0) {
+          avoidAnalysis = analyzeAvoidPicks(tData.avoidPicks, results);
+        }
+        if (tData.matchups?.length > 0) {
+          matchupAnalysis = analyzeMatchups(tData.matchups, results);
         }
 
         tournaments.push({
           tournament: tData.tournament,
           generatedAt: tData.generatedAt,
-          status: isCompleted ? 'completed' : 'pending',
+          status: 'completed',
           valuePicks: tData.predictions || [],
           avoidPicks: tData.avoidPicks || [],
           matchups: tData.matchups || [],
