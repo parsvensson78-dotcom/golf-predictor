@@ -206,10 +206,44 @@ async function fetchEventFinishes(tour, tournamentInfo, apiKey) {
     
     if (!response.data) return [];
     
-    // Handle response format
-    let players = Array.isArray(response.data) ? response.data : (response.data.players || response.data.results || []);
+    // DEBUG: Log the actual response structure to understand format
+    const dataType = Array.isArray(response.data) ? 'array' : typeof response.data;
+    const dataKeys = typeof response.data === 'object' && !Array.isArray(response.data) ? Object.keys(response.data) : [];
+    const dataLength = Array.isArray(response.data) ? response.data.length : 'N/A';
+    console.log(`[RESULTS] Response type: ${dataType}, keys: [${dataKeys.join(', ')}], length: ${dataLength}`);
     
-    if (players.length === 0) return [];
+    // Log first item to see field names
+    const firstItem = Array.isArray(response.data) ? response.data[0] : 
+                      (response.data.players?.[0] || response.data.results?.[0] || response.data[dataKeys[0]]?.[0]);
+    if (firstItem) {
+      console.log(`[RESULTS] First item keys: [${Object.keys(firstItem).join(', ')}]`);
+      console.log(`[RESULTS] First item sample: ${JSON.stringify(firstItem).substring(0, 300)}`);
+    }
+    
+    // Handle response format - try multiple possible structures
+    let players = [];
+    if (Array.isArray(response.data)) {
+      players = response.data;
+    } else if (typeof response.data === 'object') {
+      // Try common field names
+      players = response.data.players || response.data.results || response.data.field || 
+                response.data.leaderboard || response.data.data || [];
+      
+      // If still empty, check if the data itself contains player-like objects
+      if (players.length === 0 && dataKeys.length > 0) {
+        // Maybe it's keyed by player ID or similar
+        const firstValue = response.data[dataKeys[0]];
+        if (typeof firstValue === 'object' && firstValue !== null && (firstValue.player_name || firstValue.fin_text)) {
+          players = Object.values(response.data);
+          console.log(`[RESULTS] Using object values as players: ${players.length} entries`);
+        }
+      }
+    }
+    
+    if (players.length === 0) {
+      console.log(`[RESULTS] No players found in response`);
+      return [];
+    }
     
     console.log(`[RESULTS] Got ${players.length} players from event-data endpoint`);
     
@@ -253,9 +287,18 @@ async function fetchFromRounds(tour, tournamentInfo, apiKey) {
     
     if (!response.data) return [];
 
+    // DEBUG: Log response structure
+    const dataType = Array.isArray(response.data) ? 'array' : typeof response.data;
+    const dataKeys = typeof response.data === 'object' && !Array.isArray(response.data) ? Object.keys(response.data) : [];
+    const dataLength = Array.isArray(response.data) ? response.data.length : 'N/A';
+    console.log(`[RESULTS] Rounds response type: ${dataType}, keys: [${dataKeys.join(', ')}], length: ${dataLength}`);
+
     let rounds = Array.isArray(response.data) ? response.data : (response.data.rounds || response.data.scorecards || []);
     
-    if (rounds.length === 0) return [];
+    if (rounds.length === 0) {
+      console.log(`[RESULTS] No rounds found`);
+      return [];
+    }
 
     console.log(`[RESULTS] Got ${rounds.length} round records`);
 
