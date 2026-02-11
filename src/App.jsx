@@ -1203,19 +1203,21 @@ const PlayerAnalysisView = ({ data, onAnalyze, loading, error, tour, requestId }
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef(null);
 
-  // Fetch field list on mount / tour change
+  // Fetch FULL field list on mount / tour change
   useEffect(() => {
     const fetchField = async () => {
       setFieldLoading(true);
       try {
-        const response = await fetch(`/.netlify/functions/fetch-tournament?tour=${tour}`);
+        // Use dedicated full-field endpoint (returns all 120-156 players)
+        const response = await fetch(`/.netlify/functions/get-full-field?tour=${tour}`);
         if (response.ok) {
-          const tournament = await response.json();
-          const players = (tournament.field || [])
+          const data = await response.json();
+          const players = (data.field || [])
             .map(p => p.name)
             .filter(Boolean)
             .sort((a, b) => a.localeCompare(b));
           setField(players);
+          console.log(`[PLAYER] Loaded ${players.length} players from field`);
         }
       } catch (err) {
         console.error('[PLAYER] Failed to fetch field:', err);
