@@ -2,7 +2,11 @@ const axios = require('axios');
 
 /**
  * Fetch tournament results from DataGolf API
- * Returns final leaderboard with player positions and scores
+ * FIXES:
+ * - Better tournament name matching (not just first word)
+ * - Uses historical-raw-data endpoint for completed tournaments
+ * - Handles event_completed as boolean/string/number
+ * - field-updates only returns CURRENT tournament, so we use historical data instead
  */
 exports.handler = async (event, context) => {
   try {
@@ -12,16 +16,33 @@ exports.handler = async (event, context) => {
       return createErrorResponse('Tournament name required', 400);
     }
 
-    console.log(`[RESULTS] Fetching results for: ${tournamentName}`);
+    console.log(`[RESULTS] Fetching results for: "${tournamentName}" (tour: ${tour}, eventId: ${eventId})`);
 
     const apiKey = process.env.DATAGOLF_API_KEY || '07b56aee1a02854e9513b06af5cd';
     const apiTour = tour === 'dp' ? 'euro' : (tour || 'pga');
 
-    // Fetch completed tournament results
-    const results = await fetchTournamentResults(apiTour, tournamentName, eventId, apiKey);
+    // Step 1: Find the tournament in the schedule
+    const tournamentInfo = await findTournamentInSchedule(apiTour, tournamentName, eventId, apiKey);
+    
+    if (!tournamentInfo) {
+      console.log(`[RESULTS] Tournament "${tournamentName}" not found in schedule`);
+      return createSuccessResponse({
+        status: 'not_found',
+        message: `Tournament "${tournamentName}" not found in schedule`,
+        results: []
+      });
+    }
 
-    if (!results || results.length === 0) {
-      console.log('[RESULTS] No results found - tournament may not be completed yet');
+    console.log(`[RESULTS] Found: "${tournamentInfo.event_name}" (completed: ${tournamentInfo.event_completed}, winner: ${tournamentInfo.winner || 'N/A'})`);
+
+    // Step 2: Check if tournament is completed
+    const isCompleted = tournamentInfo.event_completed === true || 
+                        tournamentInfo.event_completed === 'yes' || 
+                        tournamentInfo.event_completed === 1 ||
+                        !!tournamentInfo.winner;
+
+    if (!isCompleted) {
+      console.log('[RESULTS] Tournament not yet completed');
       return createSuccessResponse({
         status: 'not_completed',
         message: 'Tournament results not available yet',
@@ -29,11 +50,29 @@ exports.handler = async (event, context) => {
       });
     }
 
-    console.log(`[RESULTS] ✅ Found ${results.length} players in final standings`);
+    // Step 3: Fetch detailed results
+    let results = [];
+
+    // Try historical raw data endpoint (works for completed events)
+    results = await fetchHistoricalResults(apiTour, tournamentInfo, apiKey);
+
+    // Last fallback: return just the winner from schedule
+    if (results.length === 0 && tournamentInfo.winner) {
+      console.log('[RESULTS] Using winner-only fallback');
+      results = [{
+        player: tournamentInfo.winner,
+        position: 1,
+        score: 'N/A',
+        toPar: tournamentInfo.winning_score ? 
+          `${tournamentInfo.winning_score > 0 ? '+' : ''}${tournamentInfo.winning_score}` : 'N/A'
+      }];
+    }
+
+    console.log(`[RESULTS] ✅ Returning ${results.length} results for "${tournamentInfo.event_name}"`);
 
     return createSuccessResponse({
-      status: 'completed',
-      tournamentName,
+      status: results.length > 0 ? 'completed' : 'not_completed',
+      tournamentName: tournamentInfo.event_name,
       results,
       fetchedAt: new Date().toISOString()
     });
@@ -45,129 +84,235 @@ exports.handler = async (event, context) => {
 };
 
 /**
- * Fetch tournament results from DataGolf API
+ * Find tournament in DataGolf schedule with improved name matching
  */
-async function fetchTournamentResults(tour, tournamentName, eventId, apiKey) {
-  // DataGolf endpoint for completed tournaments
+async function findTournamentInSchedule(tour, tournamentName, eventId, apiKey) {
   const url = `https://feeds.datagolf.com/get-schedule?tour=${tour}&file_format=json&key=${apiKey}`;
-
-  console.log(`[RESULTS] Fetching schedule to find completed tournament...`);
-
+  
   try {
-    const response = await axios.get(url, {
-      timeout: 15000,
-      headers: {
-        'User-Agent': 'Golf-Predictor-App/1.0',
-        'Accept': 'application/json'
-      }
-    });
-
-    if (!response.data?.schedule) {
-      throw new Error('Invalid schedule response from DataGolf');
-    }
+    const response = await axios.get(url, { timeout: 15000 });
+    
+    if (!response.data?.schedule) return null;
 
     const tournaments = Array.isArray(response.data.schedule) 
       ? response.data.schedule 
       : Object.values(response.data.schedule);
 
-    // Find the tournament by name or eventId
-    const tournament = tournaments.find(t => {
-      const nameMatch = t.event_name?.toLowerCase().includes(tournamentName.toLowerCase().split(' ')[0]);
-      const idMatch = eventId && t.event_id === eventId;
-      return nameMatch || idMatch;
+    // Try exact eventId match first
+    if (eventId) {
+      const idMatch = tournaments.find(t => t.event_id === eventId);
+      if (idMatch) return idMatch;
+    }
+
+    const searchName = tournamentName.toLowerCase().trim();
+    
+    // 1. Exact name match
+    let match = tournaments.find(t => 
+      t.event_name?.toLowerCase().trim() === searchName
+    );
+    if (match) return match;
+    
+    // 2. One name contains the other
+    match = tournaments.find(t => {
+      const dgName = t.event_name?.toLowerCase().trim() || '';
+      return dgName.includes(searchName) || searchName.includes(dgName);
     });
+    if (match) return match;
+    
+    // 3. Significant word overlap (at least 2 matching words > 2 chars)
+    const searchWords = searchName.split(/\s+/).filter(w => w.length > 2);
+    match = tournaments.find(t => {
+      const dgWords = (t.event_name?.toLowerCase() || '').split(/\s+/);
+      const matchCount = searchWords.filter(sw => 
+        dgWords.some(dw => dw.includes(sw) || sw.includes(dw))
+      ).length;
+      return matchCount >= 2;
+    });
+    if (match) return match;
 
-    if (!tournament) {
-      console.log(`[RESULTS] Tournament "${tournamentName}" not found in schedule`);
-      return [];
+    // 4. Key word match (skip common short words)
+    const skipWords = ['the', 'wm', 'at', 'and', 'of', 'at&t', 'att'];
+    const keyWords = searchWords.filter(w => !skipWords.includes(w));
+    if (keyWords.length > 0) {
+      match = tournaments.find(t => {
+        const dgName = t.event_name?.toLowerCase() || '';
+        return keyWords.some(w => dgName.includes(w));
+      });
+      if (match) return match;
     }
 
-    console.log(`[RESULTS] Found tournament: ${tournament.event_name} (status: ${tournament.event_completed ? 'completed' : 'in progress'})`);
-
-    // Check if tournament is completed
-    if (!tournament.event_completed && tournament.event_completed !== 'yes') {
-      console.log(`[RESULTS] Tournament not yet completed`);
-      return [];
-    }
-
-    // If we have a winner, fetch detailed leaderboard
-    if (tournament.winner) {
-      console.log(`[RESULTS] Winner: ${tournament.winner}`);
-      
-      // Try to fetch detailed leaderboard from field-updates endpoint
-      const leaderboard = await fetchDetailedLeaderboard(tour, tournament.event_id, apiKey);
-      
-      if (leaderboard.length > 0) {
-        return leaderboard;
-      }
-    }
-
-    // Fallback: return basic winner info
-    return tournament.winner ? [{
-      player: tournament.winner,
-      position: 1,
-      score: tournament.winning_score || 'N/A',
-      toPar: tournament.winning_score ? `${tournament.winning_score > 0 ? '+' : ''}${tournament.winning_score}` : 'N/A'
-    }] : [];
+    console.log(`[RESULTS] No match for "${tournamentName}". Schedule: ${tournaments.slice(0, 10).map(t => t.event_name).join(', ')}`);
+    return null;
 
   } catch (error) {
-    console.error('[RESULTS] Failed to fetch results:', error.message);
-    return [];
+    console.error('[RESULTS] Schedule fetch failed:', error.message);
+    return null;
   }
 }
 
 /**
- * Fetch detailed leaderboard from field-updates endpoint
+ * Fetch historical results - uses Scratch Plus endpoints
+ * Primary: historical-event-data/events (finish positions, earnings)
+ * Fallback: historical-raw-data/rounds (round-level scoring)
  */
-async function fetchDetailedLeaderboard(tour, eventId, apiKey) {
+async function fetchHistoricalResults(tour, tournamentInfo, apiKey) {
+  // Try event-level data first (Scratch Plus - best source for finish positions)
+  const eventResults = await fetchEventFinishes(tour, tournamentInfo, apiKey);
+  if (eventResults.length > 0) return eventResults;
+  
+  // Fallback to round-level data
+  const roundResults = await fetchFromRounds(tour, tournamentInfo, apiKey);
+  if (roundResults.length > 0) return roundResults;
+  
+  return [];
+}
+
+/**
+ * PRIMARY: Use historical-event-data/events endpoint (Scratch Plus)
+ * Returns event-level finishes with position, earnings, points
+ */
+async function fetchEventFinishes(tour, tournamentInfo, apiKey) {
   try {
-    const url = `https://feeds.datagolf.com/field-updates?tour=${tour}&file_format=json&key=${apiKey}`;
+    const year = new Date().getFullYear();
     
-    console.log(`[RESULTS] Fetching detailed leaderboard...`);
-
-    const response = await axios.get(url, {
-      timeout: 15000,
-      headers: {
-        'User-Agent': 'Golf-Predictor-App/1.0',
-        'Accept': 'application/json'
+    // First get event list to find the correct event_id for this endpoint
+    // (event IDs may differ between raw-data and event-data endpoints)
+    const eventListUrl = `https://feeds.datagolf.com/historical-event-data/event-list?tour=${tour}&file_format=json&key=${apiKey}`;
+    
+    console.log(`[RESULTS] Fetching event list from historical-event-data...`);
+    const eventListResponse = await axios.get(eventListUrl, { timeout: 10000 });
+    
+    let eventId = tournamentInfo.event_id;
+    
+    // Try to find matching event in the event-data event list
+    if (eventListResponse.data) {
+      const events = Array.isArray(eventListResponse.data) ? eventListResponse.data : (eventListResponse.data.events || []);
+      const match = events.find(e => {
+        if (e.event_id === tournamentInfo.event_id) return true;
+        const eName = (e.event_name || '').toLowerCase();
+        const tName = (tournamentInfo.event_name || '').toLowerCase();
+        return eName.includes(tName) || tName.includes(eName);
+      });
+      if (match) {
+        eventId = match.event_id || match.calendar_event_id || eventId;
+        console.log(`[RESULTS] Matched event: ${match.event_name} (id: ${eventId})`);
       }
-    });
-
-    if (!response.data?.field) {
-      return [];
     }
-
-    // Process field data into leaderboard
-    const leaderboard = response.data.field
-      .filter(player => player.player_name)
-      .map(player => ({
-        player: player.player_name,
-        position: player.position || player.finish_position || 'N/A',
-        score: player.total_score || 'N/A',
-        toPar: player.total_to_par ? `${player.total_to_par > 0 ? '+' : ''}${player.total_to_par}` : 'N/A',
-        earnings: player.earnings || null
+    
+    const url = `https://feeds.datagolf.com/historical-event-data/events?tour=${tour}&event_id=${eventId}&year=${year}&file_format=json&key=${apiKey}`;
+    
+    console.log(`[RESULTS] Fetching event finishes: event_id=${eventId}, year=${year}`);
+    const response = await axios.get(url, { timeout: 15000 });
+    
+    if (!response.data) return [];
+    
+    // Handle response format
+    let players = Array.isArray(response.data) ? response.data : (response.data.players || response.data.results || []);
+    
+    if (players.length === 0) return [];
+    
+    console.log(`[RESULTS] Got ${players.length} players from event-data endpoint`);
+    
+    // Map to our standard format
+    const results = players
+      .map(p => ({
+        player: p.player_name || p.player || '',
+        position: p.fin_text || p.finish_position || p.position || 'N/A',
+        score: p.total_score || 'N/A',
+        toPar: p.total_to_par != null ? `${p.total_to_par > 0 ? '+' : ''}${p.total_to_par}` : 'N/A',
+        earnings: p.earnings || p.money || null
       }))
-      .filter(p => p.position !== 'N/A')
+      .filter(p => p.player)
       .sort((a, b) => {
-        // Handle ties (e.g., "T5")
-        const posA = typeof a.position === 'string' ? parseInt(a.position.replace(/[^0-9]/g, '')) : a.position;
-        const posB = typeof b.position === 'string' ? parseInt(b.position.replace(/[^0-9]/g, '')) : b.position;
+        const posA = parsePosition(a.position);
+        const posB = parsePosition(b.position);
         return posA - posB;
       });
-
-    console.log(`[RESULTS] Processed ${leaderboard.length} players from leaderboard`);
     
-    return leaderboard;
-
+    console.log(`[RESULTS] ✅ Event finishes: ${results.length} players`);
+    return results;
+    
   } catch (error) {
-    console.error('[RESULTS] Failed to fetch detailed leaderboard:', error.message);
+    console.log(`[RESULTS] Event-data endpoint failed (${error.response?.status || error.message}), trying rounds...`);
     return [];
   }
 }
 
 /**
- * Create success response
+ * FALLBACK: Use historical-raw-data/rounds endpoint (Scratch Plus)
+ * Aggregates round-level scoring into final positions
  */
+async function fetchFromRounds(tour, tournamentInfo, apiKey) {
+  try {
+    const year = new Date().getFullYear();
+    const url = `https://feeds.datagolf.com/historical-raw-data/rounds?tour=${tour}&event_id=${tournamentInfo.event_id}&year=${year}&file_format=json&key=${apiKey}`;
+    
+    console.log(`[RESULTS] Fetching round data: event_id=${tournamentInfo.event_id}, year=${year}`);
+
+    const response = await axios.get(url, { timeout: 15000 });
+    
+    if (!response.data) return [];
+
+    let rounds = Array.isArray(response.data) ? response.data : (response.data.rounds || response.data.scorecards || []);
+    
+    if (rounds.length === 0) return [];
+
+    console.log(`[RESULTS] Got ${rounds.length} round records`);
+
+    const maxRound = Math.max(...rounds.map(r => r.round_num || r.round || 0));
+    
+    // Group by player
+    const playerScores = {};
+    
+    for (const round of rounds) {
+      const name = round.player_name || round.player;
+      if (!name) continue;
+      
+      if (!playerScores[name]) {
+        playerScores[name] = { player: name, rounds: 0, toPar: 0, fin_text: null };
+      }
+      
+      playerScores[name].rounds++;
+      playerScores[name].toPar += (round.score_to_par || 0);
+      if (round.fin_text) playerScores[name].fin_text = round.fin_text;
+    }
+
+    const madeCut = Object.values(playerScores)
+      .filter(p => p.rounds >= maxRound)
+      .sort((a, b) => a.toPar - b.toPar)
+      .map((p, index) => ({
+        player: p.player,
+        position: p.fin_text || String(index + 1),
+        score: 'N/A',
+        toPar: `${p.toPar > 0 ? '+' : ''}${p.toPar}`
+      }));
+
+    const missedCut = Object.values(playerScores)
+      .filter(p => p.rounds < maxRound)
+      .map(p => ({
+        player: p.player,
+        position: 'MC',
+        score: 'N/A',
+        toPar: `${p.toPar > 0 ? '+' : ''}${p.toPar}`
+      }));
+
+    console.log(`[RESULTS] Rounds data: ${madeCut.length} made cut, ${missedCut.length} MC`);
+    return [...madeCut, ...missedCut];
+
+  } catch (error) {
+    console.log(`[RESULTS] Rounds endpoint failed: ${error.response?.status || error.message}`);
+    return [];
+  }
+}
+
+function parsePosition(pos) {
+  if (!pos) return 999;
+  if (typeof pos === 'number') return pos;
+  if (pos === 'MC' || pos === 'WD' || pos === 'DQ' || pos === 'N/A') return 999;
+  const num = parseInt(String(pos).replace(/[^0-9]/g, ''));
+  return isNaN(num) ? 999 : num;
+}
+
 function createSuccessResponse(data) {
   return {
     statusCode: 200,
@@ -176,16 +321,10 @@ function createSuccessResponse(data) {
   };
 }
 
-/**
- * Create error response
- */
 function createErrorResponse(message, statusCode = 500) {
   return {
     statusCode,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
-      error: 'Failed to fetch tournament results',
-      message 
-    })
+    body: JSON.stringify({ error: 'Failed to fetch tournament results', message })
   };
 }
