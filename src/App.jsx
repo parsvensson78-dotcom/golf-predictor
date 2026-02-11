@@ -66,7 +66,8 @@ function App() {
     avoidPicks: null,
     newsPreview: null,
     matchups: null,
-    results: null
+    results: null,
+    playerAnalysis: null
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -315,6 +316,18 @@ function App() {
   const handleGetResults = () => 
     fetchData(`/.netlify/functions/get-prediction-results?tour=${tour}`, 'GET', null, 'results');
 
+  const handleAnalyzePlayer = async (playerName) => {
+    if (!playerName) return;
+    try {
+      await fetchData(`/.netlify/functions/analyze-player`, 'POST', { playerName, tour }, 'playerAnalysis');
+    } catch (err) {
+      if (err.message === 'BACKEND_TIMEOUT') {
+        setError('Analysis is taking longer than expected. The player analysis function may have timed out. Please try again.');
+        setLoading(false);
+      }
+    }
+  };
+
   const handleTourChange = (newTour) => {
     setTour(newTour);
     setError(null);
@@ -405,7 +418,8 @@ function App() {
     activeTab === 'predictions' ? 'predictions' :
     activeTab === 'avoid' ? 'avoidPicks' :
     activeTab === 'news' ? 'newsPreview' : 
-    activeTab === 'results' ? 'results' : 'matchups'
+    activeTab === 'results' ? 'results' : 
+    activeTab === 'playerAnalysis' ? 'playerAnalysis' : 'matchups'
   ];
 
   return (
@@ -416,21 +430,36 @@ function App() {
       
       <TabSelector activeTab={activeTab} onTabChange={setActiveTab} disabled={loading} />
       
-      <ActionButton 
-        activeTab={activeTab}
-        loading={loading}
-        onGetPredictions={handleGetPredictions}
-        onGetAvoidPicks={handleGetAvoidPicks}
-        onGetNews={handleGetNews}
-        onGetMatchups={handleGetMatchups}
-        onGetResults={handleGetResults}
-      />
+      {activeTab !== 'playerAnalysis' && (
+        <ActionButton 
+          activeTab={activeTab}
+          loading={loading}
+          onGetPredictions={handleGetPredictions}
+          onGetAvoidPicks={handleGetAvoidPicks}
+          onGetNews={handleGetNews}
+          onGetMatchups={handleGetMatchups}
+          onGetResults={handleGetResults}
+        />
+      )}
 
-      {loading && <LoadingState requestId={requestId} />}
+      {loading && activeTab !== 'playerAnalysis' && <LoadingState requestId={requestId} />}
       
-      {error && !loading && <ErrorState error={error} onRetry={handleGetPredictions} requestId={requestId} />}
+      {error && !loading && activeTab !== 'playerAnalysis' && <ErrorState error={error} onRetry={handleGetPredictions} requestId={requestId} />}
 
-      {currentData && !loading && !error && (
+      {/* Player Analysis has its own self-contained UI */}
+      {activeTab === 'playerAnalysis' && (
+        <PlayerAnalysisView 
+          data={data.playerAnalysis} 
+          onAnalyze={handleAnalyzePlayer}
+          loading={loading}
+          error={error}
+          tour={tour}
+          field={data.predictions?.field || data.predictions?.tournament?.field || []}
+          requestId={requestId}
+        />
+      )}
+
+      {currentData && !loading && !error && activeTab !== 'playerAnalysis' && (
         <>
           {activeTab === 'predictions' && <PredictionsView data={currentData} requestId={requestId} />}
           {activeTab === 'avoid' && <AvoidPicksView data={currentData} requestId={requestId} />}
@@ -479,6 +508,7 @@ const TabSelector = ({ activeTab, onTabChange, disabled }) => (
       { id: 'avoid', icon: '❌', label: 'Avoid Picks' },
       { id: 'news', icon: '📰', label: 'News & Preview' },
       { id: 'matchups', icon: '🆚', label: 'Matchup Predictor' },
+      { id: 'playerAnalysis', icon: '🔍', label: 'Player Analyzer' },
       { id: 'results', icon: '🏆', label: 'Results' }
     ].map(tab => (
       <button 
@@ -1164,6 +1194,290 @@ const PlayerBox = ({ player, isPick }) => (
     {isPick && <div className="winner-badge">✓ PICK</div>}
   </div>
 );
+
+// ==================== PLAYER ANALYSIS VIEW ====================
+const PlayerAnalysisView = ({ data, onAnalyze, loading, error, tour, requestId }) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [field, setField] = useState([]);
+  const [fieldLoading, setFieldLoading] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // Fetch field list on mount / tour change
+  useEffect(() => {
+    const fetchField = async () => {
+      setFieldLoading(true);
+      try {
+        const response = await fetch(`/.netlify/functions/fetch-tournament?tour=${tour}`);
+        if (response.ok) {
+          const tournament = await response.json();
+          const players = (tournament.field || [])
+            .map(p => p.name)
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b));
+          setField(players);
+        }
+      } catch (err) {
+        console.error('[PLAYER] Failed to fetch field:', err);
+      }
+      setFieldLoading(false);
+    };
+    fetchField();
+  }, [tour]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredPlayers = field.filter(name =>
+    name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const selectPlayer = (name) => {
+    setSearchTerm(name);
+    setShowDropdown(false);
+    onAnalyze(name);
+  };
+
+  const verdictColors = {
+    'STRONG BET': { bg: '#1b5e20', text: '#fff' },
+    'LEAN YES': { bg: '#4caf50', text: '#fff' },
+    'NEUTRAL': { bg: '#ff9800', text: '#fff' },
+    'LEAN AVOID': { bg: '#f44336', text: '#fff' },
+    'AVOID': { bg: '#b71c1c', text: '#fff' }
+  };
+
+  return (
+    <div className="predictions-container" key={`player-${requestId}`}>
+      <div style={{textAlign: 'center', marginBottom: '1.5rem'}}>
+        <h2 style={{margin: '0 0 0.5rem'}}>🔍 Player Analyzer</h2>
+        <p style={{color: '#666', margin: 0}}>Select a player for AI-powered course fit analysis</p>
+      </div>
+
+      {/* Search Input */}
+      <div ref={dropdownRef} style={{position: 'relative', maxWidth: '500px', margin: '0 auto 2rem'}}>
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => { setSearchTerm(e.target.value); setShowDropdown(true); }}
+          onFocus={() => setShowDropdown(true)}
+          placeholder={fieldLoading ? 'Loading field...' : `Search ${field.length} players in field...`}
+          disabled={fieldLoading || loading}
+          style={{
+            width: '100%',
+            padding: '0.9rem 1.2rem',
+            fontSize: '1rem',
+            border: '2px solid #ddd',
+            borderRadius: '10px',
+            outline: 'none',
+            boxSizing: 'border-box',
+            transition: 'border-color 0.2s',
+            background: loading ? '#f5f5f5' : '#fff'
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && filteredPlayers.length > 0) {
+              selectPlayer(filteredPlayers[0]);
+            }
+          }}
+        />
+        
+        {showDropdown && searchTerm.length > 0 && filteredPlayers.length > 0 && (
+          <div style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
+            background: 'white',
+            border: '2px solid #ddd',
+            borderTop: 'none',
+            borderRadius: '0 0 10px 10px',
+            maxHeight: '250px',
+            overflowY: 'auto',
+            zIndex: 100,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+          }}>
+            {filteredPlayers.slice(0, 20).map((name, i) => (
+              <div
+                key={i}
+                onClick={() => selectPlayer(name)}
+                style={{
+                  padding: '0.7rem 1.2rem',
+                  cursor: 'pointer',
+                  borderBottom: '1px solid #f0f0f0',
+                  transition: 'background 0.15s'
+                }}
+                onMouseEnter={(e) => e.target.style.background = '#f0f4ff'}
+                onMouseLeave={(e) => e.target.style.background = 'white'}
+              >
+                {name}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Loading state */}
+      {loading && (
+        <div style={{textAlign: 'center', padding: '3rem 1rem'}}>
+          <div style={{fontSize: '2rem', marginBottom: '1rem'}}>🔄</div>
+          <p style={{color: '#666', fontWeight: 500}}>Analyzing {searchTerm}...</p>
+          <p style={{color: '#999', fontSize: '0.85rem'}}>Fetching stats, odds, course data & weather</p>
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && !loading && (
+        <div style={{textAlign: 'center', padding: '2rem', background: '#fff3e0', borderRadius: '10px', margin: '1rem 0'}}>
+          <p style={{color: '#e65100', margin: 0}}>❌ {error}</p>
+        </div>
+      )}
+
+      {/* Analysis Results */}
+      {data && !loading && (
+        <div style={{animation: 'fadeIn 0.3s ease-in'}}>
+          {/* Header Card */}
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
+            padding: '1.5rem',
+            marginBottom: '1rem',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+            border: '2px solid #667eea'
+          }}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem'}}>
+              <div>
+                <h2 style={{margin: '0 0 0.25rem'}}>{data.player}</h2>
+                <span style={{color: '#666', fontSize: '0.9rem'}}>
+                  {data.tournament?.name} • R{data.stats?.rank || '?'}
+                  {data.odds && ` • ${formatAmericanOdds(data.odds.odds)}`}
+                </span>
+              </div>
+              <div style={{display: 'flex', gap: '0.75rem', alignItems: 'center'}}>
+                <div style={{
+                  fontSize: '2.2rem',
+                  fontWeight: 'bold',
+                  color: data.analysis.overallRating >= 7 ? '#2e7d32' : data.analysis.overallRating >= 5 ? '#ff9800' : '#c62828'
+                }}>
+                  {data.analysis.overallRating}/10
+                </div>
+                <span style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '20px',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  ...(verdictColors[data.analysis.verdict] || { bg: '#666', text: '#fff' }),
+                  background: (verdictColors[data.analysis.verdict] || {}).bg,
+                  color: (verdictColors[data.analysis.verdict] || {}).text
+                }}>
+                  {data.analysis.verdict}
+                </span>
+              </div>
+            </div>
+            <p style={{margin: '1rem 0 0', color: '#333', lineHeight: 1.5}}>{data.analysis.summary}</p>
+          </div>
+
+          {/* SG Stats Bar */}
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
+            padding: '1rem 1.5rem',
+            marginBottom: '1rem',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+            display: 'flex',
+            justifyContent: 'space-around',
+            flexWrap: 'wrap',
+            gap: '0.5rem'
+          }}>
+            {[
+              { label: 'OTT', value: data.stats?.sgOTT },
+              { label: 'APP', value: data.stats?.sgAPP },
+              { label: 'ARG', value: data.stats?.sgARG },
+              { label: 'Putt', value: data.stats?.sgPutt },
+              { label: 'Total', value: data.stats?.sgTotal }
+            ].map(sg => (
+              <div key={sg.label} style={{textAlign: 'center', minWidth: '60px'}}>
+                <div style={{fontSize: '0.75rem', color: '#999', marginBottom: '0.2rem'}}>SG:{sg.label}</div>
+                <div style={{
+                  fontSize: '1.1rem',
+                  fontWeight: 700,
+                  color: (sg.value || 0) > 0.5 ? '#2e7d32' : (sg.value || 0) > 0 ? '#666' : '#c62828'
+                }}>
+                  {sg.value != null ? (sg.value > 0 ? '+' : '') + sg.value.toFixed(2) : 'N/A'}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Analysis Cards */}
+          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1rem'}}>
+            <AnalysisCard icon="⛳" title="Course Fit" data={data.analysis.courseFit} />
+            <AnalysisCard icon="📈" title="Recent Form" data={data.analysis.recentForm} />
+            <AnalysisCard icon="💰" title="Odds Value" data={data.analysis.oddsValue} />
+            <AnalysisCard icon="🌤️" title="Weather Impact" data={data.analysis.weatherImpact} />
+          </div>
+
+          {/* Key Strength/Weakness */}
+          <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem'}}>
+            <div style={{background: '#e8f5e9', borderRadius: '10px', padding: '1rem', borderLeft: '4px solid #4caf50'}}>
+              <div style={{fontWeight: 600, fontSize: '0.85rem', color: '#2e7d32', marginBottom: '0.3rem'}}>💪 Key Strength</div>
+              <p style={{margin: 0, fontSize: '0.9rem', color: '#333'}}>{data.analysis.keyStrength}</p>
+            </div>
+            <div style={{background: '#ffebee', borderRadius: '10px', padding: '1rem', borderLeft: '4px solid #f44336'}}>
+              <div style={{fontWeight: 600, fontSize: '0.85rem', color: '#c62828', marginBottom: '0.3rem'}}>⚠️ Key Weakness</div>
+              <p style={{margin: 0, fontSize: '0.9rem', color: '#333'}}>{data.analysis.keyWeakness}</p>
+            </div>
+          </div>
+
+          <FooterInfo data={data} />
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!data && !loading && !error && (
+        <div style={{textAlign: 'center', padding: '3rem 1rem', color: '#999'}}>
+          <div style={{fontSize: '3rem', marginBottom: '1rem'}}>🏌️</div>
+          <p>Search for a player above to get a detailed analysis of their course fit, form, and odds value.</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const AnalysisCard = ({ icon, title, data }) => {
+  if (!data) return null;
+  const ratingColor = data.rating >= 7 ? '#2e7d32' : data.rating >= 5 ? '#ff9800' : '#c62828';
+  
+  return (
+    <div style={{
+      background: 'white',
+      borderRadius: '12px',
+      padding: '1.25rem',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+    }}>
+      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem'}}>
+        <h4 style={{margin: 0, fontSize: '0.95rem'}}>{icon} {title}</h4>
+        <span style={{
+          background: ratingColor,
+          color: 'white',
+          padding: '0.2rem 0.6rem',
+          borderRadius: '12px',
+          fontWeight: 700,
+          fontSize: '0.8rem'
+        }}>
+          {data.rating}/10
+        </span>
+      </div>
+      <p style={{margin: 0, fontSize: '0.85rem', color: '#444', lineHeight: 1.5}}>{data.analysis}</p>
+    </div>
+  );
+};
 
 // ==================== RESULTS VIEW ====================
 const ResultsView = ({ data, requestId }) => {
