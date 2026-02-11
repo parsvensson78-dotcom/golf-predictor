@@ -303,49 +303,61 @@ function isCacheValidForTournament(cachedData, currentTournamentName, maxAgeMs =
  * Falls back to most recent blob if no tournament filter provided
  */
 async function getLatestBlobForTournament(store, tour, tournamentName = null) {
-  const { blobs } = await store.list({ prefix: `${tour}-` });
+  let blobs;
+  try {
+    const listResult = await store.list({ prefix: `${tour}-` });
+    blobs = listResult.blobs;
+  } catch (listError) {
+    console.log(`[BLOB-FILTER] Failed to list blobs: ${listError.message}`);
+    return null;
+  }
   
   if (!blobs || blobs.length === 0) return null;
   
   // Sort by key descending (most recent first)
   const sortedBlobs = blobs.sort((a, b) => b.key.localeCompare(a.key));
   
-  // If no tournament filter, try each blob starting from newest
-  // and return the first one that has valid data
+  // If no tournament filter, just return the most recent valid blob
+  if (!tournamentName) {
+    for (const blob of sortedBlobs) {
+      try {
+        const data = await store.get(blob.key, { type: 'json' });
+        if (data) return { data, key: blob.key };
+      } catch (err) {
+        console.log(`[BLOB-FILTER] Error reading blob ${blob.key}: ${err.message}`);
+        continue;
+      }
+    }
+    return null;
+  }
+  
+  // With tournament filter: find matching blob
   for (const blob of sortedBlobs) {
     try {
       const data = await store.get(blob.key, { type: 'json' });
       if (!data) continue;
       
-      // If tournament filter provided, check if it matches
-      if (tournamentName) {
-        const blobTournament = data.tournament?.name || data.tournamentName || '';
-        if (blobTournament.toLowerCase().trim() !== tournamentName.toLowerCase().trim()) {
-          console.log(`[BLOB-FILTER] Skipping "${blobTournament}" (looking for "${tournamentName}")`);
-          continue;
-        }
+      const blobTournament = data.tournament?.name || data.tournamentName || '';
+      if (blobTournament.toLowerCase().trim() === tournamentName.toLowerCase().trim()) {
+        console.log(`[BLOB-FILTER] ✅ Found match: "${blobTournament}" in ${blob.key}`);
+        return { data, key: blob.key };
+      } else {
+        console.log(`[BLOB-FILTER] Skipping "${blobTournament}" (looking for "${tournamentName}")`);
       }
-      
-      return { data, key: blob.key };
     } catch (err) {
       console.log(`[BLOB-FILTER] Error reading blob ${blob.key}: ${err.message}`);
       continue;
     }
   }
   
-  // Fallback: return most recent blob regardless of tournament
-  // (better to show something than nothing)
-  if (tournamentName) {
-    console.log(`[BLOB-FILTER] No match for "${tournamentName}", falling back to most recent`);
-    try {
-      const data = await store.get(sortedBlobs[0].key, { type: 'json' });
-      return data ? { data, key: sortedBlobs[0].key, fallback: true } : null;
-    } catch (err) {
-      return null;
-    }
+  // Fallback: return most recent blob with isFallback flag
+  console.log(`[BLOB-FILTER] No match for "${tournamentName}", falling back to most recent`);
+  try {
+    const data = await store.get(sortedBlobs[0].key, { type: 'json' });
+    return data ? { data, key: sortedBlobs[0].key, fallback: true } : null;
+  } catch (err) {
+    return null;
   }
-  
-  return null;
 }
 
 // ==================== EXPORTS ====================
