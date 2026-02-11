@@ -111,15 +111,16 @@ function App() {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
         
-        // Special handling for 504 Gateway Timeout
-        if (response.status === 504) {
-          console.log('[FETCH] 504 Gateway Timeout - function took too long');
+        // Special handling for 502/504 Gateway Timeout
+        // Netlify returns 502 when function exceeds time limit
+        if (response.status === 502 || response.status === 504) {
+          console.log(`[FETCH] ${response.status} Gateway Timeout - function took too long`);
           throw new Error('BACKEND_TIMEOUT');
         }
         
-        // Special handling for get-latest-predictions 
-        if (url.includes('get-latest-predictions')) {
-          // 503 = Blobs not configured, 404 = No saved predictions yet
+        // Special handling for get-latest-* endpoints
+        if (url.includes('get-latest-')) {
+          // 503 = Blobs not configured, 404 = No saved data yet
           if (response.status === 503 || response.status === 404) {
             console.log(`[FETCH] No cached data available (${response.status}), will use fallback`);
             throw new Error('NO_CACHED_DATA');
@@ -158,16 +159,105 @@ function App() {
     }
   }, [requestId]);
 
-  const handleGetPredictions = () => 
-    fetchData(`/.netlify/functions/get-predictions?tour=${tour}`, 'GET', null, 'predictions');
+  const handleGetPredictions = async () => {
+    try {
+      await fetchData(`/.netlify/functions/get-predictions?tour=${tour}`, 'GET', null, 'predictions');
+    } catch (err) {
+      if (err.message === 'BACKEND_TIMEOUT') {
+        console.log('[PRED] Backend timeout - function still processing, polling for results...');
+        setError('Generating predictions... This may take 30-40 seconds. Checking for results...');
+        setLoading(true);
+        
+        let attempts = 0;
+        const maxAttempts = 12;
+        const pollInterval = setInterval(async () => {
+          attempts++;
+          console.log(`[PRED] Polling cache attempt ${attempts}/${maxAttempts}`);
+          
+          try {
+            // Fetch latest predictions - the backend should have saved by now
+            const response = await fetch(`/.netlify/functions/get-latest-predictions?tour=${tour}&_=${Date.now()}`, {
+              cache: 'no-store',
+              headers: { 'Cache-Control': 'no-cache' }
+            });
+            if (response.ok) {
+              const predData = await response.json();
+              // Only accept if generated recently (within last 2 minutes)
+              const age = Date.now() - new Date(predData.generatedAt).getTime();
+              if (age < 120000) {
+                setData(prev => ({ ...prev, predictions: predData }));
+                clearInterval(pollInterval);
+                setError(null);
+                setLoading(false);
+                console.log('[PRED] ✅ Successfully loaded from cache!');
+                return;
+              }
+            }
+          } catch (cacheErr) {
+            // Keep polling
+          }
+          
+          if (attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+            setLoading(false);
+            setError('Prediction generation took longer than expected. Please reload the page to see results.');
+          }
+        }, 3000);
+      }
+    }
+  };
   
-  const handleGetAvoidPicks = () => {
-    // Get current value picks if they exist
+  const handleGetAvoidPicks = async () => {
     const valuePicks = data.predictions?.predictions?.map(p => p.player) || [];
-    fetchData(`/.netlify/functions/get-avoid-picks`, 'POST', { 
-      tour,
-      excludePlayers: valuePicks 
-    }, 'avoidPicks');
+    try {
+      await fetchData(`/.netlify/functions/get-avoid-picks`, 'POST', { 
+        tour,
+        excludePlayers: valuePicks 
+      }, 'avoidPicks');
+    } catch (err) {
+      if (err.message === 'BACKEND_TIMEOUT') {
+        console.log('[AVOID] Backend timeout - polling for cached results...');
+        setError('Generating avoid picks... Checking for results...');
+        setLoading(true);
+        
+        const tournamentName = data.predictions?.tournament?.name || '';
+        const tournamentParam = tournamentName ? `&tournament=${encodeURIComponent(tournamentName)}` : '';
+        
+        let attempts = 0;
+        const maxAttempts = 10;
+        const pollInterval = setInterval(async () => {
+          attempts++;
+          console.log(`[AVOID] Polling cache attempt ${attempts}/${maxAttempts}`);
+          
+          try {
+            const response = await fetch(`/.netlify/functions/get-latest-avoid-picks?tour=${tour}${tournamentParam}&_=${Date.now()}`, {
+              cache: 'no-store',
+              headers: { 'Cache-Control': 'no-cache' }
+            });
+            if (response.ok) {
+              const avoidData = await response.json();
+              const age = Date.now() - new Date(avoidData.generatedAt).getTime();
+              if (age < 120000) {
+                setData(prev => ({ ...prev, avoidPicks: avoidData }));
+                clearInterval(pollInterval);
+                setError(null);
+                setLoading(false);
+                console.log('[AVOID] ✅ Successfully loaded from cache!');
+                return;
+              }
+            }
+          } catch (cacheErr) {
+            // Keep polling
+          }
+          
+          if (attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+            setLoading(false);
+            setError('Avoid picks generation took longer than expected. Please reload the page.');
+          }
+        }, 3000);
+      }
+    }
   };
   
   const handleGetNews = () => 
@@ -177,29 +267,45 @@ function App() {
     try {
       await fetchData(`/.netlify/functions/get-matchup-predictions`, 'POST', { tour }, 'matchups');
     } catch (err) {
-      // If backend timeout (504), the function is still running in background
-      // Wait a bit and load from cache when it's done
       if (err.message === 'BACKEND_TIMEOUT') {
         console.log('[MATCHUP] Backend timeout detected - function still processing in background');
         setError('Generating matchups... This may take 30-40 seconds. Checking for results...');
+        setLoading(true);
         
-        // Poll for cached results every 3 seconds for up to 30 seconds
+        const tournamentName = data.predictions?.tournament?.name || '';
+        const tournamentParam = tournamentName ? `&tournament=${encodeURIComponent(tournamentName)}` : '';
+        
         let attempts = 0;
-        const maxAttempts = 10;
+        const maxAttempts = 12;
         const pollInterval = setInterval(async () => {
           attempts++;
           console.log(`[MATCHUP] Polling cache attempt ${attempts}/${maxAttempts}`);
           
           try {
-            await fetchData(`/.netlify/functions/get-latest-matchups?tour=${tour}`, 'GET', null, 'matchups');
-            clearInterval(pollInterval);
-            setError(null); // Clear error message on success
-            console.log('[MATCHUP] Successfully loaded from cache!');
-          } catch (cacheErr) {
-            if (attempts >= maxAttempts) {
-              clearInterval(pollInterval);
-              setError('Matchup generation is taking longer than expected. Please try refreshing in a moment.');
+            const response = await fetch(`/.netlify/functions/get-latest-matchups?tour=${tour}${tournamentParam}&_=${Date.now()}`, {
+              cache: 'no-store',
+              headers: { 'Cache-Control': 'no-cache' }
+            });
+            if (response.ok) {
+              const matchupData = await response.json();
+              const age = Date.now() - new Date(matchupData.generatedAt).getTime();
+              if (age < 120000) {
+                setData(prev => ({ ...prev, matchups: matchupData }));
+                clearInterval(pollInterval);
+                setError(null);
+                setLoading(false);
+                console.log('[MATCHUP] ✅ Successfully loaded from cache!');
+                return;
+              }
             }
+          } catch (cacheErr) {
+            // Keep polling
+          }
+          
+          if (attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+            setLoading(false);
+            setError('Matchup generation is taking longer than expected. Please try refreshing in a moment.');
           }
         }, 3000);
       }
