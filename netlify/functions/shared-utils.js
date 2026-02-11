@@ -39,7 +39,9 @@ function normalizePlayerName(name) {
   
   let normalized = name
     .toLowerCase()
-    .replace(/[^a-z\s]/g, '')
+    .normalize('NFD')                // Decompose accents: å → a + combining ring
+    .replace(/[\u0300-\u036f]/g, '') // Remove combining diacritical marks
+    .replace(/[^a-z\s]/g, '')        // Remove remaining non-alpha
     .replace(/\s+/g, ' ')
     .trim();
   
