@@ -50,26 +50,64 @@ exports.handler = async (event, context) => {
     let playerOdds = null;
     if (oddsResult.status === 'fulfilled' && oddsResult.value.data) {
       const oddsData = oddsResult.value.data;
-      // Find the player in the odds data
-      const oddsEntries = oddsData.odds || [];
-      const playerEntry = oddsEntries.find(entry => {
-        const entryName = entry.player_name || '';
-        return normalizePlayerName(entryName) === normalizePlayerName(playerName);
-      });
       
-      if (playerEntry) {
-        // Collect odds from all bookmakers
-        const bookOdds = [];
-        const bookKeys = Object.keys(playerEntry).filter(k => 
-          k !== 'player_name' && k !== 'dg_id' && k !== 'dk_salary' && k !== 'fd_salary' &&
-          k !== 'baseline_history_fit' && k !== 'datagolf' && typeof playerEntry[k] === 'number'
-        );
-        
-        for (const book of bookKeys) {
-          if (playerEntry[book] && playerEntry[book] !== 0) {
-            bookOdds.push(playerEntry[book]);
+      // DEBUG: Log response structure
+      const oddsKeys = Object.keys(oddsData);
+      console.log(`[PLAYER] Outrights response keys: [${oddsKeys.join(', ')}]`);
+      
+      // The odds might be in different fields
+      let oddsEntries = oddsData.odds || oddsData.players || oddsData.data || [];
+      
+      // If it's not an array, maybe the response IS the array
+      if (!Array.isArray(oddsEntries) && Array.isArray(oddsData)) {
+        oddsEntries = oddsData;
+      }
+      
+      // Or maybe entries are in a nested structure
+      if (!Array.isArray(oddsEntries) || oddsEntries.length === 0) {
+        // Try to find array in response
+        for (const key of oddsKeys) {
+          if (Array.isArray(oddsData[key]) && oddsData[key].length > 0) {
+            console.log(`[PLAYER] Found odds array in key: "${key}" (${oddsData[key].length} entries)`);
+            oddsEntries = oddsData[key];
+            break;
           }
         }
+      }
+      
+      console.log(`[PLAYER] Odds entries: ${oddsEntries.length}, type: ${typeof oddsEntries[0]}`);
+      
+      // Log first entry to see field names
+      if (oddsEntries.length > 0) {
+        const first = oddsEntries[0];
+        console.log(`[PLAYER] First entry keys: [${Object.keys(first).join(', ')}]`);
+        // Log a few player names to see format
+        const sampleNames = oddsEntries.slice(0, 5).map(e => e.player_name || e.name || e.player || 'unknown');
+        console.log(`[PLAYER] Sample names: ${sampleNames.join(', ')}`);
+      }
+      
+      // Search for the player - try multiple name fields
+      const playerEntry = oddsEntries.find(entry => {
+        const entryName = entry.player_name || entry.name || entry.player || '';
+        return normalizePlayerName(entryName) === normalizePlayerName(playerName);
+      });
+
+      if (playerEntry) {
+        console.log(`[PLAYER] Found player entry: ${JSON.stringify(playerEntry).substring(0, 300)}`);
+        
+        // Collect odds from all bookmaker columns
+        const bookOdds = [];
+        const skipKeys = ['player_name', 'name', 'player', 'dg_id', 'dk_salary', 'fd_salary', 
+                         'baseline_history_fit', 'datagolf', 'am', 'country'];
+        
+        for (const [key, val] of Object.entries(playerEntry)) {
+          if (skipKeys.includes(key)) continue;
+          if (typeof val === 'number' && val !== 0) {
+            bookOdds.push(val);
+          }
+        }
+        
+        console.log(`[PLAYER] Book odds found: ${bookOdds.length} (${bookOdds.slice(0, 5).join(', ')}...)`);
         
         if (bookOdds.length > 0) {
           const avgOdds = Math.round(bookOdds.reduce((a, b) => a + b, 0) / bookOdds.length);
@@ -81,11 +119,21 @@ exports.handler = async (event, context) => {
             dgModel: playerEntry.datagolf || null
           };
         }
+      } else {
+        // Log what we searched for vs what exists
+        const normalizedSearch = normalizePlayerName(playerName);
+        console.log(`[PLAYER] Player "${playerName}" (normalized: "${normalizedSearch}") not found in ${oddsEntries.length} entries`);
+        // Try to find close matches
+        const closeMatches = oddsEntries
+          .map(e => ({ name: e.player_name || e.name || '', norm: normalizePlayerName(e.player_name || e.name || '') }))
+          .filter(e => e.norm.includes('berg') || e.norm.includes('ludvig'))
+          .slice(0, 5);
+        if (closeMatches.length > 0) {
+          console.log(`[PLAYER] Close matches: ${closeMatches.map(m => `"${m.name}" → "${m.norm}"`).join(', ')}`);
+        }
       }
-      
-      if (!playerOdds) {
-        console.log(`[PLAYER] Player "${playerName}" not found in DataGolf outrights`);
-      }
+    } else {
+      console.log(`[PLAYER] Outrights fetch failed: ${oddsResult.status === 'rejected' ? oddsResult.reason?.message : 'no data'}`);
     }
 
     if (playerStats) console.log(`[PLAYER] Stats: R${playerStats.stats?.rank || '?'}, SG:${playerStats.stats?.sgTotal?.toFixed(2) || 'N/A'}`);
