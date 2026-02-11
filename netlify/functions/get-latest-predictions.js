@@ -1,17 +1,18 @@
-const { getBlobStore } = require('./shared-utils');
+const { getBlobStore, getLatestBlobForTournament } = require('./shared-utils');
 
 /**
- * Get Latest Predictions from Blobs - OPTIMIZED
+ * Get Latest Predictions from Blobs - OPTIMIZED v2
  * Returns the most recent saved predictions for a tour
- * NOW USES: shared-utils getBlobStore()
+ * NOW SUPPORTS: ?tournament= filter to get data for specific tournament
+ * USES: shared-utils getLatestBlobForTournament() for smart matching
  */
 exports.handler = async (event, context) => {
   try {
-    const { tour = 'pga' } = event.queryStringParameters || {};
+    const { tour = 'pga', tournament = '' } = event.queryStringParameters || {};
     
-    console.log(`[LATEST-PRED] Fetching latest predictions for ${tour}`);
+    console.log(`[LATEST-PRED] Fetching latest predictions for ${tour}${tournament ? ` (filter: "${tournament}")` : ''}`);
     
-    // Use shared getBlobStore helper (eliminates 15 lines of duplicate code)
+    // Use shared getBlobStore helper
     let store;
     try {
       store = getBlobStore('predictions', context);
@@ -29,25 +30,10 @@ exports.handler = async (event, context) => {
       };
     }
     
-    // List all blobs for this tour
-    let blobs;
-    try {
-      const listResult = await store.list({ prefix: `${tour}-` });
-      blobs = listResult.blobs;
-      console.log(`[LATEST-PRED] Found ${blobs?.length || 0} blobs for prefix "${tour}-"`);
-    } catch (listError) {
-      console.error(`[LATEST-PRED] Failed to list blobs:`, listError);
-      return {
-        statusCode: 503,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          error: 'Failed to list blobs',
-          message: listError.message
-        })
-      };
-    }
+    // Use smart blob lookup that filters by tournament name
+    const result = await getLatestBlobForTournament(store, tour, tournament || null);
     
-    if (!blobs || blobs.length === 0) {
+    if (!result) {
       console.log(`[LATEST-PRED] No cached predictions found for ${tour}`);
       return {
         statusCode: 404,
@@ -59,39 +45,27 @@ exports.handler = async (event, context) => {
       };
     }
     
-    // Sort by key (which contains timestamp) to get most recent
-    const sortedBlobs = blobs.sort((a, b) => b.key.localeCompare(a.key));
-    const latestKey = sortedBlobs[0].key;
+    const { data: latestData, key: latestKey, fallback } = result;
     
-    console.log(`[LATEST-PRED] Found latest: ${latestKey}`);
-    
-    // Get the blob data
-    const latestData = await store.get(latestKey, { type: 'json' });
-    
-    if (!latestData) {
-      return {
-        statusCode: 404,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          error: 'Failed to load cached predictions'
-        })
-      };
+    if (fallback) {
+      console.log(`[LATEST-PRED] ⚠️ No match for "${tournament}", returning fallback from ${latestKey}`);
+    } else {
+      console.log(`[LATEST-PRED] ✅ Returning cached data from ${latestKey}`);
     }
-    
-    console.log(`[LATEST-PRED] Returning cached data from ${latestKey}`);
     
     // Return the cached predictions
     return {
       statusCode: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=300' // Cache for 5 minutes in browser
+        'Cache-Control': 'public, max-age=300'
       },
       body: JSON.stringify({
         ...latestData,
         generatedAt: latestData.metadata?.generatedAt || latestData.generatedAt,
         fromCache: true,
-        cacheKey: latestKey
+        cacheKey: latestKey,
+        isFallback: !!fallback
       })
     };
     
