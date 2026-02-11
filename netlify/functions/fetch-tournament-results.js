@@ -36,10 +36,13 @@ exports.handler = async (event, context) => {
     console.log(`[RESULTS] Found: "${tournamentInfo.event_name}" (completed: ${tournamentInfo.event_completed}, winner: ${tournamentInfo.winner || 'N/A'})`);
 
     // Step 2: Check if tournament is completed
+    const winner = tournamentInfo.winner;
+    const hasRealWinner = winner && winner !== 'TBD' && winner !== 'tbd' && winner !== '';
+    
     const isCompleted = tournamentInfo.event_completed === true || 
                         tournamentInfo.event_completed === 'yes' || 
                         tournamentInfo.event_completed === 1 ||
-                        !!tournamentInfo.winner;
+                        hasRealWinner;
 
     if (!isCompleted) {
       console.log('[RESULTS] Tournament not yet completed');
@@ -57,7 +60,7 @@ exports.handler = async (event, context) => {
     results = await fetchHistoricalResults(apiTour, tournamentInfo, apiKey);
 
     // Last fallback: return just the winner from schedule
-    if (results.length === 0 && tournamentInfo.winner) {
+    if (results.length === 0 && hasRealWinner) {
       console.log('[RESULTS] Using winner-only fallback');
       results = [{
         player: tournamentInfo.winner,
