@@ -33,16 +33,60 @@ exports.handler = async (event, context) => {
     const tournament = (await tournamentPromise).data;
     console.log(`[PLAYER] Tournament: ${tournament.name}`);
 
-    // Fetch stats, odds, course info in parallel
+    // Fetch stats, odds (from DataGolf directly), course info in parallel
+    const apiKey = process.env.DATAGOLF_API_KEY || '07b56aee1a02854e9513b06af5cd';
+    const apiTour = tour === 'dp' ? 'euro' : (tour || 'pga');
+    
     const [statsResult, oddsResult, courseResult] = await Promise.allSettled([
       axios.post(`${baseUrl}/.netlify/functions/fetch-stats`, { players: [playerName] }, { timeout: 15000 }),
-      axios.post(`${baseUrl}/.netlify/functions/fetch-odds`, { tournamentName: tournament.name, players: [playerName], tour: tournament.tour }, { timeout: 15000 }),
+      axios.get(`https://feeds.datagolf.com/betting-tools/outrights?tour=${apiTour}&market=win&odds_format=american&file_format=json&key=${apiKey}`, { timeout: 10000 }),
       axios.get(`${baseUrl}/.netlify/functions/fetch-course-info?tour=${tour || 'pga'}&tournament=${encodeURIComponent(tournament.name)}`, { timeout: 10000 })
     ]);
 
     const playerStats = statsResult.status === 'fulfilled' ? statsResult.value.data.players?.[0] : null;
-    const playerOdds = oddsResult.status === 'fulfilled' ? oddsResult.value.data.odds?.[0] : null;
     const courseInfo = courseResult.status === 'fulfilled' ? courseResult.value.data : { courseName: tournament.course };
+
+    // Extract player odds from DataGolf outrights response
+    let playerOdds = null;
+    if (oddsResult.status === 'fulfilled' && oddsResult.value.data) {
+      const oddsData = oddsResult.value.data;
+      // Find the player in the odds data
+      const oddsEntries = oddsData.odds || [];
+      const playerEntry = oddsEntries.find(entry => {
+        const entryName = entry.player_name || '';
+        return normalizePlayerName(entryName) === normalizePlayerName(playerName);
+      });
+      
+      if (playerEntry) {
+        // Collect odds from all bookmakers
+        const bookOdds = [];
+        const bookKeys = Object.keys(playerEntry).filter(k => 
+          k !== 'player_name' && k !== 'dg_id' && k !== 'dk_salary' && k !== 'fd_salary' &&
+          k !== 'baseline_history_fit' && k !== 'datagolf' && typeof playerEntry[k] === 'number'
+        );
+        
+        for (const book of bookKeys) {
+          if (playerEntry[book] && playerEntry[book] !== 0) {
+            bookOdds.push(playerEntry[book]);
+          }
+        }
+        
+        if (bookOdds.length > 0) {
+          const avgOdds = Math.round(bookOdds.reduce((a, b) => a + b, 0) / bookOdds.length);
+          playerOdds = {
+            odds: avgOdds,
+            minOdds: Math.min(...bookOdds),
+            maxOdds: Math.max(...bookOdds),
+            bookmakerCount: bookOdds.length,
+            dgModel: playerEntry.datagolf || null
+          };
+        }
+      }
+      
+      if (!playerOdds) {
+        console.log(`[PLAYER] Player "${playerName}" not found in DataGolf outrights`);
+      }
+    }
 
     if (playerStats) console.log(`[PLAYER] Stats: R${playerStats.stats?.rank || '?'}, SG:${playerStats.stats?.sgTotal?.toFixed(2) || 'N/A'}`);
     if (playerOdds) console.log(`[PLAYER] Odds: ${formatAmericanOdds(playerOdds.odds)}`);
@@ -74,7 +118,7 @@ exports.handler = async (event, context) => {
     const weatherAnalysis = analyzeWeatherConditions(weatherSummary);
     const stats = playerStats?.stats || {};
     const sgProfile = `SG Total: ${stats.sgTotal?.toFixed(2) || 'N/A'} (OTT: ${stats.sgOTT?.toFixed(2) || 'N/A'}, APP: ${stats.sgAPP?.toFixed(2) || 'N/A'}, ARG: ${stats.sgARG?.toFixed(2) || 'N/A'}, Putt: ${stats.sgPutt?.toFixed(2) || 'N/A'})`;
-    const oddsInfo = playerOdds ? `${formatAmericanOdds(playerOdds.odds)} (range: ${formatAmericanOdds(playerOdds.minOdds)} to ${formatAmericanOdds(playerOdds.maxOdds)}, ${playerOdds.bookmakerCount} books)` : 'Odds not available';
+    const oddsInfo = playerOdds ? `${formatAmericanOdds(playerOdds.odds)} avg across ${playerOdds.bookmakerCount} books (range: ${formatAmericanOdds(playerOdds.minOdds)} to ${formatAmericanOdds(playerOdds.maxOdds)})${playerOdds.dgModel ? ` | DataGolf model: ${formatAmericanOdds(playerOdds.dgModel)}` : ''}` : 'Odds not available';
 
     // Call Claude for analysis
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
