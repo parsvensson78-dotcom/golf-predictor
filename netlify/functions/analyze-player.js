@@ -93,21 +93,36 @@ exports.handler = async (event, context) => {
       });
 
       if (playerEntry) {
-        console.log(`[PLAYER] Found player entry: ${JSON.stringify(playerEntry).substring(0, 300)}`);
+        console.log(`[PLAYER] Found player entry for "${playerEntry.player_name}"`);
         
         // Collect odds from all bookmaker columns
+        // Values are STRINGS like "+3500", not numbers
         const bookOdds = [];
         const skipKeys = ['player_name', 'name', 'player', 'dg_id', 'dk_salary', 'fd_salary', 
                          'baseline_history_fit', 'datagolf', 'am', 'country'];
         
         for (const [key, val] of Object.entries(playerEntry)) {
           if (skipKeys.includes(key)) continue;
-          if (typeof val === 'number' && val !== 0) {
+          if (typeof val === 'string' && (val.startsWith('+') || val.startsWith('-'))) {
+            const num = parseInt(val);
+            if (!isNaN(num) && num !== 0) {
+              bookOdds.push(num);
+            }
+          } else if (typeof val === 'number' && val !== 0) {
             bookOdds.push(val);
           }
         }
         
-        console.log(`[PLAYER] Book odds found: ${bookOdds.length} (${bookOdds.slice(0, 5).join(', ')}...)`);
+        // Extract DataGolf model odds (nested object)
+        let dgModel = null;
+        if (playerEntry.datagolf && typeof playerEntry.datagolf === 'object') {
+          const dgBaseline = playerEntry.datagolf.baseline_history_fit || playerEntry.datagolf.baseline;
+          if (dgBaseline) dgModel = parseInt(dgBaseline) || null;
+        } else if (typeof playerEntry.datagolf === 'string') {
+          dgModel = parseInt(playerEntry.datagolf) || null;
+        }
+        
+        console.log(`[PLAYER] Book odds: ${bookOdds.length} books, sample: [${bookOdds.slice(0, 4).join(', ')}], DG model: ${dgModel}`);
         
         if (bookOdds.length > 0) {
           const avgOdds = Math.round(bookOdds.reduce((a, b) => a + b, 0) / bookOdds.length);
@@ -116,8 +131,9 @@ exports.handler = async (event, context) => {
             minOdds: Math.min(...bookOdds),
             maxOdds: Math.max(...bookOdds),
             bookmakerCount: bookOdds.length,
-            dgModel: playerEntry.datagolf || null
+            dgModel
           };
+          console.log(`[PLAYER] Odds: avg ${formatAmericanOdds(avgOdds)}, range ${formatAmericanOdds(playerOdds.minOdds)}-${formatAmericanOdds(playerOdds.maxOdds)}`);
         }
       } else {
         // Log what we searched for vs what exists
