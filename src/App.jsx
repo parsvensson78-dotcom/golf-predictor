@@ -313,7 +313,7 @@ function App() {
   };
 
   const handleGetResults = () => 
-    fetchData(`/.netlify/functions/get-prediction-results`, 'GET', null, 'results');
+    fetchData(`/.netlify/functions/get-prediction-results?tour=${tour}`, 'GET', null, 'results');
 
   const handleTourChange = (newTour) => {
     setTour(newTour);
@@ -1171,100 +1171,336 @@ const ResultsView = ({ data, requestId }) => {
     return (
       <div className="predictions-container" key={`results-${requestId}`}>
         <div style={{textAlign: 'center', padding: '4rem 2rem'}}>
-          <h3>No Predictions Saved Yet</h3>
-          <p>Generate some predictions first, and they'll automatically be saved for results tracking!</p>
+          <h3>No Results Yet</h3>
+          <p>Generate predictions, avoid picks, or matchups first — results will be tracked automatically!</p>
         </div>
       </div>
     );
   }
 
+  const s = data.summary || {};
+
   return (
     <div className="predictions-container" key={`results-${requestId}`}>
-      {data.generatedAt && <TimestampHeader generatedAt={data.generatedAt} />}
-      
+      {/* Overall Summary */}
       <div style={{textAlign: 'center', marginBottom: '2rem'}}>
-        <h2>🏆 Prediction Results History</h2>
-        <div style={{display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '1rem', flexWrap: 'wrap'}}>
-          <span style={{background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', padding: '0.5rem 1rem', borderRadius: '20px', fontWeight: 600}}>
-            📊 {data.totalPredictions || 0} Total Picks
-          </span>
-          <span style={{background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', padding: '0.5rem 1rem', borderRadius: '20px', fontWeight: 600}}>
-            ✅ {data.completedTournaments || 0} Completed
-          </span>
+        <h2 style={{margin: '0 0 1rem'}}>🏆 Results Tracker</h2>
+        <div style={{display: 'flex', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap'}}>
+          <SummaryBadge label="Tournaments" value={s.completedTournaments || 0} />
+          {s.totalBets > 0 && (
+            <SummaryBadge 
+              label="Value ROI" 
+              value={`${s.overallROI >= 0 ? '+' : ''}$${(s.overallROI || 0).toFixed(0)}`}
+              color={s.overallROI >= 0 ? '#4caf50' : '#f44336'}
+            />
+          )}
+          {s.matchupRecord?.total > 0 && (
+            <SummaryBadge label="Matchups" value={`${s.matchupRecord.wins}W-${s.matchupRecord.total - s.matchupRecord.wins}L`} />
+          )}
+          {s.avoidRecord?.total > 0 && (
+            <SummaryBadge label="Avoids" value={`${s.avoidRecord.correct}/${s.avoidRecord.total} correct`} />
+          )}
         </div>
       </div>
 
-      <div>
-        {data.tournaments.map((tournament, index) => (
-          <div key={index} style={{background: 'white', borderRadius: '12px', padding: '2rem', marginBottom: '2rem', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', border: tournament.status === 'completed' ? '2px solid #4caf50' : '2px solid #ff9800'}}>
-            <div style={{borderBottom: '2px solid #f0f0f0', paddingBottom: '1rem', marginBottom: '1.5rem'}}>
-              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem'}}>
-                <h3 style={{margin: 0}}>{tournament.tournament.name}</h3>
-                <span style={{padding: '0.4rem 1rem', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600, background: tournament.status === 'completed' ? '#e8f5e9' : '#fff3e0', color: tournament.status === 'completed' ? '#2e7d32' : '#e65100'}}>
-                  {tournament.status === 'completed' ? '✅ Completed' : '⏳ Pending'}
-                </span>
-              </div>
-              <div style={{display: 'flex', gap: '1.5rem', color: '#666', fontSize: '0.9rem', flexWrap: 'wrap'}}>
-                <span>📍 {tournament.tournament.course}</span>
-                <span>📅 {tournament.tournament.dates}</span>
-                <span style={{fontWeight: '600', color: '#667eea'}}>
-                  🕐 Predicted: {new Date(tournament.generatedAt).toLocaleString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    hour12: true
-                  })}
-                </span>
-              </div>
-            </div>
-
-            {tournament.status === 'completed' && tournament.analysis ? (
-              <div>
-                <h4>📈 Performance</h4>
-                <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '1rem', marginBottom: '1.5rem'}}>
-                  <div style={{background: '#f8f9fa', padding: '1rem', borderRadius: '8px', textAlign: 'center', border: '2px solid #e0e0e0'}}>
-                    <div style={{fontSize: '0.85rem', color: '#666', marginBottom: '0.3rem'}}>Wins</div>
-                    <div style={{fontSize: '2rem', fontWeight: 'bold'}}>{tournament.analysis.wins}/{tournament.analysis.totalPicks}</div>
-                  </div>
-                  <div style={{background: '#f8f9fa', padding: '1rem', borderRadius: '8px', textAlign: 'center', border: '2px solid #e0e0e0'}}>
-                    <div style={{fontSize: '0.85rem', color: '#666', marginBottom: '0.3rem'}}>Top 5</div>
-                    <div style={{fontSize: '2rem', fontWeight: 'bold'}}>{tournament.analysis.top5s}/{tournament.analysis.totalPicks}</div>
-                  </div>
-                  <div style={{background: '#f8f9fa', padding: '1rem', borderRadius: '8px', textAlign: 'center', border: '2px solid #e0e0e0'}}>
-                    <div style={{fontSize: '0.85rem', color: '#666', marginBottom: '0.3rem'}}>Top 10</div>
-                    <div style={{fontSize: '2rem', fontWeight: 'bold'}}>{tournament.analysis.top10s}/{tournament.analysis.totalPicks}</div>
-                  </div>
-                  <div style={{background: '#f8f9fa', padding: '1rem', borderRadius: '8px', textAlign: 'center', border: '2px solid #e0e0e0'}}>
-                    <div style={{fontSize: '0.85rem', color: '#666', marginBottom: '0.3rem'}}>Made Cut</div>
-                    <div style={{fontSize: '2rem', fontWeight: 'bold'}}>{tournament.analysis.madeCut}/{tournament.analysis.totalPicks}</div>
-                  </div>
-                </div>
-                <div style={{background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '1.5rem', borderRadius: '8px', color: 'white', textAlign: 'center'}}>
-                  <div style={{fontSize: '0.9rem', marginBottom: '0.5rem', opacity: 0.9}}>Total ROI ($100/pick)</div>
-                  <div style={{fontSize: '2.5rem', fontWeight: 'bold', color: tournament.analysis.totalROI >= 0 ? '#4caf50' : '#f44336', background: 'white', padding: '0.5rem', borderRadius: '8px'}}>
-                    {tournament.analysis.totalROI >= 0 ? '+' : ''}${tournament.analysis.totalROI.toFixed(2)}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <p style={{color: '#666'}}>Waiting for tournament to complete...</p>
-                <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem', marginTop: '1rem'}}>
-                  {tournament.predictions.map((pick, idx) => (
-                    <div key={idx} style={{background: '#f8f9fa', border: '2px solid #ff9800', borderRadius: '8px', padding: '1rem'}}>
-                      <h5 style={{margin: '0 0 0.5rem 0'}}>{pick.player}</h5>
-                      <div style={{fontSize: '1.3rem', fontWeight: 'bold', color: '#667eea'}}>{formatAmericanOdds(pick.odds)}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      {/* Tournament Cards */}
+      {data.tournaments.map((t, index) => (
+        <TournamentResultCard key={index} tournament={t} />
+      ))}
     </div>
   );
 };
+
+const SummaryBadge = ({ label, value, color }) => (
+  <span style={{
+    background: color ? 'white' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    color: color || 'white',
+    border: color ? `2px solid ${color}` : 'none',
+    padding: '0.4rem 0.8rem',
+    borderRadius: '20px',
+    fontWeight: 600,
+    fontSize: '0.85rem'
+  }}>
+    {label}: {value}
+  </span>
+);
+
+const TournamentResultCard = ({ tournament: t }) => {
+  const isCompleted = t.status === 'completed';
+  const isPending = t.status === 'pending';
+  
+  return (
+    <div style={{
+      background: 'white',
+      borderRadius: '12px',
+      padding: '1.5rem',
+      marginBottom: '1.5rem',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+      border: `2px solid ${isCompleted ? '#4caf50' : isPending ? '#ff9800' : '#e0e0e0'}`
+    }}>
+      {/* Tournament Header */}
+      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem'}}>
+        <div>
+          <h3 style={{margin: '0 0 0.25rem'}}>{t.tournament.name}</h3>
+          <span style={{color: '#666', fontSize: '0.85rem'}}>
+            📍 {t.tournament.course} • 📅 {t.tournament.dates}
+          </span>
+        </div>
+        <span style={{
+          padding: '0.3rem 0.8rem',
+          borderRadius: '20px',
+          fontSize: '0.8rem',
+          fontWeight: 600,
+          background: isCompleted ? '#e8f5e9' : '#fff3e0',
+          color: isCompleted ? '#2e7d32' : '#e65100'
+        }}>
+          {isCompleted ? '✅ Completed' : isPending ? '⏳ In Progress' : '❓ Unknown'}
+        </span>
+      </div>
+
+      {/* Value Picks Section */}
+      {t.valuePicks.length > 0 && (
+        <ResultSection 
+          title="📊 Value Picks" 
+          isCompleted={isCompleted}
+          analysis={t.valueAnalysis}
+          renderContent={() => (
+            <>
+              {isCompleted && t.valueAnalysis && (
+                <div style={{display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap'}}>
+                  <MiniStat label="W" value={t.valueAnalysis.wins} highlight={t.valueAnalysis.wins > 0} />
+                  <MiniStat label="T5" value={t.valueAnalysis.top5s} />
+                  <MiniStat label="T10" value={t.valueAnalysis.top10s} />
+                  <MiniStat label="T20" value={t.valueAnalysis.top20s} />
+                  <MiniStat label="MC" value={t.valueAnalysis.missedCut} bad />
+                  <MiniStat 
+                    label="ROI" 
+                    value={`${t.valueAnalysis.totalROI >= 0 ? '+' : ''}$${t.valueAnalysis.totalROI.toFixed(0)}`}
+                    highlight={t.valueAnalysis.totalROI > 0}
+                    bad={t.valueAnalysis.totalROI < 0}
+                  />
+                </div>
+              )}
+              <PicksTable 
+                picks={isCompleted && t.valueAnalysis ? t.valueAnalysis.picks : t.valuePicks.map(p => ({ player: p.player, odds: p.odds, position: '—', performance: 'pending' }))}
+                showOdds
+                showROI={isCompleted}
+              />
+            </>
+          )}
+        />
+      )}
+
+      {/* Avoid Picks Section */}
+      {t.avoidPicks.length > 0 && (
+        <ResultSection
+          title="❌ Avoid Picks"
+          isCompleted={isCompleted}
+          analysis={t.avoidAnalysis}
+          renderContent={() => (
+            <>
+              {isCompleted && t.avoidAnalysis && (
+                <div style={{display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap'}}>
+                  <MiniStat label="Correct" value={t.avoidAnalysis.correctAvoids} highlight />
+                  <MiniStat label="Wrong" value={t.avoidAnalysis.wrongAvoids} bad={t.avoidAnalysis.wrongAvoids > 0} />
+                </div>
+              )}
+              <PicksTable
+                picks={isCompleted && t.avoidAnalysis ? t.avoidAnalysis.picks.map(p => ({
+                  ...p,
+                  performance: p.verdict
+                })) : t.avoidPicks.map(p => ({ player: p.player, odds: p.odds, position: '—', performance: 'pending' }))}
+                showOdds
+                isAvoid
+              />
+            </>
+          )}
+        />
+      )}
+
+      {/* Matchups Section */}
+      {t.matchups.length > 0 && (
+        <ResultSection
+          title="🆚 Matchups"
+          isCompleted={isCompleted}
+          analysis={t.matchupAnalysis}
+          renderContent={() => (
+            <>
+              {isCompleted && t.matchupAnalysis && (
+                <div style={{display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap'}}>
+                  <MiniStat label="Wins" value={t.matchupAnalysis.wins} highlight={t.matchupAnalysis.wins > 0} />
+                  <MiniStat label="Losses" value={t.matchupAnalysis.losses} bad={t.matchupAnalysis.losses > 0} />
+                  {t.matchupAnalysis.pushes > 0 && <MiniStat label="Push" value={t.matchupAnalysis.pushes} />}
+                </div>
+              )}
+              <MatchupsTable 
+                matchups={isCompleted && t.matchupAnalysis ? t.matchupAnalysis.matchups : t.matchups.map(m => ({
+                  pick: m.pick,
+                  pickPosition: '—',
+                  opponent: m.playerA?.name === m.pick ? m.playerB?.name : m.playerA?.name,
+                  opponentPosition: '—',
+                  result: 'pending'
+                }))}
+              />
+            </>
+          )}
+        />
+      )}
+    </div>
+  );
+};
+
+const ResultSection = ({ title, isCompleted, renderContent }) => (
+  <div style={{
+    background: '#f8f9fa',
+    borderRadius: '8px',
+    padding: '1rem',
+    marginBottom: '0.75rem'
+  }}>
+    <h4 style={{margin: '0 0 0.75rem', fontSize: '0.95rem'}}>{title}</h4>
+    {renderContent()}
+  </div>
+);
+
+const MiniStat = ({ label, value, highlight, bad }) => (
+  <span style={{
+    padding: '0.2rem 0.6rem',
+    borderRadius: '12px',
+    fontSize: '0.8rem',
+    fontWeight: 600,
+    background: highlight ? '#e8f5e9' : bad ? '#ffebee' : '#e3e8f0',
+    color: highlight ? '#2e7d32' : bad ? '#c62828' : '#444'
+  }}>
+    {label}: {value}
+  </span>
+);
+
+const PicksTable = ({ picks, showOdds, showROI, isAvoid }) => (
+  <div style={{overflowX: 'auto'}}>
+    <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem'}}>
+      <thead>
+        <tr style={{borderBottom: '2px solid #ddd'}}>
+          <th style={{textAlign: 'left', padding: '0.4rem 0.5rem'}}>Player</th>
+          {showOdds && <th style={{textAlign: 'center', padding: '0.4rem 0.5rem'}}>Odds</th>}
+          <th style={{textAlign: 'center', padding: '0.4rem 0.5rem'}}>Finish</th>
+          <th style={{textAlign: 'center', padding: '0.4rem 0.5rem'}}>{isAvoid ? 'Verdict' : 'Result'}</th>
+          {showROI && <th style={{textAlign: 'right', padding: '0.4rem 0.5rem'}}>ROI</th>}
+        </tr>
+      </thead>
+      <tbody>
+        {picks.map((pick, i) => {
+          const perfColor = getPerformanceColor(pick.performance, isAvoid);
+          return (
+            <tr key={i} style={{borderBottom: '1px solid #eee'}}>
+              <td style={{padding: '0.4rem 0.5rem', fontWeight: 500}}>{pick.player}</td>
+              {showOdds && <td style={{textAlign: 'center', padding: '0.4rem 0.5rem', color: '#667eea', fontWeight: 600}}>
+                {formatAmericanOdds(pick.odds)}
+              </td>}
+              <td style={{textAlign: 'center', padding: '0.4rem 0.5rem', fontWeight: 600}}>
+                {pick.position}
+              </td>
+              <td style={{textAlign: 'center', padding: '0.4rem 0.5rem'}}>
+                <span style={{
+                  padding: '0.15rem 0.5rem',
+                  borderRadius: '10px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  background: perfColor.bg,
+                  color: perfColor.text
+                }}>
+                  {getPerformanceLabel(pick.performance, isAvoid)}
+                </span>
+              </td>
+              {showROI && <td style={{
+                textAlign: 'right',
+                padding: '0.4rem 0.5rem',
+                fontWeight: 600,
+                color: (pick.roi || 0) >= 0 ? '#2e7d32' : '#c62828'
+              }}>
+                {(pick.roi || 0) >= 0 ? '+' : ''}${(pick.roi || 0).toFixed(0)}
+              </td>}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+);
+
+const MatchupsTable = ({ matchups }) => (
+  <div style={{overflowX: 'auto'}}>
+    <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem'}}>
+      <thead>
+        <tr style={{borderBottom: '2px solid #ddd'}}>
+          <th style={{textAlign: 'left', padding: '0.4rem 0.5rem'}}>Our Pick</th>
+          <th style={{textAlign: 'center', padding: '0.4rem 0.5rem'}}>Pos</th>
+          <th style={{textAlign: 'center', padding: '0.4rem 0.5rem'}}>vs</th>
+          <th style={{textAlign: 'left', padding: '0.4rem 0.5rem'}}>Opponent</th>
+          <th style={{textAlign: 'center', padding: '0.4rem 0.5rem'}}>Pos</th>
+          <th style={{textAlign: 'center', padding: '0.4rem 0.5rem'}}>Result</th>
+        </tr>
+      </thead>
+      <tbody>
+        {matchups.map((m, i) => {
+          const resultColor = m.result === 'win' ? {bg: '#e8f5e9', text: '#2e7d32'} :
+                              m.result === 'loss' ? {bg: '#ffebee', text: '#c62828'} :
+                              {bg: '#e3e8f0', text: '#444'};
+          return (
+            <tr key={i} style={{borderBottom: '1px solid #eee'}}>
+              <td style={{padding: '0.4rem 0.5rem', fontWeight: 600}}>{m.pick}</td>
+              <td style={{textAlign: 'center', padding: '0.4rem 0.5rem'}}>{m.pickPosition}</td>
+              <td style={{textAlign: 'center', padding: '0.4rem 0.5rem', color: '#999'}}>vs</td>
+              <td style={{padding: '0.4rem 0.5rem'}}>{m.opponent}</td>
+              <td style={{textAlign: 'center', padding: '0.4rem 0.5rem'}}>{m.opponentPosition}</td>
+              <td style={{textAlign: 'center', padding: '0.4rem 0.5rem'}}>
+                <span style={{
+                  padding: '0.15rem 0.5rem',
+                  borderRadius: '10px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  background: resultColor.bg,
+                  color: resultColor.text
+                }}>
+                  {m.result === 'win' ? '✅ Win' : m.result === 'loss' ? '❌ Loss' : m.result === 'push' ? '🤝 Push' : '⏳'}
+                </span>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+);
+
+function getPerformanceColor(perf, isAvoid) {
+  if (isAvoid) {
+    if (perf === 'correct') return {bg: '#e8f5e9', text: '#2e7d32'};
+    if (perf === 'wrong') return {bg: '#ffebee', text: '#c62828'};
+    return {bg: '#e3e8f0', text: '#444'};
+  }
+  if (perf === 'win') return {bg: '#ffd700', text: '#333'};
+  if (perf === 'top-5') return {bg: '#e8f5e9', text: '#2e7d32'};
+  if (perf === 'top-10') return {bg: '#e8f5e9', text: '#388e3c'};
+  if (perf === 'top-20') return {bg: '#e3f2fd', text: '#1565c0'};
+  if (perf === 'made-cut') return {bg: '#f5f5f5', text: '#666'};
+  if (perf === 'missed-cut') return {bg: '#ffebee', text: '#c62828'};
+  return {bg: '#e3e8f0', text: '#444'};
+}
+
+function getPerformanceLabel(perf, isAvoid) {
+  if (isAvoid) {
+    if (perf === 'correct') return '✅ Correct';
+    if (perf === 'wrong') return '❌ Wrong';
+    return '⏳ Pending';
+  }
+  if (perf === 'win') return '🏆 Win!';
+  if (perf === 'top-5') return 'Top 5';
+  if (perf === 'top-10') return 'Top 10';
+  if (perf === 'top-20') return 'Top 20';
+  if (perf === 'made-cut') return 'Made Cut';
+  if (perf === 'missed-cut') return 'MC';
+  if (perf === 'not-found') return '?';
+  return '⏳ Pending';
+}
 
 export default App;
