@@ -2,160 +2,239 @@ const { getBlobStore, normalizePlayerName, americanToDecimal } = require('./shar
 const axios = require('axios');
 
 /**
- * Analyze prediction performance by comparing picks with actual results
- * Reads saved predictions from Netlify Blobs
- * OPTIMIZED VERSION - Uses shared-utils
+ * Analyze ALL prediction performance - Value Picks, Avoid Picks, and Matchups
+ * Reads saved data from Netlify Blobs across all three stores
+ * Returns grouped by tournament with results for each category
  */
 exports.handler = async (event, context) => {
   try {
     const tour = event.queryStringParameters?.tour || 'pga';
     const baseUrl = process.env.URL || 'http://localhost:8888';
 
-    console.log(`[ANALYSIS] Fetching saved predictions for ${tour} tour from Netlify Blobs...`);
+    console.log(`[RESULTS] Fetching all saved data for ${tour} tour...`);
 
-    // Get Netlify Blobs store using shared helper
-    let store, blobs;
+    // Fetch blobs from all three stores in parallel
+    let predictionBlobs = [];
+    let avoidBlobs = [];
+    let matchupBlobs = [];
+
     try {
-      store = getBlobStore('predictions', context);
-      
-      // Filter by tour prefix
-      const listResult = await store.list({ prefix: `${tour}-` });
-      blobs = listResult.blobs;
+      const predStore = getBlobStore('predictions', context);
+      const avoidStore = getBlobStore('avoid-picks', context);
+      const matchupStore = getBlobStore('matchups', context);
+
+      const [predList, avoidList, matchupList] = await Promise.all([
+        predStore.list({ prefix: `${tour}-` }).catch(() => ({ blobs: [] })),
+        avoidStore.list({ prefix: `${tour}-` }).catch(() => ({ blobs: [] })),
+        matchupStore.list({ prefix: `${tour}-` }).catch(() => ({ blobs: [] }))
+      ]);
+
+      predictionBlobs = predList.blobs || [];
+      avoidBlobs = avoidList.blobs || [];
+      matchupBlobs = matchupList.blobs || [];
+
+      console.log(`[RESULTS] Found blobs - Predictions: ${predictionBlobs.length}, Avoid: ${avoidBlobs.length}, Matchups: ${matchupBlobs.length}`);
     } catch (blobError) {
-      console.error('[ANALYSIS] Blob storage error:', blobError.message);
-      
-      // Return friendly message if blobs aren't configured
+      console.error('[RESULTS] Blob storage error:', blobError.message);
       return createSuccessResponse({
         tournaments: [],
-        message: 'Blob storage not yet configured. Predictions will be saved automatically once Netlify Blobs is enabled in your site settings.',
-        totalPredictions: 0,
-        completedTournaments: 0
+        summary: { totalTournaments: 0, completedTournaments: 0 },
+        message: 'Blob storage not configured yet.'
       });
     }
 
-    if (!blobs || blobs.length === 0) {
-      console.log(`[ANALYSIS] No predictions found in blob storage for ${tour} tour`);
+    if (predictionBlobs.length === 0 && avoidBlobs.length === 0 && matchupBlobs.length === 0) {
       return createSuccessResponse({
         tournaments: [],
-        message: `No predictions saved yet for ${tour.toUpperCase()} tour. Generate some predictions and they will automatically be saved for results tracking!`,
-        totalPredictions: 0,
-        completedTournaments: 0
+        summary: { totalTournaments: 0, completedTournaments: 0 },
+        message: `No data saved yet for ${tour.toUpperCase()} tour.`
       });
     }
 
-    console.log(`[ANALYSIS] Found ${blobs.length} saved prediction blobs for ${tour} tour`);
+    // Load all blob data and group by tournament name
+    const tournamentMap = {};
 
-    // Process each prediction
+    const loadBlobs = async (storeName, blobs, category) => {
+      const store = getBlobStore(storeName, context);
+      for (const blob of blobs) {
+        try {
+          const data = await store.get(blob.key, { type: 'json' });
+          if (!data || !data.tournament?.name) continue;
+
+          const name = data.tournament.name;
+          if (!tournamentMap[name]) {
+            tournamentMap[name] = {
+              tournament: data.tournament,
+              generatedAt: data.generatedAt || data.metadata?.generatedAt,
+              predictions: null,
+              avoidPicks: null,
+              matchups: null
+            };
+          }
+
+          // Track most recent timestamp
+          const dataTime = new Date(data.generatedAt || data.metadata?.generatedAt || 0).getTime();
+          const existingTime = new Date(tournamentMap[name].generatedAt || 0).getTime();
+          if (dataTime > existingTime) {
+            tournamentMap[name].generatedAt = data.generatedAt || data.metadata?.generatedAt;
+          }
+
+          // Store data per category (keep most recent if multiple blobs per tournament)
+          if (category === 'predictions' && !tournamentMap[name].predictions) {
+            tournamentMap[name].predictions = data.predictions || [];
+          } else if (category === 'avoidPicks' && !tournamentMap[name].avoidPicks) {
+            tournamentMap[name].avoidPicks = data.avoidPicks || [];
+          } else if (category === 'matchups' && !tournamentMap[name].matchups) {
+            tournamentMap[name].matchups = data.suggestedMatchups || [];
+          }
+        } catch (err) {
+          console.log(`[RESULTS] Error reading ${category} blob ${blob.key}: ${err.message}`);
+        }
+      }
+    };
+
+    await Promise.all([
+      loadBlobs('predictions', predictionBlobs, 'predictions'),
+      loadBlobs('avoid-picks', avoidBlobs, 'avoidPicks'),
+      loadBlobs('matchups', matchupBlobs, 'matchups')
+    ]);
+
+    console.log(`[RESULTS] Found ${Object.keys(tournamentMap).length} unique tournaments`);
+
+    // For each tournament, fetch results and analyze
     const tournaments = [];
 
-    for (const blob of blobs) {
+    for (const [tournamentName, tData] of Object.entries(tournamentMap)) {
       try {
-        // Get the prediction data
-        const predictionJson = await store.get(blob.key, { type: 'json' });
-        
-        if (!predictionJson) {
-          console.log(`[ANALYSIS] Skipping empty blob: ${blob.key}`);
-          continue;
-        }
+        console.log(`[RESULTS] Fetching results for: ${tournamentName}`);
 
-        console.log(`[ANALYSIS] Processing: ${predictionJson.tournament.name}`);
-
-        // Fetch tournament results
         const resultsResponse = await axios.post(`${baseUrl}/.netlify/functions/fetch-tournament-results`, {
-          tournamentName: predictionJson.tournament.name,
-          tour: predictionJson.tournament.tour,
-          eventId: predictionJson.tournament.eventId
-        }, {
-          timeout: 15000
-        });
+          tournamentName: tData.tournament.name,
+          tour: tData.tournament.tour,
+          eventId: tData.tournament.eventId
+        }, { timeout: 15000 });
 
         const resultsData = resultsResponse.data;
+        const results = resultsData.results || [];
+        const isCompleted = resultsData.status === 'completed' && results.length > 0;
 
-        // Analyze performance if results are available
-        let analysis = null;
-        if (resultsData.status === 'completed' && resultsData.results.length > 0) {
-          analysis = analyzePredictionPerformance(predictionJson.predictions, resultsData.results);
+        let valueAnalysis = null;
+        let avoidAnalysis = null;
+        let matchupAnalysis = null;
+
+        if (isCompleted) {
+          if (tData.predictions?.length > 0) {
+            valueAnalysis = analyzeValuePicks(tData.predictions, results);
+          }
+          if (tData.avoidPicks?.length > 0) {
+            avoidAnalysis = analyzeAvoidPicks(tData.avoidPicks, results);
+          }
+          if (tData.matchups?.length > 0) {
+            matchupAnalysis = analyzeMatchups(tData.matchups, results);
+          }
         }
 
         tournaments.push({
-          tournament: predictionJson.tournament,
-          predictions: predictionJson.predictions,
-          results: resultsData.results || [],
-          analysis,
-          status: resultsData.status || 'unknown',
-          generatedAt: predictionJson.metadata?.generatedAt || predictionJson.generatedAt,
-          blobKey: blob.key
+          tournament: tData.tournament,
+          generatedAt: tData.generatedAt,
+          status: isCompleted ? 'completed' : 'pending',
+          valuePicks: tData.predictions || [],
+          avoidPicks: tData.avoidPicks || [],
+          matchups: tData.matchups || [],
+          valueAnalysis,
+          avoidAnalysis,
+          matchupAnalysis
         });
 
       } catch (error) {
-        console.error(`[ANALYSIS] Error processing ${blob.key}:`, error.message);
+        console.error(`[RESULTS] Error processing ${tournamentName}:`, error.message);
+        tournaments.push({
+          tournament: tData.tournament,
+          generatedAt: tData.generatedAt,
+          status: 'error',
+          valuePicks: tData.predictions || [],
+          avoidPicks: tData.avoidPicks || [],
+          matchups: tData.matchups || [],
+          valueAnalysis: null,
+          avoidAnalysis: null,
+          matchupAnalysis: null
+        });
       }
     }
 
     // Sort by date (most recent first)
-    tournaments.sort((a, b) => 
-      new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime()
+    tournaments.sort((a, b) =>
+      new Date(b.generatedAt || 0).getTime() - new Date(a.generatedAt || 0).getTime()
     );
 
-    console.log(`[ANALYSIS] ✅ Processed ${tournaments.length} tournaments for ${tour} tour`);
+    // Summary stats
+    const completedTournaments = tournaments.filter(t => t.status === 'completed').length;
+    let overallROI = 0;
+    let totalBets = 0;
+    let matchupWins = 0;
+    let matchupTotal = 0;
+    let avoidCorrect = 0;
+    let avoidTotal = 0;
+
+    tournaments.forEach(t => {
+      if (t.valueAnalysis) {
+        overallROI += t.valueAnalysis.totalROI;
+        totalBets += t.valueAnalysis.totalPicks;
+      }
+      if (t.matchupAnalysis) {
+        matchupWins += t.matchupAnalysis.wins;
+        matchupTotal += t.matchupAnalysis.totalMatchups;
+      }
+      if (t.avoidAnalysis) {
+        avoidCorrect += t.avoidAnalysis.correctAvoids;
+        avoidTotal += t.avoidAnalysis.totalPicks;
+      }
+    });
+
+    console.log(`[RESULTS] ✅ Processed ${tournaments.length} tournaments`);
 
     return createSuccessResponse({
       tournaments,
-      totalPredictions: tournaments.reduce((sum, t) => sum + t.predictions.length, 0),
-      completedTournaments: tournaments.filter(t => t.status === 'completed').length
+      summary: {
+        totalTournaments: tournaments.length,
+        completedTournaments,
+        overallROI,
+        totalBets,
+        matchupRecord: { wins: matchupWins, total: matchupTotal },
+        avoidRecord: { correct: avoidCorrect, total: avoidTotal }
+      }
     });
 
   } catch (error) {
-    console.error('[ANALYSIS] Error:', error.message);
+    console.error('[RESULTS] Error:', error.message);
     return createErrorResponse(error.message);
   }
 };
 
-/**
- * Analyze prediction performance
- * Now uses normalizePlayerName from shared-utils
- */
-function analyzePredictionPerformance(predictions, results) {
+// ==================== ANALYSIS FUNCTIONS ====================
+
+function analyzeValuePicks(predictions, results) {
   const analysis = {
     totalPicks: predictions.length,
-    wins: 0,
-    top5s: 0,
-    top10s: 0,
-    top20s: 0,
-    madeCut: 0,
-    missedCut: 0,
-    notFound: 0,
-    detailedPicks: []
+    wins: 0, top5s: 0, top10s: 0, top20s: 0,
+    madeCut: 0, missedCut: 0, notFound: 0,
+    totalROI: 0,
+    picks: []
   };
 
   for (const pick of predictions) {
-    // Find player in results (normalize names for matching)
-    // NOW USES shared-utils normalizePlayerName
-    const playerResult = results.find(r => 
-      normalizePlayerName(r.player) === normalizePlayerName(pick.player)
-    );
+    const playerResult = findPlayer(pick.player, results);
+    const position = playerResult ? parsePosition(playerResult.position) : null;
+    let performance = 'not-found';
+    let roi = -100;
 
     if (!playerResult) {
       analysis.notFound++;
-      analysis.detailedPicks.push({
-        player: pick.player,
-        odds: pick.odds,
-        position: 'Not Found',
-        performance: 'unknown'
-      });
-      continue;
-    }
-
-    // Extract position (handle "T5" format)
-    const position = typeof playerResult.position === 'string' 
-      ? parseInt(playerResult.position.replace(/[^0-9]/g, '')) 
-      : playerResult.position;
-
-    // Categorize performance
-    let performance = 'missed-cut';
-    if (position === 1) {
+    } else if (position === 1) {
       analysis.wins++;
       performance = 'win';
+      const dec = americanToDecimal(pick.odds);
+      roi = dec ? (100 * dec) - 100 : 0;
     } else if (position <= 5) {
       analysis.top5s++;
       performance = 'top-5';
@@ -165,7 +244,7 @@ function analyzePredictionPerformance(predictions, results) {
     } else if (position <= 20) {
       analysis.top20s++;
       performance = 'top-20';
-    } else if (position <= 70) {
+    } else if (position <= 65) {
       analysis.madeCut++;
       performance = 'made-cut';
     } else {
@@ -173,54 +252,93 @@ function analyzePredictionPerformance(predictions, results) {
       performance = 'missed-cut';
     }
 
-    analysis.detailedPicks.push({
+    analysis.totalROI += roi;
+    analysis.picks.push({
       player: pick.player,
       odds: pick.odds,
-      position: playerResult.position,
-      score: playerResult.score,
-      toPar: playerResult.toPar,
+      position: playerResult?.position || 'N/A',
       performance,
-      roi: calculateROI(pick.odds, performance)
+      roi
     });
   }
-
-  // Calculate overall ROI
-  analysis.totalROI = analysis.detailedPicks.reduce((sum, p) => sum + (p.roi || 0), 0);
-  analysis.avgROI = analysis.totalPicks > 0 ? analysis.totalROI / analysis.totalPicks : 0;
 
   return analysis;
 }
 
-/**
- * Calculate ROI for a pick
- * Assumes $100 bet on each pick
- * Now uses americanToDecimal from shared-utils for proper odds conversion
- */
-function calculateROI(odds, performance) {
-  const stake = 100;
-  
-  if (performance === 'win') {
-    // Convert American odds to decimal for proper payout calculation
-    const decimalOdds = americanToDecimal(odds);
-    if (decimalOdds) {
-      // Decimal odds include stake, so payout = stake * decimal odds
-      // Profit = payout - stake
-      const payout = stake * decimalOdds;
-      return payout - stake;
+function analyzeAvoidPicks(avoidPicks, results) {
+  const analysis = {
+    totalPicks: avoidPicks.length,
+    correctAvoids: 0,
+    wrongAvoids: 0,
+    picks: []
+  };
+
+  for (const pick of avoidPicks) {
+    const playerResult = findPlayer(pick.player, results);
+    const position = playerResult ? parsePosition(playerResult.position) : null;
+    let verdict = 'correct';
+
+    if (playerResult && position && position <= 20) {
+      analysis.wrongAvoids++;
+      verdict = 'wrong';
     } else {
-      // Fallback to simple calculation if conversion fails
-      const payout = stake * (odds / 100);
-      return payout;
+      analysis.correctAvoids++;
     }
+
+    analysis.picks.push({
+      player: pick.player,
+      odds: pick.odds,
+      position: playerResult?.position || 'MC/WD',
+      verdict
+    });
   }
-  
-  // Loss: lose stake
-  return -stake;
+
+  return analysis;
 }
 
-/**
- * Create success response
- */
+function analyzeMatchups(matchups, results) {
+  const analysis = {
+    totalMatchups: matchups.length,
+    wins: 0, losses: 0, pushes: 0,
+    matchups: []
+  };
+
+  for (const m of matchups) {
+    const pickName = m.pick;
+    const otherName = m.playerA?.name === pickName ? m.playerB?.name : m.playerA?.name;
+    const pickPos = parsePosition(findPlayer(pickName, results)?.position);
+    const otherPos = parsePosition(findPlayer(otherName, results)?.position);
+
+    let result = 'push';
+    if (pickPos < otherPos) { analysis.wins++; result = 'win'; }
+    else if (pickPos > otherPos) { analysis.losses++; result = 'loss'; }
+    else { analysis.pushes++; }
+
+    analysis.matchups.push({
+      pick: pickName,
+      pickPosition: findPlayer(pickName, results)?.position || 'MC/WD',
+      opponent: otherName,
+      opponentPosition: findPlayer(otherName, results)?.position || 'MC/WD',
+      result
+    });
+  }
+
+  return analysis;
+}
+
+// ==================== HELPERS ====================
+
+function findPlayer(name, results) {
+  return results.find(r => normalizePlayerName(r.player) === normalizePlayerName(name));
+}
+
+function parsePosition(pos) {
+  if (!pos) return 999;
+  if (typeof pos === 'number') return pos;
+  const num = parseInt(String(pos).replace(/[^0-9]/g, ''));
+  return isNaN(num) ? 999 : num;
+}
+
 function createSuccessResponse(data) {
   return {
     statusCode: 200,
@@ -229,16 +347,10 @@ function createSuccessResponse(data) {
   };
 }
 
-/**
- * Create error response
- */
 function createErrorResponse(message) {
   return {
     statusCode: 500,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
-      error: 'Failed to analyze predictions',
-      message 
-    })
+    body: JSON.stringify({ error: 'Failed to analyze results', message })
   };
 }
