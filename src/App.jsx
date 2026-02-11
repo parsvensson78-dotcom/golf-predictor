@@ -214,42 +214,84 @@ function App() {
     setError(null);
     setRequestId(prev => prev + 1);
     
-    // Try to load all cached data for new tour from Blobs
-    console.log(`[TOUR] Switching to ${newTour}, checking for cached data...`);
+    // Clear existing data for clean transition
+    setData(prev => ({ ...prev, predictions: null, avoidPicks: null, matchups: null }));
     
-    Promise.allSettled([
-      fetchData(`/.netlify/functions/get-latest-predictions?tour=${newTour}`, 'GET', null, 'predictions'),
-      fetchData(`/.netlify/functions/get-latest-avoid-picks?tour=${newTour}`, 'GET', null, 'avoidPicks'),
-      fetchData(`/.netlify/functions/get-latest-matchups?tour=${newTour}`, 'GET', null, 'matchups')
-    ]).then(results => {
+    // Load predictions first to get tournament name, then load rest with filter
+    console.log(`[TOUR] Switching to ${newTour}, loading cached data...`);
+    
+    const loadTourData = async () => {
+      let tournamentName = '';
+      try {
+        const predResponse = await fetch(`/.netlify/functions/get-latest-predictions?tour=${newTour}&_=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' }
+        });
+        if (predResponse.ok) {
+          const predData = await predResponse.json();
+          setData(prev => ({ ...prev, predictions: predData }));
+          tournamentName = predData.tournament?.name || '';
+          console.log(`[TOUR] ✅ Predictions loaded for ${newTour}: "${tournamentName}"`);
+        }
+      } catch (err) {
+        console.log(`[TOUR] No cached predictions for ${newTour}`);
+      }
+      
+      const tournamentParam = tournamentName ? `&tournament=${encodeURIComponent(tournamentName)}` : '';
+      
+      const results = await Promise.allSettled([
+        fetchData(`/.netlify/functions/get-latest-avoid-picks?tour=${newTour}${tournamentParam}`, 'GET', null, 'avoidPicks'),
+        fetchData(`/.netlify/functions/get-latest-matchups?tour=${newTour}${tournamentParam}`, 'GET', null, 'matchups')
+      ]);
+      
       const loaded = results.filter(r => r.status === 'fulfilled').length;
-      console.log(`[TOUR] Loaded ${loaded}/3 cached datasets for ${newTour}`);
-    });
+      console.log(`[TOUR] Loaded ${loaded}/2 cached datasets for ${newTour}`);
+    };
+    
+    loadTourData();
   };
 
   // Auto-load all cached data from Netlify Blobs on mount
+  // Strategy: Load predictions FIRST to get current tournament name,
+  // then load avoid/matchups filtered by that tournament
   useEffect(() => {
     if (!hasAutoLoadedRef.current && !loading) {
       console.log('[AUTO-LOAD] Checking for cached data in Blobs');
       hasAutoLoadedRef.current = true;
       
-      // Load all data in parallel for instant tab switching
-      Promise.allSettled([
-        // Value Predictions
-        fetchData(`/.netlify/functions/get-latest-predictions?tour=${tour}`, 'GET', null, 'predictions'),
+      const loadAllData = async () => {
+        // Step 1: Load predictions first to get current tournament name
+        let tournamentName = '';
+        try {
+          const predResponse = await fetch(`/.netlify/functions/get-latest-predictions?tour=${tour}&_=${Date.now()}`, {
+            cache: 'no-store',
+            headers: { 'Cache-Control': 'no-cache' }
+          });
+          if (predResponse.ok) {
+            const predData = await predResponse.json();
+            setData(prev => ({ ...prev, predictions: predData }));
+            tournamentName = predData.tournament?.name || '';
+            console.log(`[AUTO-LOAD] ✅ Predictions loaded: "${tournamentName}"`);
+          }
+        } catch (err) {
+          console.log('[AUTO-LOAD] No cached predictions available');
+        }
         
-        // Avoid Picks
-        fetchData(`/.netlify/functions/get-latest-avoid-picks?tour=${tour}`, 'GET', null, 'avoidPicks'),
+        // Step 2: Load avoid, matchups, results in parallel WITH tournament filter
+        const tournamentParam = tournamentName ? `&tournament=${encodeURIComponent(tournamentName)}` : '';
+        console.log(`[AUTO-LOAD] Loading remaining data${tournamentName ? ` filtered by "${tournamentName}"` : ''}...`);
         
-        // Matchups
-        fetchData(`/.netlify/functions/get-latest-matchups?tour=${tour}`, 'GET', null, 'matchups'),
+        const results = await Promise.allSettled([
+          fetchData(`/.netlify/functions/get-latest-avoid-picks?tour=${tour}${tournamentParam}`, 'GET', null, 'avoidPicks'),
+          fetchData(`/.netlify/functions/get-latest-matchups?tour=${tour}${tournamentParam}`, 'GET', null, 'matchups'),
+          fetchData(`/.netlify/functions/get-prediction-results?tour=${tour}`, 'GET', null, 'results')
+        ]);
         
-        // Results
-        fetchData(`/.netlify/functions/get-prediction-results`, 'GET', null, 'results')
-      ]).then(results => {
         const loaded = results.filter(r => r.status === 'fulfilled').length;
-        console.log(`[AUTO-LOAD] Successfully loaded ${loaded}/4 cached datasets`);
-      });
+        console.log(`[AUTO-LOAD] Successfully loaded ${loaded}/3 additional cached datasets`);
+      };
+      
+      loadAllData();
     }
   }, []); // Empty array is safe with ref - truly runs once
 
