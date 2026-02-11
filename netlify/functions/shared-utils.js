@@ -314,8 +314,18 @@ async function getLatestBlobForTournament(store, tour, tournamentName = null) {
   
   if (!blobs || blobs.length === 0) return null;
   
-  // Sort by key descending (most recent first)
-  const sortedBlobs = blobs.sort((a, b) => b.key.localeCompare(a.key));
+  // Sort by DATE portion of key (not tournament name!)
+  // Key format: tour-tournament-slug-YYYY-MM-DD-HHMM
+  // Extract date by matching the date pattern at the end
+  const sortedBlobs = blobs.sort((a, b) => {
+    const datePatternA = a.key.match(/(\d{4}-\d{2}-\d{2}-\d{4})$/);
+    const datePatternB = b.key.match(/(\d{4}-\d{2}-\d{2}-\d{4})$/);
+    const dateA = datePatternA ? datePatternA[1] : '0000-00-00-0000';
+    const dateB = datePatternB ? datePatternB[1] : '0000-00-00-0000';
+    return dateB.localeCompare(dateA); // Most recent first
+  });
+  
+  console.log(`[BLOB-FILTER] Found ${sortedBlobs.length} blobs, newest: ${sortedBlobs[0].key}`);
   
   // If no tournament filter, just return the most recent valid blob
   if (!tournamentName) {
