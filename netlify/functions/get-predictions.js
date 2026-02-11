@@ -8,7 +8,9 @@ const {
   analyzeCourseSkillDemands,
   analyzeWeatherConditions,
   calculateClaudeCost,
-  generateBlobKey
+  generateBlobKey,
+  generatePlayerDataCacheKey,
+  isCacheValidForTournament
 } = require('./shared-utils');
 
 /**
@@ -29,10 +31,23 @@ exports.handler = async (event, context) => {
 
     console.log(`[START] Predictions for ${tour.toUpperCase()} tour - Request ID: ${reqId}${forceRefresh ? ' (FORCE REFRESH)' : ''}`);
 
-    // Step 1: Try to get cached player data (unless force refresh)
-    const cacheKey = `player-data-${tour}`;
+    // Step 1: ALWAYS fetch current tournament info first (lightweight call)
+    // This ensures we know WHICH tournament we're dealing with before checking cache
+    const tournamentResponse = await axios.get(`${baseUrl}/.netlify/functions/fetch-tournament?tour=${tour}`, {
+      timeout: 15000
+    });
+    const tournament = tournamentResponse.data;
+
+    if (!tournament?.field?.length) {
+      throw new Error('No tournament field data available');
+    }
+
+    console.log(`[TOURNAMENT] ${tournament.name} (${tournament.field.length} players)`);
+
+    // Step 2: Try to get cached player data (unless force refresh)
+    // Cache key is now TOURNAMENT-SPECIFIC so different weeks never collide
+    const cacheKey = generatePlayerDataCacheKey(tour, tournament.name);
     let playersWithData = null;
-    let tournament = null;
     let weatherData = null;
     let courseInfo = null;
     
@@ -41,21 +56,14 @@ exports.handler = async (event, context) => {
         const store = getBlobStore('cache', context);
         const cached = await store.get(cacheKey, { type: 'json' });
         
-        if (cached && cached.timestamp) {
+        if (isCacheValidForTournament(cached, tournament.name)) {
           const cacheAge = Date.now() - cached.timestamp;
-          const twelveHours = 12 * 60 * 60 * 1000;
-          
-          if (cacheAge < twelveHours) {
-            console.log(`[CACHE] Using cached player data (${Math.round(cacheAge / 1000 / 60)} minutes old)`);
-            playersWithData = cached.players;
-            tournament = cached.tournament;
-            weatherData = cached.weather;
-            courseInfo = cached.courseInfo;
-          } else {
-            console.log(`[CACHE] Cache expired (${Math.round(cacheAge / 1000 / 60 / 60)} hours old), fetching fresh data`);
-          }
+          console.log(`[CACHE] ✅ Using cached data for "${tournament.name}" (${Math.round(cacheAge / 1000 / 60)} min old)`);
+          playersWithData = cached.players;
+          weatherData = cached.weather;
+          courseInfo = cached.courseInfo;
         } else {
-          console.log(`[CACHE] No cache found, fetching fresh data`);
+          console.log(`[CACHE] Cache miss or invalid for "${tournament.name}" - fetching fresh data`);
         }
       } catch (cacheError) {
         console.log(`[CACHE] Error reading cache: ${cacheError.message}`);
@@ -64,21 +72,9 @@ exports.handler = async (event, context) => {
       console.log(`[CACHE] Force refresh requested - bypassing cache`);
     }
 
-    // Step 2: If no valid cache, fetch all data
+    // Step 3: If no valid cache, fetch all data
     if (!playersWithData) {
-      console.log(`[FETCH] Fetching fresh player data...`);
-
-      // Step 2a: Fetch tournament data
-      const tournamentResponse = await axios.get(`${baseUrl}/.netlify/functions/fetch-tournament?tour=${tour}`, {
-        timeout: 15000
-      });
-      tournament = tournamentResponse.data;
-
-      if (!tournament?.field?.length) {
-        throw new Error('No tournament field data available');
-      }
-
-      console.log(`[TOURNAMENT] ${tournament.name} (${tournament.field.length} players)`);
+      console.log(`[FETCH] Fetching fresh player data for "${tournament.name}"...`);
 
       const playerNames = tournament.field.map(p => p.name);
 
@@ -116,18 +112,18 @@ exports.handler = async (event, context) => {
 
       console.log(`[MERGE] ${playersWithData.length} players with complete data`);
       
-      // Step 2g: Save to cache
+      // Step 3g: Save to cache (tournament-specific key)
       try {
         const store = getBlobStore('cache', context);
         await store.set(cacheKey, JSON.stringify({
           timestamp: Date.now(),
+          tournament: { name: tournament.name, eventId: tournament.eventId },
           players: playersWithData,
-          tournament: tournament,
           weather: weatherData,
           courseInfo: courseInfo
         }));
         
-        console.log(`[CACHE] ✅ Saved fresh data to cache`);
+        console.log(`[CACHE] ✅ Saved fresh data to cache (key: ${cacheKey})`);
       } catch (cacheError) {
         console.log(`[CACHE] ⚠️  Failed to save cache: ${cacheError.message}`);
       }
