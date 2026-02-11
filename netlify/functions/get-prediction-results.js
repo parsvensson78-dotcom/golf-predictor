@@ -66,9 +66,9 @@ exports.handler = async (event, context) => {
             tournamentMap[name] = {
               tournament: data.tournament,
               generatedAt: data.generatedAt || data.metadata?.generatedAt,
-              predictions: null,
-              avoidPicks: null,
-              matchups: null
+              predictions: [],
+              avoidPicks: [],
+              matchups: []
             };
           }
 
@@ -79,13 +79,43 @@ exports.handler = async (event, context) => {
             tournamentMap[name].generatedAt = data.generatedAt || data.metadata?.generatedAt;
           }
 
-          // Store data per category (keep most recent if multiple blobs per tournament)
-          if (category === 'predictions' && !tournamentMap[name].predictions) {
-            tournamentMap[name].predictions = data.predictions || [];
-          } else if (category === 'avoidPicks' && !tournamentMap[name].avoidPicks) {
-            tournamentMap[name].avoidPicks = data.avoidPicks || [];
-          } else if (category === 'matchups' && !tournamentMap[name].matchups) {
-            tournamentMap[name].matchups = data.suggestedMatchups || [];
+          // MERGE all unique players from all blobs (not just first blob)
+          if (category === 'predictions') {
+            const newPicks = data.predictions || [];
+            for (const pick of newPicks) {
+              const isDuplicate = tournamentMap[name].predictions.some(existing =>
+                normalizePlayerName(existing.player) === normalizePlayerName(pick.player)
+              );
+              if (!isDuplicate) {
+                tournamentMap[name].predictions.push(pick);
+              }
+            }
+          } else if (category === 'avoidPicks') {
+            const newPicks = data.avoidPicks || [];
+            for (const pick of newPicks) {
+              const isDuplicate = tournamentMap[name].avoidPicks.some(existing =>
+                normalizePlayerName(existing.player) === normalizePlayerName(pick.player)
+              );
+              if (!isDuplicate) {
+                tournamentMap[name].avoidPicks.push(pick);
+              }
+            }
+          } else if (category === 'matchups') {
+            const newMatchups = data.suggestedMatchups || [];
+            for (const matchup of newMatchups) {
+              // Dedupe matchups by pick name + opponent name
+              const pickName = matchup.pick || '';
+              const opponentName = matchup.playerA?.name === pickName ? matchup.playerB?.name : matchup.playerA?.name;
+              const isDuplicate = tournamentMap[name].matchups.some(existing => {
+                const existPick = existing.pick || '';
+                const existOpp = existing.playerA?.name === existPick ? existing.playerB?.name : existing.playerA?.name;
+                return normalizePlayerName(existPick) === normalizePlayerName(pickName) &&
+                       normalizePlayerName(existOpp) === normalizePlayerName(opponentName);
+              });
+              if (!isDuplicate) {
+                tournamentMap[name].matchups.push(matchup);
+              }
+            }
           }
         } catch (err) {
           console.log(`[RESULTS] Error reading ${category} blob ${blob.key}: ${err.message}`);
@@ -100,6 +130,11 @@ exports.handler = async (event, context) => {
     ]);
 
     console.log(`[RESULTS] Found ${Object.keys(tournamentMap).length} unique tournaments`);
+    
+    // Log merged counts
+    for (const [name, tData] of Object.entries(tournamentMap)) {
+      console.log(`[RESULTS] "${name}" - ${tData.predictions.length} value picks, ${tData.avoidPicks.length} avoid picks, ${tData.matchups.length} matchups`);
+    }
 
     // For each tournament, fetch results and analyze
     const tournaments = [];
