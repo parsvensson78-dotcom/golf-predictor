@@ -697,6 +697,30 @@ const PredictionsView = ({ data, requestId }) => {
       <div className={`cache-indicator ${isCached ? 'cached' : 'fresh'}`}>
         {isCached ? 'Cached' : 'Fresh'}
       </div>
+      
+      {/* Warning if data is from a previous tournament (fallback) */}
+      {data.isFallback && (
+        <div style={{
+          background: '#fff3e0',
+          border: '2px solid #ff9800',
+          borderRadius: '8px',
+          padding: '1rem 1.5rem',
+          marginBottom: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.75rem'
+        }}>
+          <span style={{fontSize: '1.5rem'}}>⚠️</span>
+          <div>
+            <strong style={{color: '#e65100'}}>Previous tournament data</strong>
+            <p style={{margin: '0.25rem 0 0', color: '#bf360c', fontSize: '0.9rem'}}>
+              No predictions saved for this week's tournament yet. Showing last available data.
+              Click "Get Predictions" to generate fresh predictions.
+            </p>
+          </div>
+        </div>
+      )}
+      
       <TimestampHeader generatedAt={data.generatedAt} />
       <TournamentInfo tournament={data.tournament} />
     <WeatherForecast dailyForecast={data.dailyForecast} />
@@ -777,6 +801,22 @@ const AvoidPicksView = ({ data, requestId }) => {
       <div className={`cache-indicator ${isCached ? 'cached' : 'fresh'}`}>
         {isCached ? 'Cached' : 'Fresh'}
       </div>
+      
+      {data.isFallback && (
+        <div style={{
+          background: '#fff3e0', border: '2px solid #ff9800', borderRadius: '8px',
+          padding: '1rem 1.5rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem'
+        }}>
+          <span style={{fontSize: '1.5rem'}}>⚠️</span>
+          <div>
+            <strong style={{color: '#e65100'}}>Previous tournament data</strong>
+            <p style={{margin: '0.25rem 0 0', color: '#bf360c', fontSize: '0.9rem'}}>
+              No avoid picks saved for this week yet. Click "Get Avoid Picks" to generate fresh analysis.
+            </p>
+          </div>
+        </div>
+      )}
+      
       <TimestampHeader generatedAt={data.generatedAt} />
       <TournamentInfo tournament={data.tournament} />
     
@@ -906,6 +946,22 @@ const MatchupsView = ({ data, requestId }) => {
       <div className={`cache-indicator ${isCached ? 'cached' : 'fresh'}`}>
         {isCached ? 'Cached' : 'Fresh'}
       </div>
+      
+      {data.isFallback && (
+        <div style={{
+          background: '#fff3e0', border: '2px solid #ff9800', borderRadius: '8px',
+          padding: '1rem 1.5rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem'
+        }}>
+          <span style={{fontSize: '1.5rem'}}>⚠️</span>
+          <div>
+            <strong style={{color: '#e65100'}}>Previous tournament data</strong>
+            <p style={{margin: '0.25rem 0 0', color: '#bf360c', fontSize: '0.9rem'}}>
+              No matchups saved for this week yet. Click "Get Matchup Predictions" to generate fresh analysis.
+            </p>
+          </div>
+        </div>
+      )}
+      
       <TimestampHeader generatedAt={data.generatedAt} />
     <TournamentInfo tournament={data.tournament} />
     
