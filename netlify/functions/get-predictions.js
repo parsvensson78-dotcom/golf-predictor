@@ -536,25 +536,33 @@ function enrichPredictionsWithOdds(predictions, playersWithData) {
 
 /**
  * Build enhanced prompt for Claude with weather analysis
+ * 
+ * WEIGHT RATIONALE (updated based on self-analysis):
+ * - Course Fit 35%: Still primary, but not so dominant it crowds out other signals
+ * - Course History 25%: Increased — venue-specific results are the strongest predictor
+ * - Recent Form 20%: Stable — recent momentum matters but less than venue fit  
+ * - Weather 10%: Halved — forecasts are often wrong, should never override fit/history
+ * - Quality 10%: Floor check — elite players have baseline edge
  */
 function buildClaudePrompt(tournament, players, weatherSummary, courseInfo) {
   // ========================================
   // 🎯 WEIGHTING CONFIGURATION - EDIT HERE
   // ========================================
   const WEIGHTS = {
-    courseFit: 40,           // % - How well stats match course demands
+    courseFit: 35,           // % - How well stats match course demands
+    courseHistory: 25,       // % - Past results at this venue (THE strongest signal)
     recentForm: 20,          // % - Last 5 tournaments performance
-    courseHistory: 10,       // % - Past results at this venue (0% if no history)
-    weather: 20,             // % - Weather adaptation
+    weather: 10,             // % - Weather adaptation (LOW - forecasts unreliable)
     statisticalQuality: 10   // % - Overall player quality check
   };
   
-  // When player has NO course history, redistribute weight:
+  // When player has NO course history, redistribute that 25% weight:
   const WEIGHTS_NO_HISTORY = {
-    courseFit: 50,           // Increased importance
-    recentForm: 20,          // Increased importance
-    weather: 15,             // Same
-    statisticalQuality: 15   // Increased importance
+    courseFit: 40,           // Absorbs most of history weight
+    recentForm: 25,          // Form matters more without history
+    venueTypeExp: 15,        // NEW: experience at SIMILAR venue types
+    weather: 10,             // Still low
+    statisticalQuality: 10   // Same
   };
   // ========================================
   
@@ -567,6 +575,9 @@ function buildClaudePrompt(tournament, players, weatherSummary, courseInfo) {
 
   // Determine primary course demands based on characteristics
   const courseDemands = analyzeCourseSkillDemands(courseInfo);
+
+  // Determine venue type
+  const venueType = classifyVenueType(courseInfo, tournament);
 
   // Format player lists
   const formatPlayerList = (playerList) => playerList
@@ -603,53 +614,131 @@ function buildClaudePrompt(tournament, players, weatherSummary, courseInfo) {
 
 TOURNAMENT: ${tournament.name}
 Course: ${courseInfo.courseName || courseInfo.eventName} | ${courseInfo.yardage || '?'}y Par ${courseInfo.par || '?'}
-Demands: ${courseDemands}
-Weather: ${weatherAnalysis}
+Venue type: ${venueType}
+Greens: ${courseInfo.greens || 'Unknown'}
 
-PLAYERS (top 50 by odds):
+Course demands:
+${courseDemands}
+
+Weather forecast:
+${weatherAnalysis}
+
+⚠️ WEATHER RELIABILITY WARNING: Weather forecasts are often significantly wrong (temperature ±10°F, wind ±10mph is common). Use weather as a TIEBREAKER only, never as a primary reason for picking or avoiding a player. Course fit and course history are far more reliable signals.
+
+PLAYERS (sorted by odds):
 ${formatPlayerList(players)}
 
-WEIGHTS: Course Fit 40%, History 20%, Form 15%, Weather 15%, Quality 10%
+WEIGHTS: Course Fit 35%, Course History 25%, Recent Form 20%, Weather 10%, Quality 10%
+
+IMPORTANT ANALYSIS RULES:
+1. COURSE HISTORY IS KING: A player with strong history at this specific venue (multiple top-20s or better) should be weighted heavily even if other stats are mediocre. Past venue performance is the single most predictive factor in golf.
+2. VENUE TYPE MATTERS: When a player has no history at THIS course, look for results at similar venue types (${venueType}). A player who thrives at desert courses but has never played this specific desert course still has an edge over someone with no desert experience.
+3. PUTTING CONTEXT: Do NOT treat SG:Putt as a standalone predictor. SG:Putt varies enormously by green type (bentgrass vs bermuda vs poa). A player ranked #5 in SG:Putt on bentgrass may putt poorly on bermuda. Consider the green surface (${courseInfo.greens || 'unknown'}) when evaluating putting stats.
+4. WEATHER IS A TIEBREAKER: Weather should only influence your pick when two players are otherwise equal. Never pick a player primarily because of weather conditions, and never avoid one primarily for weather.
+5. DIVERSIFICATION: Your 6 picks MUST represent at least 3 different player profiles. If you notice 3+ picks share the same primary strength (e.g., all elite putters, or all bombers), REPLACE one with a differently-profiled player. Diversification reduces model risk.
 
 PICK REQUIREMENTS:
 - Pick #1: <+1900 (best VALUE favorite, NOT lowest odds)
 - Picks #2-6: +1900+ (at least 3 picks +4000+)
 
 REASONING FORMAT - Use this EXACT structure with line breaks:
-"Course fit: [Specific SG stat matching course demands].
+"Course fit: [Specific SG stat matching course demands, with green surface context for putting].
 
-History: [Result at this venue or why OK without history].
+History: [Results at THIS venue. If none, results at similar ${venueType} venues].
 
-Form: [Last 3-5 tournaments with specific finishes].
+Form: [Last 3-5 tournaments with specific finishes and momentum direction].
 
-Weather: [How conditions favor their game].
+Weather: [Brief note only - how conditions mildly favor/disfavor, NOT a primary factor].
+
+Differentiation: [What makes this pick DIFFERENT from your other picks - unique skill or angle].
 
 Value: [Why odds undervalue given above factors]."
 
 Example: 
-"Course fit: Elite SG:APP (+0.59, #12 on tour) perfectly matches this precision course with small greens.
+"Course fit: Elite SG:APP (+0.59, #12 on tour) matches this precision course. Strong bermuda putting history complements his iron play.
 
-History: Won here in 2021 (−12), T4 in 2023 (−9) proves strong course fit.
+History: T8, T4, T12 in last three visits — consistent top-20 performer here proving genuine course fit.
 
-Form: Hot streak with T3, T8, 2nd in last 5 starts shows excellent momentum.
+Form: Hot streak with T3, T8, 2nd in last 5 starts shows excellent momentum entering the week.
 
-Weather: Light winds (8mph avg) suit his accurate, high-trajectory ball striking.
+Weather: Calm conditions slightly favor his accuracy-over-power game, but this is a minor factor.
 
-Value: At +1400, market undervalues his elite course history and current form."
+Differentiation: Only pick with elite course history + hot form combo; other picks rely more on statistical profile.
+
+Value: At +2800, market undervalues his elite course history. Three straight top-12s here should make him +1800 at most."
+
+DIVERSIFICATION CHECK (do this before returning):
+- List the primary strength of each pick (e.g., "OTT bomber", "elite putter", "iron precision", "scrambler", "course horse", "form player")
+- If 3+ picks share the same primary label → replace the weakest with a differently-profiled player
+- Ensure at least 1 pick is primarily a "course history" pick (strong venue results)
 
 CHECK BEFORE RETURNING:
 - Pick #1 < +1900? Picks #2-6 all +1900+? 3+ picks +4000+?
+- At least 3 different player profiles across all 6 picks?
+- No pick where weather is the #1 reason?
 
 Return JSON:
 {
   "courseType": "Brief analysis (2 sentences)",
-  "weatherImpact": "Impact (1-2 sentences)",
+  "weatherImpact": "Impact (1-2 sentences, acknowledge forecast uncertainty)",
   "keyFactors": ["Factor 1", "Factor 2", "Factor 3"],
   "courseNotes": "Betting insights (2 sentences)",
+  "pickProfiles": ["profile label for each pick, e.g. course horse, iron specialist, form player, bomber, scrambler, putter"],
   "picks": [
-    {"player": "Name", "odds": 1400, "reasoning": "STRUCTURED FORMAT with line breaks:\n\nCourse fit: [Analysis].\n\nHistory: [Results].\n\nForm: [Finishes].\n\nWeather: [Impact].\n\nValue: [Assessment]."}
+    {"player": "Name", "odds": 1400, "reasoning": "STRUCTURED FORMAT with line breaks:\\n\\nCourse fit: [Analysis].\\n\\nHistory: [Results].\\n\\nForm: [Finishes].\\n\\nWeather: [Brief tiebreaker note].\\n\\nDifferentiation: [Unique angle].\\n\\nValue: [Assessment]."}
   ]
-}`;
+}`; 
+}
+
+/**
+ * Classify venue type based on course info and tournament name/location
+ * Used to find players with experience at similar venues
+ */
+function classifyVenueType(courseInfo, tournament) {
+  const name = (tournament.name || '').toLowerCase();
+  const course = (courseInfo.courseName || courseInfo.eventName || '').toLowerCase();
+  const location = (tournament.location || courseInfo.location || '').toLowerCase();
+  const features = (courseInfo.keyFeatures || []).join(' ').toLowerCase();
+  const all = `${name} ${course} ${location} ${features}`;
+
+  // Desert courses
+  if (all.match(/scottsdale|phoenix|tucson|vegas|las vegas|desert|tpc scottsdale|pga west|la quinta/)) {
+    return 'Desert (dry, firm fairways, wide open, wind variable, overseeded bermuda)';
+  }
+  // Links courses
+  if (all.match(/links|st andrews|open championship|royal|carnoustie|muirfield|pot bunkers|fescue/)) {
+    return 'Links (wind-exposed, firm & fast, pot bunkers, fescue rough, creative shotmaking)';
+  }
+  // Coastal
+  if (all.match(/pebble|torrey|harbour|hilton head|kiawah|sea island|coastal|ocean/)) {
+    return 'Coastal (wind exposure, marine layer, firm greens, links-influenced)';
+  }
+  // Mountain
+  if (all.match(/altitude|mountain|castle pines|crans|elevation/)) {
+    return 'Mountain (altitude affects distance, elevation changes, thin air)';
+  }
+  // Resort
+  if (all.match(/resort|kapalua|waialae|bermuda|caribbean|mexico|mayakoba/)) {
+    return 'Resort/Tropical (bermuda grass, wind, humidity, paspalum greens possible)';
+  }
+  // Classic parkland
+  if (all.match(/augusta|colonial|muirfield village|oak|memorial|quail|southern hills|east lake/)) {
+    return 'Championship Parkland (premium ball-striking, tough rough, fast greens, historic venue)';
+  }
+  // TPC/Stadium
+  if (all.match(/tpc|stadium|sawgrass|players/)) {
+    return 'TPC/Stadium (spectator course, island greens, penal rough, premium approach play)';
+  }
+
+  // Default based on region
+  if (all.match(/florida|georgia|carolina|south|bermuda grass/)) {
+    return 'Southern Parkland (bermuda grass, humidity, afternoon storms possible)';
+  }
+  if (all.match(/northeast|midwest|bentgrass|pennsylvania|ohio|new york|connecticut/)) {
+    return 'Northern Parkland (bentgrass, traditional layout, cooler conditions)';
+  }
+
+  return 'Parkland (standard tour venue)';
 }
 
 /**
