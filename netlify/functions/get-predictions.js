@@ -58,10 +58,10 @@ exports.handler = async (event, context) => {
         
         if (isCacheValidForTournament(cached, tournament.name)) {
           const cacheAge = Date.now() - cached.timestamp;
-          console.log(`[CACHE] ✅ Using cached data for "${tournament.name}" (${Math.round(cacheAge / 1000 / 60)} min old)`);
+          console.log(`[CACHE] ✅ Using cached player data for "${tournament.name}" (${Math.round(cacheAge / 1000 / 60)} min old)`);
           playersWithData = cached.players;
-          weatherData = cached.weather;
           courseInfo = cached.courseInfo;
+          // NOTE: Weather is no longer cached with player data - it has its own 3h cache
         } else {
           console.log(`[CACHE] Cache miss or invalid for "${tournament.name}" - fetching fresh data`);
         }
@@ -72,14 +72,28 @@ exports.handler = async (event, context) => {
       console.log(`[CACHE] Force refresh requested - bypassing cache`);
     }
 
-    // Step 3: If no valid cache, fetch all data
+    // Step 2.5: ALWAYS fetch weather separately (has its own 3h cache via fetch-weather function)
+    // This ensures weather is always fresh even when player data is cached
+    try {
+      const weatherResponse = await axios.get(
+        `${baseUrl}/.netlify/functions/fetch-weather?location=${encodeURIComponent(tournament.location)}&tournament=${encodeURIComponent(tournament.name)}&tour=${tour}`,
+        { timeout: 10000 }
+      );
+      weatherData = weatherResponse.data;
+      console.log(`[WEATHER] Got forecast (cached: ${weatherData.cached || false}, fetchedAt: ${weatherData.fetchedAt || 'unknown'})`);
+    } catch (weatherErr) {
+      console.log(`[WEATHER] ⚠️ Weather service failed: ${weatherErr.message}, using fallback`);
+      weatherData = { summary: 'Weather data not available', daily: [] };
+    }
+
+    // Step 3: If no valid player cache, fetch all data (except weather)
     if (!playersWithData) {
       console.log(`[FETCH] Fetching fresh player data for "${tournament.name}"...`);
 
       const playerNames = tournament.field.map(p => p.name);
 
-      // Step 2b-2e: Fetch stats, odds, weather, and course info IN PARALLEL
-      const [statsResponse, oddsResponse, weatherResponse, courseInfoResponse, recentFormData] = await Promise.all([
+      // Fetch stats, odds, course info, and form IN PARALLEL (weather already fetched above)
+      const [statsResponse, oddsResponse, courseInfoResponse, recentFormData] = await Promise.all([
         // Stats
         axios.post(`${baseUrl}/.netlify/functions/fetch-stats`, 
           { players: playerNames }, 
@@ -90,8 +104,6 @@ exports.handler = async (event, context) => {
           { tournamentName: tournament.name, players: playerNames, tour: tournament.tour }, 
           { timeout: 20000 }
         ),
-        // Weather
-        fetchWeather(tournament.location),
         // Course info
         axios.get(`${baseUrl}/.netlify/functions/fetch-course-info?tour=${tour}&tournament=${encodeURIComponent(tournament.name)}`, 
           { timeout: 10000 }
@@ -102,7 +114,6 @@ exports.handler = async (event, context) => {
 
       const statsData = statsResponse.data;
       const oddsData = oddsResponse.data;
-      weatherData = weatherResponse;
       courseInfo = courseInfoResponse;
 
       console.log(`[DATA] Stats: ${statsData.players.length}, Odds: ${oddsData.odds.length}, Course: ${courseInfo.courseName || courseInfo.eventName}, Form data: ${recentFormData.players.length}`);
@@ -112,18 +123,17 @@ exports.handler = async (event, context) => {
 
       console.log(`[MERGE] ${playersWithData.length} players with complete data`);
       
-      // Step 3g: Save to cache (tournament-specific key)
+      // Step 3g: Save player data to cache (NO weather - that has its own cache)
       try {
         const store = getBlobStore('cache', context);
         await store.set(cacheKey, JSON.stringify({
           timestamp: Date.now(),
           tournament: { name: tournament.name, eventId: tournament.eventId },
           players: playersWithData,
-          weather: weatherData,
           courseInfo: courseInfo
         }));
         
-        console.log(`[CACHE] ✅ Saved fresh data to cache (key: ${cacheKey})`);
+        console.log(`[CACHE] ✅ Saved fresh player data to cache (key: ${cacheKey})`);
       } catch (cacheError) {
         console.log(`[CACHE] ⚠️  Failed to save cache: ${cacheError.message}`);
       }
@@ -264,57 +274,10 @@ exports.handler = async (event, context) => {
 };
 
 /**
- * Fetch weather data with error handling
+ * NOTE: Weather fetching has been moved to its own Netlify function (fetch-weather.js)
+ * with separate 3h caching and historical tracking.
+ * The old inline fetchWeather() function has been removed.
  */
-async function fetchWeather(location) {
-  const weatherApiKey = process.env.WEATHER_API_KEY;
-  
-  if (!weatherApiKey || !location) {
-    return { 
-      summary: 'Weather data not available', 
-      daily: [] 
-    };
-  }
-
-  try {
-    const city = location.split(',')[0].trim();
-    const response = await axios.get('https://api.weatherapi.com/v1/forecast.json', {
-      params: { key: weatherApiKey, q: city, days: 4, aqi: 'no' },
-      timeout: 8000
-    });
-
-    if (!response.data?.forecast) {
-      return { summary: 'Weather data unavailable', daily: [] };
-    }
-
-    const dayNames = ['Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const daily = response.data.forecast.forecastday.map((day, index) => ({
-      day: dayNames[index] || new Date(day.date).toLocaleDateString('en-US', { weekday: 'long' }),
-      date: day.date,
-      tempHigh: Math.round(day.day.maxtemp_f),
-      tempLow: Math.round(day.day.mintemp_f),
-      condition: day.day.condition.text,
-      windSpeed: Math.round(day.day.maxwind_mph),
-      chanceOfRain: day.day.daily_chance_of_rain,
-      humidity: day.day.avghumidity
-    }));
-
-    const summary = daily.map(d => 
-      `${d.day}: ${d.tempHigh}°F, ${d.condition}, Wind: ${d.windSpeed}mph, Rain: ${d.chanceOfRain}%`
-    ).join(' | ');
-
-    console.log(`[WEATHER] ${city} - Avg wind ${Math.round(daily.reduce((s, d) => s + d.windSpeed, 0) / daily.length)}mph`);
-
-    return { summary, daily };
-
-  } catch (error) {
-    console.log('[WEATHER] Fetch failed:', error.message);
-    return { 
-      summary: error.response?.status === 401 ? 'Weather API key invalid' : 'Weather unavailable', 
-      daily: [] 
-    };
-  }
-}
 
 /**
  * Fetch recent form and course history for players
