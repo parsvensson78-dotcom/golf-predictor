@@ -113,13 +113,17 @@ function analyzeCourseSkillDemands(courseInfo) {
     }
   }
 
-  // Green analysis
+  // Green analysis - MORE NUANCED (putting stats vary enormously by surface)
   if (courseInfo.greens) {
     const greens = courseInfo.greens.toLowerCase();
     if (greens.includes('fast') || greens.includes('firm') || greens.includes('bentgrass')) {
-      demands.push('6. SG:Putt (Enhanced) - Fast greens amplify putting skill differences');
+      demands.push('6. SG:Putt (Context-dependent) - Fast bentgrass greens reward touch putters, but tour-wide SG:Putt may not reflect surface-specific ability');
     } else if (greens.includes('poa') || greens.includes('bumpy')) {
-      demands.push('6. SG:APP (Critical) - Inconsistent greens demand precise approach distance control');
+      demands.push('6. SG:APP (Critical) - Poa greens are inconsistent; approach precision (proximity to hole) matters more than putting skill');
+    } else if (greens.includes('bermuda')) {
+      demands.push('6. SG:Putt (Surface-specific) - Bermuda greens play differently from bentgrass; look for players with bermuda putting experience');
+    } else {
+      demands.push('6. SG:Putt (Moderate) - Standard greens; putting matters but is less predictive than approach play');
     }
   }
 
@@ -144,11 +148,18 @@ function analyzeCourseSkillDemands(courseInfo) {
 
 /**
  * Analyze weather conditions and their impact on play
+ * 
+ * UPDATED: Weather analysis is now descriptive rather than prescriptive.
+ * It no longer says "CRITICAL: prioritize SG:Putt" because:
+ * 1. Forecasts are often wrong (±10mph wind, ±10°F temp is common)
+ * 2. Overweighting weather caused correlated pick failures
+ * 3. Course fit and history are far more reliable signals
+ * 
  * Used by: get-predictions, get-avoid-picks
  */
 function analyzeWeatherConditions(weatherSummary) {
   if (!weatherSummary || weatherSummary === 'Weather data not available') {
-    return 'Weather data not available - focus purely on course characteristics and historical stats.';
+    return 'Weather data not available - this is fine. Focus on course characteristics and historical stats, which are more reliable than forecasts anyway.';
   }
 
   // Parse weather summary to extract conditions
@@ -181,39 +192,36 @@ function analyzeWeatherConditions(weatherSummary) {
   const highRainDays = rainChances.filter(r => r > 50).length;
   const anyRainDays = rainChances.filter(r => r > 30).length;
 
-  let analysis = [`Raw Conditions: ${conditions}`, ''];
+  let analysis = [`Forecast: ${conditions}`, ''];
+  analysis.push('⚠️ REMINDER: This forecast may be significantly wrong. Use as tiebreaker only.');
+  analysis.push('');
 
-  // Wind analysis
+  // Wind analysis - descriptive, not prescriptive
   if (maxWind >= 15) {
-    analysis.push(`⚠️ HIGH WIND ALERT (${maxWind}mph max, ${avgWind}mph avg):`);
-    analysis.push('- CRITICAL: Prioritize SG:OTT (ball flight control, trajectory management)');
-    analysis.push('- Secondary: SG:APP (wind-adjusted approach shots)');
-    analysis.push('- Deprioritize: SG:Putt (less important when scores are high)');
-    analysis.push('- Look for: Players with positive SG:OTT who are undervalued');
+    analysis.push(`Wind: HIGH (${maxWind}mph max, ${avgWind}mph avg)`);
+    analysis.push('- IF accurate: favors ball-flight control and accuracy over raw distance');
+    analysis.push('- IF wrong (common): calm conditions would instead favor scoring ability');
+    analysis.push('- Recommendation: slight tiebreaker toward SG:OTT accuracy, but do NOT build picks around wind');
   } else if (avgWind >= 10) {
-    analysis.push(`💨 MODERATE WIND (${avgWind}mph avg):`);
-    analysis.push('- Important: SG:OTT (trajectory control matters)');
-    analysis.push('- Balanced approach: All SG categories relevant');
+    analysis.push(`Wind: MODERATE (${avgWind}mph avg)`);
+    analysis.push('- Mild influence only — all skill categories remain relevant');
+    analysis.push('- Not significant enough to shift pick strategy');
   } else {
-    analysis.push(`😌 CALM CONDITIONS (${avgWind}mph avg):`);
-    analysis.push('- CRITICAL: SG:Putt (low scores, putting wins)');
-    analysis.push('- Secondary: SG:APP (hitting greens for birdie chances)');
-    analysis.push('- Deprioritize: SG:OTT (length advantage reduced when conditions are easy)');
+    analysis.push(`Wind: LIGHT (${avgWind}mph avg)`);
+    analysis.push('- Conditions favor scoring — but scoring ability comes from ALL skills, not just putting');
+    analysis.push('- SG:APP (hitting greens) is typically more predictive than SG:Putt in low-scoring weeks');
   }
 
   // Rain analysis
   if (highRainDays >= 2) {
     analysis.push('');
-    analysis.push(`🌧️ WET CONDITIONS (${highRainDays} days with 50%+ rain):`);
-    analysis.push('- CRITICAL: SG:OTT (length advantage on soft fairways/greens)');
-    analysis.push('- Important: SG:APP (wedge play, soft greens hold shots)');
-    analysis.push('- Consider: SG:ARG (soft conditions around greens)');
-    analysis.push('- Deprioritize: SG:Putt (soft greens are easier to putt)');
+    analysis.push(`Rain: LIKELY (${highRainDays} days with 50%+ chance)`);
+    analysis.push('- Soft conditions may favor longer hitters (distance advantage amplified)');
+    analysis.push('- Approach play to soft greens rewards precision');
   } else if (anyRainDays > 0) {
     analysis.push('');
-    analysis.push(`🌦️ SOME RAIN POSSIBLE (${anyRainDays} days with 30%+ chance):`);
-    analysis.push('- Slight advantage: Longer hitters (SG:OTT)');
-    analysis.push('- Monitor: Conditions may soften as week progresses');
+    analysis.push(`Rain: POSSIBLE (${anyRainDays} days with 30%+ chance)`);
+    analysis.push('- Minimal strategic impact unless conditions change significantly');
   }
 
   return analysis.join('\n');
