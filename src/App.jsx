@@ -375,7 +375,7 @@ function App() {
     fetchData(`/.netlify/functions/get-prediction-results?tour=${tour}`, 'GET', null, 'results');
 
   const handleGetLivePicks = () =>
-    fetchData(`/.netlify/functions/get-live-picks?tour=${tour}`, 'GET', null, 'live');
+    fetchData(`/.netlify/functions/get-live-picks?tour=${tour}&refresh=true`, 'GET', null, 'live');
 
   const handleAnalyzePlayer = async (playerName) => {
     if (!playerName) return;
@@ -480,6 +480,18 @@ function App() {
       loadAllData();
     }
   }, []); // Empty array is safe with ref - truly runs once
+
+  // Auto-refresh live picks every 15 min when live tab is active
+  useEffect(() => {
+    if (activeTab !== 'live' || !data.live) return;
+    
+    const interval = setInterval(() => {
+      console.log('[LIVE] Auto-refreshing live picks...');
+      fetchData(`/.netlify/functions/get-live-picks?tour=${tour}`, 'GET', null, 'live');
+    }, 15 * 60 * 1000);
+    
+    return () => clearInterval(interval);
+  }, [activeTab, tour, data.live]);
 
   const currentData = data[
     activeTab === 'predictions' ? 'predictions' :
