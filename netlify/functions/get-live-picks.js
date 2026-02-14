@@ -112,38 +112,88 @@ exports.handler = async (event, context) => {
       console.log(`[LIVE] Stats fetch failed: ${err.message}`);
     }
 
-    // Step 3: Fetch live outright odds from books
+    // Step 3: Fetch live outright odds from books (multiple markets)
     console.log('[LIVE] Fetching live betting odds...');
     let liveOdds = {};
+    
+    // Fetch win, top5, top10, top20 markets in parallel for full picture
+    const oddsMarkets = ['win', 'top_5', 'top_10', 'top_20'];
     try {
-      const oddsResponse = await axios.get(
-        `https://feeds.datagolf.com/betting-tools/outrights?tour=${tour}&market=win&odds_format=american&file_format=json&key=${apiKey}`,
-        { timeout: 10000 }
+      const oddsResponses = await Promise.allSettled(
+        oddsMarkets.map(market =>
+          axios.get(
+            `https://feeds.datagolf.com/betting-tools/outrights?tour=${tour}&market=${market}&odds_format=american&file_format=json&key=${apiKey}`,
+            { timeout: 10000 }
+          )
+        )
       );
-      const oddsData = oddsResponse.data?.oddsData || oddsResponse.data || [];
-      if (Array.isArray(oddsData)) {
+
+      oddsMarkets.forEach((market, i) => {
+        if (oddsResponses[i].status !== 'fulfilled') {
+          console.log(`[LIVE] Odds ${market} failed: ${oddsResponses[i].reason?.message}`);
+          return;
+        }
+
+        const responseData = oddsResponses[i].value.data;
+        const oddsData = responseData?.odds || responseData?.oddsData || responseData?.data || (Array.isArray(responseData) ? responseData : []);
+
+        // DEBUG: log structure of first response
+        if (i === 0) {
+          console.log(`[LIVE] Odds response keys: ${JSON.stringify(Object.keys(responseData || {}))}`);
+          if (Array.isArray(oddsData) && oddsData.length > 0) {
+            console.log(`[LIVE] Odds sample player keys: ${JSON.stringify(Object.keys(oddsData[0]))}`);
+            console.log(`[LIVE] Odds sample player: ${JSON.stringify(oddsData[0])}`);
+          }
+        }
+
+        if (!Array.isArray(oddsData)) {
+          console.log(`[LIVE] Odds ${market}: unexpected format, skipping`);
+          return;
+        }
+
         oddsData.forEach(p => {
           const name = p.player_name || p.name || '';
-          if (name) {
-            // Get best available odds across books
-            const bookOdds = [];
-            for (const [key, val] of Object.entries(p)) {
-              if (key !== 'player_name' && key !== 'name' && key !== 'dg_id' && typeof val === 'number' && val !== 0) {
-                bookOdds.push(val);
-              }
-            }
-            if (bookOdds.length > 0) {
-              liveOdds[normalizePlayerName(name)] = {
-                name,
-                bestOdds: Math.max(...bookOdds),
-                dgOdds: p.datagolf || p.dg || null,
-                bookCount: bookOdds.length
-              };
+          if (!name) return;
+          const normalized = normalizePlayerName(name);
+
+          // Extract book odds (skip known non-odds fields)
+          const skipFields = new Set(['player_name', 'name', 'dg_id', 'datagolf', 'dg', 'country', 'event_name']);
+          const bookOdds = [];
+          const bookDetails = {};
+          
+          for (const [key, val] of Object.entries(p)) {
+            if (skipFields.has(key)) continue;
+            if (typeof val === 'number' && val !== 0) {
+              bookOdds.push(val);
+              bookDetails[key] = val;
             }
           }
+
+          if (!liveOdds[normalized]) {
+            liveOdds[normalized] = { name, markets: {} };
+          }
+
+          const dgModelOdds = p.datagolf ?? p.dg ?? null;
+
+          if (market === 'win') {
+            liveOdds[normalized].bestOdds = bookOdds.length > 0 ? Math.max(...bookOdds) : null;
+            liveOdds[normalized].dgOdds = dgModelOdds;
+            liveOdds[normalized].bookCount = bookOdds.length;
+            liveOdds[normalized].bookDetails = bookDetails;
+          }
+
+          // Store each market's best odds
+          liveOdds[normalized].markets[market] = {
+            bestOdds: bookOdds.length > 0 ? Math.max(...bookOdds) : null,
+            dgOdds: dgModelOdds,
+            bookCount: bookOdds.length
+          };
         });
-        console.log(`[LIVE] Odds loaded for ${Object.keys(liveOdds).length} players`);
-      }
+
+        console.log(`[LIVE] Odds ${market}: ${oddsData.length} players loaded`);
+      });
+
+      console.log(`[LIVE] Total odds loaded for ${Object.keys(liveOdds).length} players across ${oddsMarkets.length} markets`);
     } catch (err) {
       console.log(`[LIVE] Odds fetch failed: ${err.message}`);
     }
@@ -270,9 +320,15 @@ function buildMergedPlayerList(inPlayPlayers, liveStats, liveOdds) {
         sgAPP: stats.sgAPP || 0,
         sgARG: stats.sgARG || 0,
         sgPutt: stats.sgPutt || 0,
-        // Live odds
+        // Live odds (win + position markets)
         bestBookOdds: odds.bestOdds || null,
-        dgModelOdds: odds.dgOdds || null
+        dgModelOdds: odds.dgOdds || null,
+        oddsTop5: odds.markets?.top_5?.bestOdds || null,
+        oddsTop10: odds.markets?.top_10?.bestOdds || null,
+        oddsTop20: odds.markets?.top_20?.bestOdds || null,
+        dgTop5: odds.markets?.top_5?.dgOdds || null,
+        dgTop10: odds.markets?.top_10?.dgOdds || null,
+        dgTop20: odds.markets?.top_20?.dgOdds || null
       };
     })
     .filter(p => p.name)
@@ -289,11 +345,18 @@ function buildMergedPlayerList(inPlayPlayers, liveStats, liveOdds) {
 function buildLivePicksPrompt(tournament, players, preTournamentPicks) {
   // Format player data
   const formatPlayer = (p) => {
-    const odds = p.bestBookOdds ? formatAmericanOdds(p.bestBookOdds) : 'N/A';
-    const dgOdds = p.dgModelOdds ? formatAmericanOdds(p.dgModelOdds) : '';
-    const oddsStr = dgOdds ? `Book:${odds} DG:${dgOdds}` : odds;
+    // Format win odds
+    const winOdds = p.bestBookOdds ? formatAmericanOdds(p.bestBookOdds) : 'N/A';
+    const dgWin = p.dgModelOdds ? formatAmericanOdds(p.dgModelOdds) : '';
     
-    return `${p.currentPosition}. ${p.name} (Total:${p.totalScore}, Today:${p.currentRound}, Thru:${p.thru}) | Win:${(p.winProb * 100).toFixed(1)}% T5:${(p.top5Prob * 100).toFixed(1)}% T10:${(p.top10Prob * 100).toFixed(1)}% T20:${(p.top20Prob * 100).toFixed(1)}% | SG: Total:${p.sgTotal.toFixed(2)} OTT:${p.sgOTT.toFixed(2)} APP:${p.sgAPP.toFixed(2)} ARG:${p.sgARG.toFixed(2)} P:${p.sgPutt.toFixed(2)} | Odds:${oddsStr}`;
+    // Format position market odds (where available)
+    let marketStr = `Win:${winOdds}`;
+    if (dgWin) marketStr += `(DG:${dgWin})`;
+    if (p.oddsTop5) marketStr += ` T5:${formatAmericanOdds(p.oddsTop5)}`;
+    if (p.oddsTop10) marketStr += ` T10:${formatAmericanOdds(p.oddsTop10)}`;
+    if (p.oddsTop20) marketStr += ` T20:${formatAmericanOdds(p.oddsTop20)}`;
+    
+    return `${p.currentPosition}. ${p.name} (Total:${p.totalScore}, Today:${p.currentRound}, Thru:${p.thru}) | Win:${(p.winProb * 100).toFixed(1)}% T5:${(p.top5Prob * 100).toFixed(1)}% T10:${(p.top10Prob * 100).toFixed(1)}% T20:${(p.top20Prob * 100).toFixed(1)}% | SG: Total:${p.sgTotal.toFixed(2)} OTT:${p.sgOTT.toFixed(2)} APP:${p.sgAPP.toFixed(2)} ARG:${p.sgARG.toFixed(2)} P:${p.sgPutt.toFixed(2)} | ${marketStr}`;
   };
 
   const top30 = players.slice(0, 30).map(formatPlayer).join('\n');
