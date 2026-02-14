@@ -109,7 +109,8 @@ function App() {
     newsPreview: null,
     matchups: null,
     results: null,
-    playerAnalysis: null
+    playerAnalysis: null,
+    live: null
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -373,6 +374,9 @@ function App() {
   const handleGetResults = () => 
     fetchData(`/.netlify/functions/get-prediction-results?tour=${tour}`, 'GET', null, 'results');
 
+  const handleGetLivePicks = () =>
+    fetchData(`/.netlify/functions/get-live-picks?tour=${tour}`, 'GET', null, 'live');
+
   const handleAnalyzePlayer = async (playerName) => {
     if (!playerName) return;
     try {
@@ -482,6 +486,7 @@ function App() {
     activeTab === 'avoid' ? 'avoidPicks' :
     activeTab === 'news' ? 'newsPreview' : 
     activeTab === 'results' ? 'results' : 
+    activeTab === 'live' ? 'live' :
     activeTab === 'playerAnalysis' ? 'playerAnalysis' : 'matchups'
   ];
 
@@ -502,6 +507,7 @@ function App() {
           onGetNews={handleGetNews}
           onGetMatchups={handleGetMatchups}
           onGetResults={handleGetResults}
+          onGetLivePicks={handleGetLivePicks}
         />
       )}
 
@@ -528,6 +534,7 @@ function App() {
           {activeTab === 'avoid' && <AvoidPicksView data={currentData} liveOdds={liveOdds} requestId={requestId} />}
           {activeTab === 'news' && <NewsPreviewView data={currentData} requestId={requestId} />}
           {activeTab === 'matchups' && <MatchupsView data={currentData} liveOdds={liveOdds} requestId={requestId} />}
+          {activeTab === 'live' && <LivePicksView data={currentData} requestId={requestId} />}
           {activeTab === 'results' && <ResultsView data={currentData} requestId={requestId} />}
         </>
       )}
@@ -571,6 +578,7 @@ const TabSelector = ({ activeTab, onTabChange, disabled }) => (
       { id: 'avoid', icon: '❌', label: 'Avoid Picks' },
       { id: 'news', icon: '📰', label: 'News & Preview' },
       { id: 'matchups', icon: '🆚', label: 'Matchup Predictor' },
+      { id: 'live', icon: '🔴', label: 'Live Picks' },
       { id: 'playerAnalysis', icon: '🔍', label: 'Player Analyzer' },
       { id: 'results', icon: '🏆', label: 'Results' }
     ].map(tab => (
@@ -587,12 +595,13 @@ const TabSelector = ({ activeTab, onTabChange, disabled }) => (
 );
 
 // ==================== ACTION BUTTON ====================
-const ActionButton = ({ activeTab, loading, onGetPredictions, onGetAvoidPicks, onGetNews, onGetMatchups, onGetResults }) => {
+const ActionButton = ({ activeTab, loading, onGetPredictions, onGetAvoidPicks, onGetNews, onGetMatchups, onGetResults, onGetLivePicks }) => {
   const buttonConfig = {
     predictions: { text: 'Get Predictions', handler: onGetPredictions },
     avoid: { text: 'Get Avoid Picks', handler: onGetAvoidPicks },
     news: { text: 'Get News & Preview', handler: onGetNews },
     matchups: { text: 'Get Matchup Predictions', handler: onGetMatchups },
+    live: { text: '🔴 Get Live Picks', handler: onGetLivePicks },
     results: { text: 'View Results History', handler: onGetResults }
   };
 
@@ -1542,6 +1551,199 @@ const AnalysisCard = ({ icon, title, data }) => {
         </span>
       </div>
       <p style={{margin: 0, fontSize: '0.85rem', color: '#444', lineHeight: 1.5}}>{data.analysis}</p>
+    </div>
+  );
+};
+
+// ==================== LIVE PICKS VIEW ====================
+const LivePicksView = ({ data, requestId }) => {
+  if (!data) return null;
+
+  // Handle error from backend
+  if (data.error) {
+    return (
+      <div className="predictions-container" key={`live-${requestId}`}>
+        <div style={{textAlign: 'center', padding: '3rem 2rem'}}>
+          <div style={{fontSize: '3rem', marginBottom: '1rem'}}>📡</div>
+          <h3>No Live Tournament</h3>
+          <p style={{color: '#666'}}>{data.error}</p>
+          <p style={{color: '#999', fontSize: '0.85rem', marginTop: '0.5rem'}}>
+            Live picks are available Thursday–Sunday during an active PGA Tour event.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const picks = data.livePicks || [];
+  const t = data.tournament || {};
+
+  const typeLabel = {
+    'outright_value': '🏆 Outright/Top 5',
+    'top10_value': '🎯 Top 10/20',
+    'longshot': '🚀 Longshot',
+    'matchup': '🆚 Matchup'
+  };
+
+  const typeColor = {
+    'outright_value': { bg: '#fff8e1', border: '#ffd54f', text: '#f57f17' },
+    'top10_value': { bg: '#e8f5e9', border: '#81c784', text: '#2e7d32' },
+    'longshot': { bg: '#e3f2fd', border: '#64b5f6', text: '#1565c0' },
+    'matchup': { bg: '#f3e5f5', border: '#ba68c8', text: '#7b1fa2' }
+  };
+
+  return (
+    <div className="predictions-container" key={`live-${requestId}`}>
+      {/* Header */}
+      <div style={{
+        background: 'linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%)',
+        color: 'white',
+        padding: '1rem 1.5rem',
+        borderRadius: '12px',
+        marginBottom: '1.5rem',
+        textAlign: 'center'
+      }}>
+        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginBottom: '0.25rem'}}>
+          <span style={{
+            display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%',
+            background: '#fff', animation: 'pulse 2s infinite'
+          }}></span>
+          <h2 style={{margin: 0, fontSize: '1.3rem'}}>LIVE — {t.name || 'Tournament'}</h2>
+        </div>
+        <span style={{fontSize: '0.9rem', opacity: 0.9}}>
+          Round {t.round || '?'} • {data.playerCount || '?'} players
+          {data.cached && <span style={{marginLeft: '0.5rem', opacity: 0.7}}>({data.cacheAge} ago)</span>}
+        </span>
+      </div>
+
+      {/* Situation Analysis */}
+      {data.situationAnalysis && (
+        <div style={{
+          background: '#f8f9fa', borderRadius: '10px', padding: '1rem 1.25rem', marginBottom: '1rem',
+          fontSize: '0.95rem', lineHeight: 1.6, color: '#333'
+        }}>
+          <strong>📊 Situation:</strong> {data.situationAnalysis}
+        </div>
+      )}
+
+      {/* Cut Line / Weekend Projection */}
+      {data.cutLineInsight && (
+        <div style={{
+          background: '#fff3e0', borderRadius: '10px', padding: '0.75rem 1.25rem', marginBottom: '1rem',
+          fontSize: '0.9rem', color: '#e65100'
+        }}>
+          <strong>✂️ Cut Line:</strong> {data.cutLineInsight}
+        </div>
+      )}
+
+      {/* Pre-Tournament Comparison */}
+      {data.preTournamentComparison && (
+        <div style={{
+          background: '#e8eaf6', borderRadius: '10px', padding: '0.75rem 1.25rem', marginBottom: '1rem',
+          fontSize: '0.9rem', color: '#283593'
+        }}>
+          <strong>📋 Pre-Tournament Picks:</strong> {data.preTournamentComparison}
+        </div>
+      )}
+
+      {/* Movers */}
+      {(data.topMoverUp || data.topMoverDown) && (
+        <div style={{display: 'flex', gap: '0.75rem', marginBottom: '1.25rem', flexWrap: 'wrap'}}>
+          {data.topMoverUp && (
+            <div style={{
+              flex: 1, minWidth: '200px', background: '#e8f5e9', borderRadius: '10px',
+              padding: '0.75rem 1rem', borderLeft: '4px solid #4caf50'
+            }}>
+              <div style={{fontSize: '0.8rem', color: '#2e7d32', fontWeight: 700}}>📈 Surging</div>
+              <div style={{fontWeight: 600, margin: '0.2rem 0'}}>{data.topMoverUp.player}</div>
+              <div style={{fontSize: '0.85rem', color: '#555'}}>{data.topMoverUp.reason}</div>
+            </div>
+          )}
+          {data.topMoverDown && (
+            <div style={{
+              flex: 1, minWidth: '200px', background: '#ffebee', borderRadius: '10px',
+              padding: '0.75rem 1rem', borderLeft: '4px solid #f44336'
+            }}>
+              <div style={{fontSize: '0.8rem', color: '#c62828', fontWeight: 700}}>📉 Fading</div>
+              <div style={{fontWeight: 600, margin: '0.2rem 0'}}>{data.topMoverDown.player}</div>
+              <div style={{fontSize: '0.85rem', color: '#555'}}>{data.topMoverDown.reason}</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Live Pick Cards */}
+      {picks.map((pick, i) => {
+        const colors = typeColor[pick.type] || typeColor['top10_value'];
+        return (
+          <div key={i} style={{
+            background: 'white', borderRadius: '12px', padding: '1.25rem',
+            marginBottom: '1rem', boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+            border: `2px solid ${colors.border}`
+          }}>
+            {/* Pick header */}
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem'}}>
+              <div>
+                <span style={{
+                  padding: '0.2rem 0.6rem', borderRadius: '10px', fontSize: '0.75rem',
+                  fontWeight: 700, background: colors.bg, color: colors.text, marginRight: '0.5rem'
+                }}>
+                  {typeLabel[pick.type] || pick.type}
+                </span>
+                <span style={{fontWeight: 700, fontSize: '1.1rem'}}>{pick.player}</span>
+              </div>
+              <div style={{textAlign: 'right'}}>
+                <div style={{fontWeight: 700, color: '#667eea', fontSize: '1.1rem'}}>
+                  {formatAmericanOdds(pick.bookOdds)}
+                </div>
+                <div style={{fontSize: '0.75rem', color: '#999'}}>
+                  {pick.currentPosition} ({pick.currentScore})
+                </div>
+              </div>
+            </div>
+
+            {/* Edge visualization */}
+            {pick.edge && (
+              <div style={{
+                display: 'flex', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap',
+                padding: '0.5rem 0.75rem', background: '#f8f9fa', borderRadius: '8px'
+              }}>
+                <div style={{fontSize: '0.8rem'}}>
+                  <span style={{color: '#999'}}>DG Model: </span>
+                  <span style={{fontWeight: 600, color: '#333'}}>{pick.dgProbability}</span>
+                </div>
+                <div style={{fontSize: '0.8rem'}}>
+                  <span style={{color: '#999'}}>Books imply: </span>
+                  <span style={{fontWeight: 600, color: '#333'}}>{pick.impliedProbability}</span>
+                </div>
+                <div style={{fontSize: '0.8rem'}}>
+                  <span style={{color: '#999'}}>Edge: </span>
+                  <span style={{fontWeight: 700, color: '#2e7d32'}}>+{pick.edge}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Reasoning */}
+            <p style={{margin: 0, fontSize: '0.9rem', lineHeight: 1.5, color: '#444'}}>
+              {pick.reasoning}
+            </p>
+          </div>
+        );
+      })}
+
+      {picks.length === 0 && !data.error && (
+        <div style={{textAlign: 'center', padding: '2rem', color: '#666'}}>
+          No live picks generated. The tournament may not be in progress.
+        </div>
+      )}
+
+      {/* Footer */}
+      <div style={{textAlign: 'center', marginTop: '1rem', fontSize: '0.75rem', color: '#999'}}>
+        Generated {new Date(data.generatedAt).toLocaleString()}
+        {data.cost && ` • Cost: ${data.cost.formatted}`}
+        <br/>
+        Live data from DataGolf • Odds and probabilities update every 5 minutes
+      </div>
     </div>
   );
 };
