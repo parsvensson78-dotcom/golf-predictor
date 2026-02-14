@@ -74,13 +74,13 @@ exports.handler = async (event, context) => {
     console.log(`[LIVE] Sample player data: ${JSON.stringify(players[0])}`);
 
     const tournamentInfo = {
-      name: inPlayData.event_name || inPlayData.tournament || inPlayData.event || 'Current Tournament',
-      round: inPlayData.current_round || inPlayData.round || players[0]?.current_round || '?',
+      name: inPlayData.event_name || inPlayData.tournament || inPlayData.event || '', // Will be filled from odds response
+      round: inPlayData.current_round ?? players[0]?.round ?? '?',
       course: inPlayData.course || inPlayData.course_name || '',
       status: inPlayData.status || 'in_progress'
     };
 
-    console.log(`[LIVE] Tournament: ${tournamentInfo.name}, Round: ${tournamentInfo.round}`);
+    console.log(`[LIVE] Tournament: ${tournamentInfo.name || '(will get from odds)'}, Round: ${tournamentInfo.round}`);
 
     // Step 2: Fetch live tournament stats (SG breakdown)
     console.log('[LIVE] Fetching live tournament stats...');
@@ -135,6 +135,13 @@ exports.handler = async (event, context) => {
         }
 
         const responseData = oddsResponses[i].value.data;
+        
+        // Get tournament name from odds response (in-play doesn't have it)
+        if (!tournamentInfo.name && responseData?.event_name) {
+          tournamentInfo.name = responseData.event_name;
+          console.log(`[LIVE] Got tournament name from odds: "${tournamentInfo.name}"`);
+        }
+        
         const oddsData = responseData?.odds || responseData?.oddsData || responseData?.data || (Array.isArray(responseData) ? responseData : []);
 
         // DEBUG: log structure of first response
@@ -156,14 +163,19 @@ exports.handler = async (event, context) => {
           if (!name) return;
           const normalized = normalizePlayerName(name);
 
-          // Extract book odds (skip known non-odds fields)
+          // Extract book odds - DataGolf returns odds as STRINGS like "+552", "-287"
           const skipFields = new Set(['player_name', 'name', 'dg_id', 'datagolf', 'dg', 'country', 'event_name']);
           const bookOdds = [];
           const bookDetails = {};
           
           for (const [key, val] of Object.entries(p)) {
             if (skipFields.has(key)) continue;
-            if (typeof val === 'number' && val !== 0) {
+            // Odds come as strings like "+552", "-287" — parse them
+            if (typeof val === 'string' && /^[+-]\d+$/.test(val)) {
+              const numVal = parseInt(val);
+              bookOdds.push(numVal);
+              bookDetails[key] = numVal;
+            } else if (typeof val === 'number' && val !== 0) {
               bookOdds.push(val);
               bookDetails[key] = val;
             }
@@ -173,7 +185,18 @@ exports.handler = async (event, context) => {
             liveOdds[normalized] = { name, markets: {} };
           }
 
-          const dgModelOdds = p.datagolf ?? p.dg ?? null;
+          // DG model odds - nested object like {"baseline": null, "baseline_history_fit": "+552"}
+          let dgModelOdds = null;
+          const dgObj = p.datagolf || p.dg;
+          if (dgObj && typeof dgObj === 'object') {
+            // Prefer baseline_history_fit, fall back to baseline
+            const dgVal = dgObj.baseline_history_fit || dgObj.baseline;
+            if (dgVal && typeof dgVal === 'string') {
+              dgModelOdds = parseInt(dgVal);
+            }
+          } else if (typeof dgObj === 'string' && /^[+-]\d+$/.test(dgObj)) {
+            dgModelOdds = parseInt(dgObj);
+          }
 
           if (market === 'win') {
             liveOdds[normalized].bestOdds = bookOdds.length > 0 ? Math.max(...bookOdds) : null;
@@ -199,10 +222,19 @@ exports.handler = async (event, context) => {
     }
 
     // Step 4: Get original pre-tournament predictions for comparison
+    // If we still don't have the tournament name, fall back to null (will use most recent blob)
+    if (!tournamentInfo.name) {
+      tournamentInfo.name = 'Unknown Tournament';
+      console.log('[LIVE] ⚠️ Could not determine tournament name from any source');
+    }
+    console.log(`[LIVE] Final tournament name: "${tournamentInfo.name}"`);
+
     let preTournamentPicks = [];
     try {
       const predStore = getBlobStore('predictions', context);
-      const predResult = await getLatestBlobForTournament(predStore, tour, tournamentInfo.name);
+      // Pass null if unknown to just get most recent predictions
+      const searchName = tournamentInfo.name === 'Unknown Tournament' ? null : tournamentInfo.name;
+      const predResult = await getLatestBlobForTournament(predStore, tour, searchName);
       if (predResult?.data?.predictions) {
         preTournamentPicks = predResult.data.predictions;
         console.log(`[LIVE] Found ${preTournamentPicks.length} pre-tournament picks for comparison`);
@@ -288,18 +320,34 @@ function buildMergedPlayerList(inPlayPlayers, liveStats, liveOdds) {
       const stats = liveStats[normalized] || {};
       const odds = liveOdds[normalized] || {};
 
-      // Total score to par (tournament total, NOT current round)
-      // DataGolf uses "total" for total-to-par
-      const totalScore = p.total ?? p.total_to_par ?? p.score ?? p.event_total ?? '?';
+      // Total score to par (tournament total)
+      // DataGolf field: "current_score" = total to par (e.g. -15)
+      const totalScore = p.current_score ?? p.total ?? p.total_to_par ?? '?';
       
       // Current round score (today's round only)
-      const currentRound = p.round ?? p.current_round_score ?? p.today ?? p.round_score ?? '?';
+      // DataGolf field: "today" = today's round score (e.g. -8)
+      const currentRound = p.today ?? p.current_round_score ?? '?';
       
       // Thru (holes completed this round)
-      const thru = p.thru ?? p.holes_completed ?? p.holes ?? '?';
+      const thru = p.thru ?? p.holes_completed ?? '?';
       
-      // Position (e.g. "1", "T5", "CUT")
-      const currentPosition = p.current_pos ?? p.position ?? p.pos ?? '?';
+      // Position (e.g. "T1", "T5", "CUT")
+      const currentPosition = p.current_pos ?? p.position ?? '?';
+
+      // Parse probability values - DG returns them as strings like "+552", "-287" or decimals
+      const parseProb = (val) => {
+        if (val === null || val === undefined || val === 'n/a') return 0;
+        if (typeof val === 'number') return val;
+        if (typeof val === 'string') {
+          // American odds string like "+552" or "-287" → convert to probability
+          const num = parseInt(val);
+          if (isNaN(num)) return 0;
+          // Convert American odds to implied probability
+          if (num > 0) return 100 / (num + 100);
+          if (num < 0) return Math.abs(num) / (Math.abs(num) + 100);
+        }
+        return 0;
+      };
 
       return {
         name,
@@ -308,12 +356,12 @@ function buildMergedPlayerList(inPlayPlayers, liveStats, liveOdds) {
         totalScore,       // Tournament total to par (e.g. -15)
         thru,             // Holes completed this round
         currentRound,     // Today's round score (e.g. -8)
-        // DG model probabilities (these come as decimals, e.g. 0.15 = 15%)
-        winProb: p.win ?? p.win_prob ?? 0,
-        top5Prob: p.top_5 ?? p.top5 ?? p.top_5_prob ?? 0,
-        top10Prob: p.top_10 ?? p.top10 ?? p.top_10_prob ?? 0,
-        top20Prob: p.top_20 ?? p.top20 ?? p.top_20_prob ?? 0,
-        makeCutProb: p.make_cut ?? p.mc ?? p.make_cut_prob ?? 0,
+        // DG model probabilities (come as American odds strings like "+552", "-287")
+        winProb: parseProb(p.win),
+        top5Prob: parseProb(p.top_5 ?? p.top5),
+        top10Prob: parseProb(p.top_10 ?? p.top10),
+        top20Prob: parseProb(p.top_20 ?? p.top20),
+        makeCutProb: parseProb(p.make_cut ?? p.mc),
         // Live SG stats this tournament
         sgTotal: stats.sgTotal || 0,
         sgOTT: stats.sgOTT || 0,
