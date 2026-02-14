@@ -64,15 +64,19 @@ exports.handler = async (event, context) => {
     }
 
     // Validate we have live data
-    const players = inPlayData?.data || inPlayData?.players || inPlayData;
+    const players = inPlayData?.data || inPlayData?.players || (Array.isArray(inPlayData) ? inPlayData : null);
     if (!Array.isArray(players) || players.length === 0) {
       return errorResponse('No live tournament in progress or no data available.', 404);
     }
 
+    // DEBUG: Log first player's fields so we can see exact DataGolf field names
+    console.log(`[LIVE] Sample player fields: ${JSON.stringify(Object.keys(players[0]))}`);
+    console.log(`[LIVE] Sample player data: ${JSON.stringify(players[0])}`);
+
     const tournamentInfo = {
-      name: inPlayData.event_name || inPlayData.tournament || 'Current Tournament',
-      round: inPlayData.current_round || inPlayData.round || '?',
-      course: inPlayData.course || '',
+      name: inPlayData.event_name || inPlayData.tournament || inPlayData.event || 'Current Tournament',
+      round: inPlayData.current_round || inPlayData.round || players[0]?.current_round || '?',
+      course: inPlayData.course || inPlayData.course_name || '',
       status: inPlayData.status || 'in_progress'
     };
 
@@ -217,6 +221,14 @@ exports.handler = async (event, context) => {
 
 /**
  * Build merged player list from in-play + stats + odds
+ * 
+ * DataGolf in-play fields vary but commonly include:
+ * - player_name, dg_id, country
+ * - current_pos (string like "1", "T5", "CUT")  
+ * - total (total to par, e.g. -15, +2, "E")
+ * - thru (holes completed in current round, e.g. 18, "F", 12)
+ * - round (current round score to par)
+ * - Probability fields: win, top_5, top_10, top_20, make_cut
  */
 function buildMergedPlayerList(inPlayPlayers, liveStats, liveOdds) {
   return inPlayPlayers
@@ -226,19 +238,32 @@ function buildMergedPlayerList(inPlayPlayers, liveStats, liveOdds) {
       const stats = liveStats[normalized] || {};
       const odds = liveOdds[normalized] || {};
 
+      // Total score to par (tournament total, NOT current round)
+      // DataGolf uses "total" for total-to-par
+      const totalScore = p.total ?? p.total_to_par ?? p.score ?? p.event_total ?? '?';
+      
+      // Current round score (today's round only)
+      const currentRound = p.round ?? p.current_round_score ?? p.today ?? p.round_score ?? '?';
+      
+      // Thru (holes completed this round)
+      const thru = p.thru ?? p.holes_completed ?? p.holes ?? '?';
+      
+      // Position (e.g. "1", "T5", "CUT")
+      const currentPosition = p.current_pos ?? p.position ?? p.pos ?? '?';
+
       return {
         name,
         // Position & score
-        currentPosition: p.current_pos || p.position || '?',
-        totalScore: p.total || p.score || p.total_to_par || '?',
-        thru: p.thru || p.holes_completed || '?',
-        currentRound: p.current_round_score || p.today || '?',
-        // DG model probabilities
-        winProb: p.win || p.win_prob || 0,
-        top5Prob: p.top_5 || p.top5 || 0,
-        top10Prob: p.top_10 || p.top10 || 0,
-        top20Prob: p.top_20 || p.top20 || 0,
-        makeCutProb: p.make_cut || p.mc || 0,
+        currentPosition,
+        totalScore,       // Tournament total to par (e.g. -15)
+        thru,             // Holes completed this round
+        currentRound,     // Today's round score (e.g. -8)
+        // DG model probabilities (these come as decimals, e.g. 0.15 = 15%)
+        winProb: p.win ?? p.win_prob ?? 0,
+        top5Prob: p.top_5 ?? p.top5 ?? p.top_5_prob ?? 0,
+        top10Prob: p.top_10 ?? p.top10 ?? p.top_10_prob ?? 0,
+        top20Prob: p.top_20 ?? p.top20 ?? p.top_20_prob ?? 0,
+        makeCutProb: p.make_cut ?? p.mc ?? p.make_cut_prob ?? 0,
         // Live SG stats this tournament
         sgTotal: stats.sgTotal || 0,
         sgOTT: stats.sgOTT || 0,
@@ -250,9 +275,8 @@ function buildMergedPlayerList(inPlayPlayers, liveStats, liveOdds) {
         dgModelOdds: odds.dgOdds || null
       };
     })
-    .filter(p => p.name) // Remove empty entries
+    .filter(p => p.name)
     .sort((a, b) => {
-      // Sort by current position (numerically)
       const posA = parseInt(String(a.currentPosition).replace(/[^0-9]/g, '')) || 999;
       const posB = parseInt(String(b.currentPosition).replace(/[^0-9]/g, '')) || 999;
       return posA - posB;
@@ -269,7 +293,7 @@ function buildLivePicksPrompt(tournament, players, preTournamentPicks) {
     const dgOdds = p.dgModelOdds ? formatAmericanOdds(p.dgModelOdds) : '';
     const oddsStr = dgOdds ? `Book:${odds} DG:${dgOdds}` : odds;
     
-    return `${p.currentPosition}. ${p.name} (${p.totalScore}, R:${p.currentRound}, Thru:${p.thru}) | Win:${(p.winProb * 100).toFixed(1)}% T5:${(p.top5Prob * 100).toFixed(1)}% T10:${(p.top10Prob * 100).toFixed(1)}% T20:${(p.top20Prob * 100).toFixed(1)}% | SG: Total:${p.sgTotal.toFixed(2)} OTT:${p.sgOTT.toFixed(2)} APP:${p.sgAPP.toFixed(2)} ARG:${p.sgARG.toFixed(2)} P:${p.sgPutt.toFixed(2)} | Odds:${oddsStr}`;
+    return `${p.currentPosition}. ${p.name} (Total:${p.totalScore}, Today:${p.currentRound}, Thru:${p.thru}) | Win:${(p.winProb * 100).toFixed(1)}% T5:${(p.top5Prob * 100).toFixed(1)}% T10:${(p.top10Prob * 100).toFixed(1)}% T20:${(p.top20Prob * 100).toFixed(1)}% | SG: Total:${p.sgTotal.toFixed(2)} OTT:${p.sgOTT.toFixed(2)} APP:${p.sgAPP.toFixed(2)} ARG:${p.sgARG.toFixed(2)} P:${p.sgPutt.toFixed(2)} | Odds:${oddsStr}`;
   };
 
   const top30 = players.slice(0, 30).map(formatPlayer).join('\n');
