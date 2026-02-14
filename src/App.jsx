@@ -134,8 +134,12 @@ function App() {
 
   // Generic fetch function to avoid duplication
   const fetchData = useCallback(async (endpoint, method = 'GET', body = null, dataKey) => {
-    const newRequestId = requestId + 1;
-    setRequestId(newRequestId);
+    // Use functional update to avoid stale closure on requestId
+    let newRequestId;
+    setRequestId(prev => {
+      newRequestId = prev + 1;
+      return newRequestId;
+    });
     setError(null);
     setLoading(true);
     
@@ -216,7 +220,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [requestId]);
+  }, []); // No dependencies needed - uses functional state updates only
 
   const handleGetPredictions = async () => {
     try {
