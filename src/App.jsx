@@ -1639,6 +1639,9 @@ const TournamentResultCard = ({ tournament: t }) => {
         </span>
       </div>
 
+      {/* Weather Accuracy Comparison */}
+      <WeatherComparison tournament={t.tournament} />
+
       {/* Value Picks Section */}
       {t.valuePicks.length > 0 && (
         <ResultSection 
@@ -1727,6 +1730,9 @@ const TournamentResultCard = ({ tournament: t }) => {
           )}
         />
       )}
+
+      {/* AI Self-Analysis (only for completed tournaments) */}
+      <SelfAnalysis tournament={t.tournament} isCompleted={isCompleted} />
     </div>
   );
 };
@@ -1742,6 +1748,393 @@ const ResultSection = ({ title, isCompleted, renderContent }) => (
     {renderContent()}
   </div>
 );
+
+// ==================== WEATHER COMPARISON ====================
+const WeatherComparison = ({ tournament }) => {
+  const [weatherHistory, setWeatherHistory] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  const loadWeatherHistory = async () => {
+    if (weatherHistory) {
+      setExpanded(!expanded);
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await fetch(
+        `/.netlify/functions/fetch-weather?tournament=${encodeURIComponent(tournament.name)}&tour=${tournament.tour || 'pga'}&history=true`
+      );
+      const data = await response.json();
+      setWeatherHistory(data);
+      setExpanded(true);
+    } catch (err) {
+      console.error('Failed to load weather history:', err);
+    }
+    setLoading(false);
+  };
+
+  const fetchActualWeather = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(
+        `/.netlify/functions/fetch-weather?location=${encodeURIComponent(tournament.location || tournament.course)}&tournament=${encodeURIComponent(tournament.name)}&tour=${tournament.tour || 'pga'}&actual=true`
+      );
+      const data = await response.json();
+      // Reload history to get updated comparison
+      const histResponse = await fetch(
+        `/.netlify/functions/fetch-weather?tournament=${encodeURIComponent(tournament.name)}&tour=${tournament.tour || 'pga'}&history=true`
+      );
+      const histData = await histResponse.json();
+      setWeatherHistory(histData);
+      setExpanded(true);
+    } catch (err) {
+      console.error('Failed to fetch actual weather:', err);
+    }
+    setLoading(false);
+  };
+
+  const comparison = weatherHistory?.comparison;
+  const hasActual = !!weatherHistory?.actual;
+
+  return (
+    <div style={{
+      background: '#f0f4ff',
+      borderRadius: '8px',
+      padding: '1rem',
+      marginBottom: '0.75rem',
+      border: '1px solid #d0d8f0'
+    }}>
+      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem'}}>
+        <h4 style={{margin: 0, fontSize: '0.95rem', cursor: 'pointer'}} onClick={loadWeatherHistory}>
+          🌤️ Weather Accuracy {comparison ? (comparison.summary.avgWindDiff <= 5 ? '✅' : '⚠️') : ''}
+        </h4>
+        <div style={{display: 'flex', gap: '0.5rem'}}>
+          {!hasActual && (
+            <button 
+              onClick={fetchActualWeather}
+              disabled={loading}
+              style={{
+                padding: '0.25rem 0.6rem',
+                borderRadius: '6px',
+                border: '1px solid #667eea',
+                background: 'white',
+                color: '#667eea',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                cursor: loading ? 'wait' : 'pointer'
+              }}
+            >
+              {loading ? '...' : '📡 Fetch Actual'}
+            </button>
+          )}
+          <button 
+            onClick={loadWeatherHistory}
+            disabled={loading}
+            style={{
+              padding: '0.25rem 0.6rem',
+              borderRadius: '6px',
+              border: '1px solid #999',
+              background: 'white',
+              color: '#666',
+              fontSize: '0.75rem',
+              cursor: 'pointer'
+            }}
+          >
+            {expanded ? '▲ Hide' : '▼ Show'}
+          </button>
+        </div>
+      </div>
+
+      {expanded && comparison && (
+        <div style={{marginTop: '0.75rem'}}>
+          {/* Summary badges */}
+          <div style={{display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap'}}>
+            <span style={{
+              padding: '0.2rem 0.6rem', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600,
+              background: comparison.summary.avgTempDeviation <= 5 ? '#e8f5e9' : '#ffebee',
+              color: comparison.summary.avgTempDeviation <= 5 ? '#2e7d32' : '#c62828'
+            }}>
+              Temp: ±{comparison.summary.avgTempDeviation}°F avg
+            </span>
+            <span style={{
+              padding: '0.2rem 0.6rem', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600,
+              background: comparison.summary.avgWindDeviation <= 5 ? '#e8f5e9' : '#ffebee',
+              color: comparison.summary.avgWindDeviation <= 5 ? '#2e7d32' : '#c62828'
+            }}>
+              Wind: ±{comparison.summary.avgWindDeviation}mph avg
+            </span>
+            <span style={{
+              padding: '0.2rem 0.6rem', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600,
+              background: '#e3e8f0', color: '#444'
+            }}>
+              {comparison.summary.forecastCount} snapshots
+            </span>
+          </div>
+
+          {/* Day-by-day comparison table */}
+          <div style={{overflowX: 'auto'}}>
+            <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem'}}>
+              <thead>
+                <tr style={{borderBottom: '2px solid #ccc'}}>
+                  <th style={{textAlign: 'left', padding: '0.4rem'}}>Day</th>
+                  <th style={{textAlign: 'center', padding: '0.4rem'}}>Forecast Temp</th>
+                  <th style={{textAlign: 'center', padding: '0.4rem'}}>Actual Temp</th>
+                  <th style={{textAlign: 'center', padding: '0.4rem'}}>Forecast Wind</th>
+                  <th style={{textAlign: 'center', padding: '0.4rem'}}>Actual Wind</th>
+                  <th style={{textAlign: 'center', padding: '0.4rem'}}>Deviation</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparison.days.map((day, i) => {
+                  const windOff = day.deviation ? Math.abs(day.deviation.windDiff) : 0;
+                  const tempOff = day.deviation ? Math.abs(day.deviation.tempDiff) : 0;
+                  const isOff = windOff > 8 || tempOff > 10;
+                  return (
+                    <tr key={i} style={{borderBottom: '1px solid #eee', background: isOff ? '#fff8e1' : 'transparent'}}>
+                      <td style={{padding: '0.4rem', fontWeight: 600}}>{day.day}</td>
+                      <td style={{textAlign: 'center', padding: '0.4rem'}}>{day.firstForecast?.tempHigh}°F</td>
+                      <td style={{textAlign: 'center', padding: '0.4rem', fontWeight: 600}}>{day.actual?.tempHigh}°F</td>
+                      <td style={{textAlign: 'center', padding: '0.4rem'}}>{day.firstForecast?.windSpeed}mph</td>
+                      <td style={{textAlign: 'center', padding: '0.4rem', fontWeight: 600}}>{day.actual?.windSpeed}mph</td>
+                      <td style={{textAlign: 'center', padding: '0.4rem'}}>
+                        {day.deviation && (
+                          <span style={{
+                            padding: '0.1rem 0.4rem', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600,
+                            background: isOff ? '#ffebee' : '#e8f5e9',
+                            color: isOff ? '#c62828' : '#2e7d32'
+                          }}>
+                            {day.deviation.windDiff > 0 ? '+' : ''}{day.deviation.windDiff}mph / {day.deviation.tempDiff > 0 ? '+' : ''}{day.deviation.tempDiff}°F
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Forecast timeline note */}
+          <div style={{marginTop: '0.5rem', fontSize: '0.75rem', color: '#888'}}>
+            First forecast: {new Date(comparison.summary.firstForecastAt).toLocaleString()} • 
+            Last update: {new Date(comparison.summary.lastForecastAt).toLocaleString()}
+          </div>
+        </div>
+      )}
+
+      {expanded && !comparison && weatherHistory && (
+        <div style={{marginTop: '0.75rem', color: '#888', fontSize: '0.85rem'}}>
+          {hasActual ? 'No forecast data available to compare.' : 
+           weatherHistory.snapshotCount > 0 
+             ? `${weatherHistory.snapshotCount} forecast snapshots saved. Click "Fetch Actual" after the tournament to see comparison.`
+             : 'No weather data recorded for this tournament yet.'}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ==================== SELF-ANALYSIS ====================
+const SelfAnalysis = ({ tournament, isCompleted }) => {
+  const [analysis, setAnalysis] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [expanded, setExpanded] = useState(true);
+
+  const runAnalysis = async (forceRefresh = false) => {
+    if (analysis && !forceRefresh) {
+      setExpanded(!expanded);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const refreshParam = forceRefresh ? '&refresh=true' : '';
+      const response = await fetch(
+        `/.netlify/functions/analyze-results?tournament=${encodeURIComponent(tournament.name)}&tour=${tournament.tour || 'pga'}${refreshParam}`
+      );
+      const data = await response.json();
+      if (data.error) {
+        setError(data.error);
+      } else {
+        setAnalysis(data);
+        setExpanded(true);
+      }
+    } catch (err) {
+      setError('Failed to run analysis: ' + err.message);
+    }
+    setLoading(false);
+  };
+
+  if (!isCompleted) return null;
+
+  const a = analysis?.analysis;
+  const gradeColor = {
+    'A': '#2e7d32', 'B': '#388e3c', 'C': '#f57f17', 'D': '#e65100', 'F': '#c62828'
+  };
+
+  return (
+    <div style={{
+      background: '#faf8ff',
+      borderRadius: '8px',
+      padding: '1rem',
+      marginBottom: '0.75rem',
+      border: '1px solid #d4c8f0'
+    }}>
+      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem'}}>
+        <h4 style={{margin: 0, fontSize: '0.95rem'}}>
+          🔍 AI Self-Analysis {a ? `— Grade: ` : ''}
+          {a && (
+            <span style={{
+              padding: '0.15rem 0.5rem',
+              borderRadius: '8px',
+              background: gradeColor[a.overallGrade] || '#666',
+              color: 'white',
+              fontSize: '0.85rem'
+            }}>
+              {a.overallGrade}
+            </span>
+          )}
+        </h4>
+        <div style={{display: 'flex', gap: '0.4rem'}}>
+          {analysis?.cached && (
+            <button
+              onClick={() => runAnalysis(true)}
+              disabled={loading}
+              style={{
+                padding: '0.3rem 0.6rem',
+                borderRadius: '6px',
+                border: '1px solid #764ba2',
+                background: 'white',
+                color: '#764ba2',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                cursor: loading ? 'wait' : 'pointer'
+              }}
+            >
+              🔄 Re-analyze
+            </button>
+          )}
+          <button
+            onClick={() => runAnalysis(false)}
+            disabled={loading}
+            style={{
+              padding: '0.3rem 0.8rem',
+              borderRadius: '6px',
+              border: 'none',
+              background: loading ? '#ccc' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: 'white',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              cursor: loading ? 'wait' : 'pointer'
+            }}
+          >
+            {loading ? '⏳ Analyzing...' : analysis ? (expanded ? '▲ Hide' : '▼ Show') : '🧠 Run Analysis'}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div style={{marginTop: '0.5rem', color: '#c62828', fontSize: '0.85rem'}}>
+          ⚠️ {error}
+        </div>
+      )}
+
+      {expanded && a && (
+        <div style={{marginTop: '0.75rem'}}>
+          {/* Summary */}
+          <p style={{margin: '0 0 0.75rem', fontSize: '0.9rem', lineHeight: 1.5, color: '#333'}}>
+            {a.summary}
+          </p>
+
+          {/* Correct Calls */}
+          {a.correctCalls?.length > 0 && (
+            <div style={{marginBottom: '0.75rem'}}>
+              <h5 style={{margin: '0 0 0.4rem', fontSize: '0.85rem', color: '#2e7d32'}}>✅ What Worked</h5>
+              {a.correctCalls.map((c, i) => (
+                <div key={i} style={{
+                  background: '#e8f5e9', borderRadius: '6px', padding: '0.5rem 0.75rem', marginBottom: '0.4rem', fontSize: '0.85rem'
+                }}>
+                  <strong>{c.what}</strong>
+                  <div style={{color: '#555', marginTop: '0.2rem'}}>{c.why}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Mistakes */}
+          {a.mistakes?.length > 0 && (
+            <div style={{marginBottom: '0.75rem'}}>
+              <h5 style={{margin: '0 0 0.4rem', fontSize: '0.85rem', color: '#c62828'}}>❌ Mistakes</h5>
+              {a.mistakes.map((m, i) => (
+                <div key={i} style={{
+                  background: m.severity === 'high' ? '#ffebee' : m.severity === 'medium' ? '#fff8e1' : '#f5f5f5',
+                  borderRadius: '6px', padding: '0.5rem 0.75rem', marginBottom: '0.4rem', fontSize: '0.85rem',
+                  borderLeft: `3px solid ${m.severity === 'high' ? '#c62828' : m.severity === 'medium' ? '#f57f17' : '#999'}`
+                }}>
+                  <strong>{m.what}</strong>
+                  <span style={{
+                    marginLeft: '0.5rem', padding: '0.1rem 0.4rem', borderRadius: '8px', fontSize: '0.7rem',
+                    fontWeight: 600, background: m.severity === 'high' ? '#c62828' : m.severity === 'medium' ? '#f57f17' : '#999',
+                    color: 'white'
+                  }}>
+                    {m.severity}
+                  </span>
+                  <div style={{color: '#555', marginTop: '0.2rem'}}>{m.why}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Weather Impact */}
+          {a.weatherImpact && (
+            <div style={{
+              background: '#e3f2fd', borderRadius: '6px', padding: '0.5rem 0.75rem', marginBottom: '0.75rem', fontSize: '0.85rem'
+            }}>
+              <strong>🌤️ Weather Impact:</strong> {a.weatherImpact}
+            </div>
+          )}
+
+          {/* Lessons Learned */}
+          {a.lessonsLearned?.length > 0 && (
+            <div style={{marginBottom: '0.75rem'}}>
+              <h5 style={{margin: '0 0 0.4rem', fontSize: '0.85rem', color: '#1565c0'}}>📚 Lessons Learned</h5>
+              {a.lessonsLearned.map((lesson, i) => (
+                <div key={i} style={{
+                  background: '#e8eaf6', borderRadius: '6px', padding: '0.4rem 0.75rem', marginBottom: '0.3rem', fontSize: '0.85rem'
+                }}>
+                  {lesson}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Adjustments */}
+          {a.adjustments?.length > 0 && (
+            <div style={{marginBottom: '0.5rem'}}>
+              <h5 style={{margin: '0 0 0.4rem', fontSize: '0.85rem', color: '#7b1fa2'}}>🔧 Suggested Adjustments</h5>
+              {a.adjustments.map((adj, i) => (
+                <div key={i} style={{
+                  background: '#f3e5f5', borderRadius: '6px', padding: '0.4rem 0.75rem', marginBottom: '0.3rem', fontSize: '0.85rem'
+                }}>
+                  {adj}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Meta info */}
+          <div style={{fontSize: '0.75rem', color: '#999', marginTop: '0.5rem'}}>
+            Analysis generated {new Date(analysis.generatedAt).toLocaleString()}
+            {analysis.cached && ' (cached)'}
+            {analysis.cost && ` • Cost: ${analysis.cost.formatted}`}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const MiniStat = ({ label, value, highlight, bad }) => (
   <span style={{
